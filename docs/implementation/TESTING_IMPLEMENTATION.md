@@ -79,7 +79,7 @@
 
 ### Quality Gates Configuration
 ```yaml
-# .pre-commit-config.yaml enhancements:
+# config/.pre-commit-config.yaml enhancements:
 - General file checks (whitespace, yaml, conflicts)
 - Shellcheck for all shell scripts
 - Markdown linting with sensible rules
