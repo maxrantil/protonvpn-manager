@@ -1,0 +1,43 @@
+# ABOUTME: Git ignore file for VPN manager project
+# ABOUTME: Excludes sensitive credentials and temporary files
+
+# Credentials and sensitive files
+credentials.txt
+*.key
+*.crt
+*.pem
+auth.txt
+login.conf
+
+# VPN connection logs and temporary files
+*.log
+*.pid
+/tmp/
+openvpn.status
+connection.status
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Editor files
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# Python files (if we add Python scripts)
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.env
+
+# Backup files
+*.bak
+*.backup
+*.orig
