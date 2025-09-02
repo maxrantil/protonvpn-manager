@@ -3,9 +3,9 @@
 
 # Artix Linux System Analysis Report
 
-**System**: Artix Linux (rolling release)  
-**Package Manager**: pacman v7.0.0  
-**Init System**: Neither systemd nor OpenRC detected (likely runit or s6)  
+**System**: Artix Linux (rolling release)
+**Package Manager**: pacman v7.0.0
+**Init System**: Neither systemd nor OpenRC detected (likely runit or s6)
 
 ## Package Availability ✅
 
