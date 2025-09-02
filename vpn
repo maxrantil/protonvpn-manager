@@ -1,0 +1,162 @@
+#!/bin/bash
+# ABOUTME: Main VPN management CLI interface script for Artix/Arch Linux
+# ABOUTME: Routes commands to appropriate VPN management sub-scripts
+
+VPN_DIR="$(dirname "$(realpath "$0")")"
+VPN_MANAGER="$VPN_DIR/vpn-manager"
+VPN_CONNECTOR="$VPN_DIR/vpn-connector"
+LOCATIONS_DIR="$VPN_DIR/locations"
+
+show_banner() {
+    echo -e "\033[1;36m╔════════════════════════════════════════╗\033[0m"
+    echo -e "\033[1;36m║             VPN Manager v2.0           ║\033[0m"
+    echo -e "\033[1;36m║         Artix/Arch Linux Edition       ║\033[0m"
+    echo -e "\033[1;36m╚════════════════════════════════════════╝\033[0m"
+    echo
+}
+
+show_help() {
+    show_banner
+    echo -e "\033[1;33mUsage: vpn <command> [options]\033[0m"
+    echo
+    echo -e "\033[1;32mConnection Commands:\033[0m"
+    echo "  connect [country]    - Connect to VPN server (optional country code)"
+    echo "  disconnect          - Disconnect from VPN"
+    echo "  reconnect           - Reconnect to current VPN server"
+    echo "  status              - Show VPN connection status"
+    echo
+    echo -e "\033[1;32mServer Selection:\033[0m"
+    echo "  best                - Connect to best performing server"
+    echo "  fast [country]      - Quick connect using cached results"
+    echo "  secure              - Connect to secure core server"
+    echo "  list                - List available VPN profiles"
+    echo
+    echo -e "\033[1;32mManagement:\033[0m"
+    echo "  kill                - Force kill all VPN processes"
+    echo "  cleanup             - Clean up VPN processes and routes"
+    echo "  test                - Test VPN performance"
+    echo
+    echo -e "\033[1;32mConfiguration:\033[0m"
+    echo "  setup               - Initial VPN setup and configuration"
+    echo "  update              - Update VPN profiles"
+    echo "  help                - Show this help message"
+    echo
+    echo -e "\033[1;33mExamples:\033[0m"
+    echo "  vpn connect se      - Connect to Swedish server"
+    echo "  vpn best            - Connect to best server automatically"
+    echo "  vpn fast nl         - Quick connect to Netherlands"
+    echo
+}
+
+case "$1" in
+    "connect"|"c")
+        if [[ -x "$VPN_CONNECTOR" ]]; then
+            "$VPN_CONNECTOR" connect "$2"
+        else
+            echo -e "\033[1;31mError: VPN connector not found or not executable\033[0m"
+            exit 1
+        fi
+        ;;
+    "disconnect"|"d")
+        if [[ -x "$VPN_MANAGER" ]]; then
+            "$VPN_MANAGER" stop
+        else
+            echo -e "\033[1;31mError: VPN manager not found or not executable\033[0m"
+            exit 1
+        fi
+        ;;
+    "reconnect"|"r")
+        if [[ -x "$VPN_MANAGER" ]]; then
+            "$VPN_MANAGER" stop
+            sleep 2
+            "$VPN_CONNECTOR" connect "$2"
+        else
+            echo -e "\033[1;31mError: VPN manager not found or not executable\033[0m"
+            exit 1
+        fi
+        ;;
+    "status"|"s")
+        if [[ -x "$VPN_MANAGER" ]]; then
+            "$VPN_MANAGER" status
+        else
+            echo -e "\033[1;31mError: VPN manager not found or not executable\033[0m"
+            exit 1
+        fi
+        ;;
+    "best"|"b")
+        if [[ -x "$VPN_CONNECTOR" ]]; then
+            "$VPN_CONNECTOR" best
+        else
+            echo -e "\033[1;31mError: VPN connector not found or not executable\033[0m"
+            exit 1
+        fi
+        ;;
+    "fast"|"f")
+        if [[ -x "$VPN_CONNECTOR" ]]; then
+            "$VPN_CONNECTOR" fast "$2"
+        else
+            echo -e "\033[1;31mError: VPN connector not found or not executable\033[0m"
+            exit 1
+        fi
+        ;;
+    "secure")
+        if [[ -x "$VPN_CONNECTOR" ]]; then
+            "$VPN_CONNECTOR" secure
+        else
+            echo -e "\033[1;31mError: VPN connector not found or not executable\033[0m"
+            exit 1
+        fi
+        ;;
+    "list"|"l")
+        if [[ -d "$LOCATIONS_DIR" ]]; then
+            echo -e "\033[1;33mAvailable VPN Profiles:\033[0m"
+            ls -1 "$LOCATIONS_DIR"/*.ovpn 2>/dev/null | sed 's|.*/||; s|\.ovpn$||' | sort
+        else
+            echo -e "\033[1;31mError: Locations directory not found\033[0m"
+            exit 1
+        fi
+        ;;
+    "kill"|"k")
+        if [[ -x "$VPN_MANAGER" ]]; then
+            "$VPN_MANAGER" kill-all
+        else
+            echo -e "\033[1;31mError: VPN manager not found or not executable\033[0m"
+            exit 1
+        fi
+        ;;
+    "cleanup")
+        if [[ -x "$VPN_MANAGER" ]]; then
+            "$VPN_MANAGER" cleanup
+        else
+            echo -e "\033[1;31mError: VPN manager not found or not executable\033[0m"
+            exit 1
+        fi
+        ;;
+    "test"|"t")
+        if [[ -x "$VPN_CONNECTOR" ]]; then
+            "$VPN_CONNECTOR" test
+        else
+            echo -e "\033[1;31mError: VPN connector not found or not executable\033[0m"
+            exit 1
+        fi
+        ;;
+    "setup")
+        echo -e "\033[1;33mVPN Setup\033[0m"
+        echo "1. Place your ProtonVPN .ovpn files in: $LOCATIONS_DIR"
+        echo "2. Create credentials file with username/password"
+        echo "3. Run: vpn test"
+        ;;
+    "update")
+        echo -e "\033[1;33mVPN Profile Update\033[0m"
+        echo "Download latest .ovpn files from your VPN provider"
+        echo "Place them in: $LOCATIONS_DIR"
+        ;;
+    "help"|"h"|"")
+        show_help
+        ;;
+    *)
+        echo -e "\033[1;31mError: Unknown command '$1'\033[0m"
+        echo "Run 'vpn help' for usage information"
+        exit 1
+        ;;
+esac
