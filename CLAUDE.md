@@ -115,18 +115,44 @@ Specific Technologies
   - Open a draft PR early for visibility; convert to ready when complete
   - Ensure tests pass locally before marking ready for review
   - Use PRs to trigger CI/CD and enable async reviews
-- Link issues
-  - Before starting, reference an existing issue or create one
+- **MANDATORY: GitHub Issues First**
+  - **ALWAYS create a GitHub issue BEFORE starting any work**
+  - Issues must clearly describe the problem, acceptance criteria, and expected outcome
+  - Reference the issue in branch names: `feat/issue-123-description`
   - Use commit/PR messages like `Fixes #123` for auto-linking and closure
 - Commit practices
   - Make atomic commits (one logical change per commit)
   - Prefer conventional commit style: `type(scope): short description`
     - Examples: `feat(eval): group OBS logs per test`, `fix(cli): handle missing API key`
-  - Squash only when merging to `main`; keep granular history on the feature branch
+  - **Do NOT include co-author by default** - only add when explicitly collaborating
+  - Squash only when merging to `master`; keep granular history on the feature branch
 - Practical workflow
-  1. Create or reference an issue
+  1. **Create GitHub issue first** (mandatory step)
   2. `git checkout -b feat/issue-123-description`
   3. Commit in small, logical increments
   4. `git push` and open a draft PR early
   5. Convert to ready PR when functionally complete and tests pass
-  6. Merge after reviews and checks pass
+  6. **Update implementation plan** - mark phases as complete when finished
+  7. Merge after reviews and checks pass
+
+## Implementation Plan Management
+
+When working with implementation plans (like VPN_PORTING_IMPLEMENTATION_PLAN.md):
+
+- **MANDATORY: Mark phases as complete when finished**
+- Update phase status to `✅ COMPLETE` with completion date
+- Add brief summary of what was accomplished
+- Update any dependencies or notes that affect subsequent phases
+- This ensures progress tracking and prevents forgetting completed work
+
+Example format for completed phases:
+```markdown
+## **PHASE 1: SYSTEM ANALYSIS** ✅ COMPLETE
+*Completed: September 1, 2025*
+*Status: All objectives achieved*
+
+### 1.1 Package Discovery ✅
+- [x] **Verify Artix package availability** - All packages confirmed available
+- [x] **Test dependency resolution** - No conflicts detected
+...
+```
