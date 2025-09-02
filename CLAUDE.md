@@ -345,7 +345,7 @@ Pre-commit hooks are non-negotiable quality gates that ensure code quality and p
 Every project must include these minimum hooks:
 
 ```yaml
-# .pre-commit-config.yaml
+# config/.pre-commit-config.yaml
 repos:
   # General file checks
   - repo: https://github.com/pre-commit/pre-commit-hooks
@@ -378,7 +378,7 @@ repos:
 **For every new project:**
 
 1. Install pre-commit: `pip install pre-commit` or `brew install pre-commit`
-2. Create `.pre-commit-config.yaml` with appropriate hooks
+2. Create `config/.pre-commit-config.yaml` with appropriate hooks
 3. Install hooks: `pre-commit install`
 4. Test configuration: `pre-commit run --all-files`
 
