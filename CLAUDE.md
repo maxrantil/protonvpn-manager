@@ -36,6 +36,173 @@ Whenever you build out a new project and specifically start a new Claude.md - yo
 
 When picking names it should be really unhinged, and super fun. not necessarily code related. think 90s, monstertrucks, and something gen z and millennial would laugh at
 
+## Project Organization
+
+**MANDATORY: Every project MUST follow proper folder structure and documentation organization**
+
+A well-organized project structure is essential for maintainability, collaboration, and professional presentation.
+
+### Standard Project Structure
+
+Every new project should follow this structure:
+
+```
+project-name/
+├── README.md                    # Main project documentation (living document)
+├── CLAUDE.md                   # Development guidelines (this file)
+├── src/                        # Source code
+│   ├── main/                   # Main application code
+│   └── lib/                    # Utility libraries and modules
+├── tests/                      # All test files
+│   ├── unit/                   # Unit tests
+│   ├── integration/            # Integration tests
+│   └── e2e/                    # End-to-end tests
+├── docs/                       # Project documentation
+│   ├── implementation/         # Implementation plans and phase docs
+│   ├── templates/              # GitHub issue templates, guides
+│   ├── architecture/           # System design documents
+│   └── user/                   # User guides and tutorials
+├── config/                     # Configuration files
+│   ├── .pre-commit-config.yaml
+│   └── environment configs
+└── scripts/                    # Build, deployment, utility scripts
+```
+
+### Documentation Organization Rules
+
+**NEVER scatter .md files in project root!**
+
+- **README.md**: Only in project root - main entry point documentation
+- **CLAUDE.md**: Only in project root - development guidelines
+- **Implementation docs**: Move to `docs/implementation/`
+- **Templates**: Move to `docs/templates/`
+- **Architecture docs**: Move to `docs/architecture/`
+- **User guides**: Move to `docs/user/`
+
+### README.md Management - LIVING DOCUMENT
+
+**The README.md must be actively maintained throughout the project lifecycle**
+
+#### README.md Required Sections
+
+Every README.md MUST include:
+
+```markdown
+# Project Name
+
+Brief description of what the project does (1-2 sentences)
+
+## Status
+- **Current Phase**: [Phase X: Description]
+- **Progress**: [X/Y phases completed]
+- **Last Updated**: [Date]
+
+## Quick Start
+[Essential commands to get running immediately]
+
+## Installation
+[Step-by-step setup instructions]
+
+## Usage
+[Basic usage examples with common commands]
+
+## Testing
+[How to run tests - must reference TDD practices]
+
+## Development
+[Link to CLAUDE.md and development workflow]
+
+## Contributing
+[Reference to GitHub issues workflow and TDD requirements]
+```
+
+#### README.md Maintenance Rules
+
+**CONTINUOUS UPDATES REQUIRED:**
+
+- **Every major feature**: Update Usage section with new capabilities
+- **Every phase completion**: Update Status section with progress
+- **Every breaking change**: Update Installation and Quick Start
+- **Every new dependency**: Update Installation requirements
+- **Project completion**: Add final status and usage summary
+
+**ACTIVE REMOVAL REQUIRED:**
+
+- **Remove outdated instructions** that no longer work
+- **Remove deprecated features** from usage examples
+- **Remove obsolete dependencies** from installation
+- **Remove completed TODO sections**
+- **Remove placeholder text** that was never updated
+
+#### README.md Anti-patterns (NEVER DO THIS)
+
+- ❌ Leaving placeholder text like "TODO: Add installation instructions"
+- ❌ Documenting features that don't exist yet
+- ❌ Including broken or outdated commands
+- ❌ Copying boilerplate without customization
+- ❌ Forgetting to update after major changes
+- ❌ Including implementation details (those go in docs/)
+
+### Project Cleanup Guidelines
+
+**Before marking any phase complete:**
+
+1. **Audit documentation location**: Move scattered .md files to proper directories
+2. **Update README.md**: Ensure all sections reflect current reality
+3. **Remove obsolete files**: Delete outdated documentation, unused templates
+4. **Consolidate duplicates**: Merge redundant documentation
+5. **Verify links**: Ensure all internal documentation links work
+
+### Folder Structure Examples
+
+#### ✅ Good Structure
+```
+vpn-manager/
+├── README.md
+├── CLAUDE.md
+├── src/
+│   ├── vpn
+│   ├── vpn-manager
+│   └── vpn-connector
+├── tests/
+├── docs/
+│   ├── implementation/
+│   │   ├── VPN_PORTING_IMPLEMENTATION_PLAN.md
+│   │   ├── PHASE_1_COMPLETE.md
+│   │   └── TESTING_IMPLEMENTATION.md
+│   └── templates/
+│       ├── github_issue_template.md
+│       └── pull_request_template.md
+└── config/
+    └── .pre-commit-config.yaml
+```
+
+#### ❌ Bad Structure (Current Issue)
+```
+vpn-manager/
+├── README.md
+├── CLAUDE.md
+├── VPN_PORTING_IMPLEMENTATION_PLAN.md  # Should be in docs/implementation/
+├── PHASE_2_COMPLETE.md                  # Should be in docs/implementation/
+├── PHASE_3_COMPLETE.md                  # Should be in docs/implementation/
+├── TESTING_IMPLEMENTATION.md            # Should be in docs/implementation/
+├── example_github_issue.md              # Should be in docs/templates/
+├── github_issue_template_with_tdd.md    # Should be in docs/templates/
+├── vpn                                  # Should be in src/
+├── vpn-manager                          # Should be in src/
+└── vpn-connector                        # Should be in src/
+```
+
+### Implementation Workflow Integration
+
+**Add to practical workflow (after Step 3: Install pre-commit):**
+
+**Step 4: Organize project structure**
+- Create proper folder structure if not exists
+- Move scattered documentation to appropriate directories
+- Update README.md with current project status
+- Remove any obsolete or placeholder documentation
+
 ## Core Development Principles
 
 ### Writing Code Standards
@@ -246,11 +413,12 @@ repos:
   1. **Create GitHub issue first** (mandatory step)
   2. `git checkout -b feat/issue-123-description`
   3. **Install and configure pre-commit hooks** (if not already done)
-  4. Commit in small, logical increments (all commits must pass pre-commit)
-  5. `git push` and open a draft PR early
-  6. Convert to ready PR when functionally complete and tests pass
-  7. **Update implementation plan** - mark phases as complete when finished
-  8. Merge after reviews and checks pass
+  4. **Organize project structure** - create folders, move docs, update README.md
+  5. Commit in small, logical increments (all commits must pass pre-commit)
+  6. `git push` and open a draft PR early
+  7. Convert to ready PR when functionally complete and tests pass
+  8. **Update implementation plan** - mark phases as complete when finished
+  9. Merge after reviews and checks pass
 
 ## Implementation Plan Management
 
