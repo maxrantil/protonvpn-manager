@@ -41,7 +41,7 @@
 
 All required packages are installed:
 - `openvpn` 2.6.14-1
-- `curl` 8.15.0-1  
+- `curl` 8.15.0-1
 - `bc` 1.08.2-1
 - `libnotify` 0.8.6-1
 - `iproute2` 6.16.0-2
@@ -60,7 +60,7 @@ All required packages are installed:
    ./vpn status
    ```
 
-3. **Profile Listing** 
+3. **Profile Listing**
    ```bash
    ./vpn list
    ```

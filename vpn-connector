@@ -1,5 +1,5 @@
 #!/bin/bash
-# ABOUTME: VPN connection establishment and profile management for Artix/Arch Linux  
+# ABOUTME: VPN connection establishment and profile management for Artix/Arch Linux
 # ABOUTME: Handles server selection, connection attempts, and performance testing
 
 VPN_DIR="$(dirname "$(realpath "$0")")"
@@ -24,19 +24,19 @@ check_internet() {
 
 check_dependencies() {
     local missing_deps=()
-    
+
     command -v openvpn >/dev/null || missing_deps+=("openvpn")
     command -v curl >/dev/null || missing_deps+=("curl")
     command -v bc >/dev/null || missing_deps+=("bc")
     command -v notify-send >/dev/null || missing_deps+=("libnotify")
     command -v ip >/dev/null || missing_deps+=("iproute2")
-    
+
     if [[ ${#missing_deps[@]} -gt 0 ]]; then
         echo -e "\033[1;31mError: Missing dependencies: ${missing_deps[*]}\033[0m"
         echo "Install with: sudo pacman -S ${missing_deps[*]}"
         return 1
     fi
-    
+
     return 0
 }
 
@@ -51,7 +51,7 @@ acquire_lock() {
             rm -f "$LOCK_FILE"
         fi
     fi
-    
+
     echo $$ > "$LOCK_FILE"
     return 0
 }
@@ -69,19 +69,19 @@ trap cleanup_on_exit EXIT
 list_profiles() {
     local filter="$1"
     local show_details="$2"
-    
+
     if [[ ! -d "$LOCATIONS_DIR" ]]; then
         echo -e "\033[1;31mError: Locations directory not found: $LOCATIONS_DIR\033[0m"
         return 1
     fi
-    
+
     local profiles
     if [[ -n "$filter" ]]; then
         profiles=$(find_profiles_by_country "$filter")
     else
         profiles=$(find "$LOCATIONS_DIR" -name "*.ovpn" 2>/dev/null | sort)
     fi
-    
+
     if [[ -z "$profiles" ]]; then
         if [[ -n "$filter" ]]; then
             echo -e "\033[1;33mNo VPN profiles found matching: $filter\033[0m"
@@ -91,36 +91,36 @@ list_profiles() {
         fi
         return 1
     fi
-    
+
     local count=0
     echo -e "\033[1;36mAvailable VPN Profiles:\033[0m"
     while IFS= read -r profile; do
         local name
         name=$(basename "$profile" .ovpn)
         ((count++))
-        
+
         if [[ "$show_details" == "detailed" ]]; then
             local server_ip country_info secure_core=""
             server_ip=$(grep -m1 "^remote " "$profile" | awk '{print $2}')
-            
+
             # Check for secure core indicators
             if echo "$name" | grep -iq "secure\|core"; then
                 secure_core=" [SECURE CORE]"
             fi
-            
+
             # Extract country info from filename
             if [[ "$name" =~ ^([a-z]{2})-([0-9]+) ]]; then
                 country_info=" (${BASH_REMATCH[1]^^})"
             else
                 country_info=""
             fi
-            
+
             printf "  %-3d %-30s %-15s%s%s\n" "$count" "$name" "${server_ip:-N/A}" "$country_info" "$secure_core"
         else
             echo "  $count. $name"
         fi
     done <<< "$profiles"
-    
+
     echo -e "\033[1;90mTotal: $count profiles\033[0m"
     return 0
 }
@@ -129,7 +129,7 @@ detect_secure_core_profiles() {
     find "$LOCATIONS_DIR" -name "*.ovpn" 2>/dev/null | while IFS= read -r profile; do
         local name
         name=$(basename "$profile" .ovpn)
-        
+
         # Check filename patterns for secure core indicators
         if echo "$name" | grep -iq "secure\|core\|tor"; then
             echo "$profile"
@@ -141,7 +141,7 @@ detect_secure_core_profiles() {
 
 interactive_profile_selection() {
     local filter="$1"
-    
+
     local profiles
     if [[ -n "$filter" ]]; then
         profiles=$(find_profiles_by_country "$filter")
@@ -150,104 +150,104 @@ interactive_profile_selection() {
         profiles=$(find "$LOCATIONS_DIR" -name "*.ovpn" 2>/dev/null | sort)
         echo -e "\033[1;36mAll available profiles:\033[0m"
     fi
-    
+
     if [[ -z "$profiles" ]]; then
         echo -e "\033[1;31mNo profiles found\033[0m"
         return 1
     fi
-    
+
     local profile_array=()
     local count=0
-    
+
     while IFS= read -r profile; do
         profile_array+=("$profile")
         local name
         name=$(basename "$profile" .ovpn)
         ((count++))
-        
+
         local secure_core=""
         if echo "$name" | grep -iq "secure\|core"; then
             secure_core=" [SECURE CORE]"
         fi
-        
+
         printf "  %-3d %s%s\n" "$count" "$name" "$secure_core"
     done <<< "$profiles"
-    
+
     echo
     echo -n "Select profile number (1-$count) or 'q' to quit: "
     read -r selection
-    
+
     if [[ "$selection" == "q" ]]; then
         echo "Selection cancelled"
         return 1
     fi
-    
+
     if ! [[ "$selection" =~ ^[0-9]+$ ]] || [[ "$selection" -lt 1 ]] || [[ "$selection" -gt "$count" ]]; then
         echo -e "\033[1;31mInvalid selection: $selection\033[0m"
         return 1
     fi
-    
+
     local selected_profile="${profile_array[$((selection-1))]}"
     echo -e "\033[1;32mSelected: $(basename "$selected_profile" .ovpn)\033[0m"
-    
+
     connect_to_profile "$selected_profile"
 }
 
 validate_country_code() {
     local country_code="$1"
-    
+
     # List of common country codes we support
     local supported_countries="se dk no nl de ch us uk fr ca jp au"
-    
+
     if [[ ${#country_code} -ne 2 ]]; then
         return 1
     fi
-    
+
     local code_lower
     code_lower=$(echo "$country_code" | tr '[:upper:]' '[:lower:]')
-    
+
     for supported in $supported_countries; do
         if [[ "$code_lower" == "$supported" ]]; then
             return 0
         fi
     done
-    
+
     return 1
 }
 
 find_profiles_by_country() {
     local country_code="$1"
-    
+
     if [[ -z "$country_code" ]]; then
         find "$LOCATIONS_DIR" -name "*.ovpn" 2>/dev/null | sort
         return
     fi
-    
+
     # Validate country code format
     if ! validate_country_code "$country_code"; then
         echo -e "\033[1;33mWarning: '$country_code' may not be a valid country code\033[0m" >&2
         echo -e "Supported: se, dk, no, nl, de, ch, us, uk, fr, ca, jp, au" >&2
     fi
-    
+
     country_code=$(echo "$country_code" | tr '[:upper:]' '[:lower:]')
     local results
-    
+
     # Primary pattern: country code prefix (se-*.ovpn)
     results=$(find "$LOCATIONS_DIR" -name "${country_code}-*.ovpn" 2>/dev/null)
-    
+
     # Secondary pattern: try variations like *_se_*, *SE*, etc.
     if [[ -z "$results" ]]; then
         local country_upper
         country_upper=$(echo "$country_code" | tr '[:lower:]' '[:upper:]')
-        
+
         # Try different naming patterns
         local patterns=(
             "*_${country_code}_*.ovpn"
-            "*${country_upper}*.ovpn"  
+            "*${country_upper}*.ovpn"
             "*-${country_code}*.ovpn"
             "*${country_code}[0-9]*.ovpn"
         )
-        
+
         for pattern in "${patterns[@]}"; do
             local matches
             matches=$(find "$LOCATIONS_DIR" -name "$pattern" 2>/dev/null)
@@ -257,12 +257,12 @@ find_profiles_by_country() {
             fi
         done
     fi
-    
+
     # Fallback: case-insensitive search in filenames
     if [[ -z "$results" ]]; then
         results=$(find "$LOCATIONS_DIR" -name "*.ovpn" 2>/dev/null | grep -i "$country_code")
     fi
-    
+
     echo "$results" | sort
 }
 
@@ -270,7 +270,7 @@ get_available_countries() {
     find "$LOCATIONS_DIR" -name "*.ovpn" 2>/dev/null | while IFS= read -r profile; do
         local name
         name=$(basename "$profile" .ovpn)
-        
+
         # Extract country code from common patterns
         if [[ "$name" =~ ^([a-z]{2})-[0-9] ]]; then
             echo "${BASH_REMATCH[1]}"
@@ -285,14 +285,14 @@ get_available_countries() {
 test_server_latency() {
     local server_ip="$1"
     local timeout=5
-    
+
     if [[ -z "$server_ip" ]]; then
         return 1
     fi
-    
+
     local ping_result
     ping_result=$(ping -c 3 -W $timeout "$server_ip" 2>/dev/null | grep "avg" | awk -F '/' '{print $5}')
-    
+
     if [[ -n "$ping_result" ]]; then
         echo "$ping_result"
         return 0
@@ -305,32 +305,32 @@ test_server_latency() {
 connect_to_profile() {
     local profile_path="$1"
     local max_attempts=3
-    
+
     if [[ ! -f "$profile_path" ]]; then
         echo -e "\033[1;31mError: Profile not found: $profile_path\033[0m"
         return 1
     fi
-    
+
     if [[ ! -f "$CREDENTIALS_FILE" ]]; then
         echo -e "\033[1;31mError: Credentials file not found: $CREDENTIALS_FILE\033[0m"
         echo "Create it with your VPN username and password (one per line)"
         return 1
     fi
-    
+
     local profile_name
     profile_name=$(basename "$profile_path" .ovpn)
-    
+
     echo -e "\033[1;33mConnecting to $profile_name...\033[0m"
     log_message "Attempting connection to $profile_name"
-    
+
     "$VPN_DIR/vpn-manager" stop >/dev/null 2>&1
     sleep 2
-    
+
     for attempt in $(seq 1 $max_attempts); do
         echo "  Attempt $attempt of $max_attempts"
-        
+
         notify-send "VPN Connector" "Connecting to $profile_name (attempt $attempt)" --icon=network-vpn 2>/dev/null || true
-        
+
         timeout 30 sudo openvpn \
             --config "$profile_path" \
             --auth-user-pass "$CREDENTIALS_FILE" \
@@ -338,43 +338,43 @@ connect_to_profile() {
             --writepid /var/run/openvpn.pid \
             --log /tmp/openvpn.log \
             --verb 3
-        
+
         sleep 10
-        
+
         if "$VPN_DIR/vpn-manager" status | grep -q "CONNECTED"; then
             echo -e "\033[1;32m✓ Successfully connected to $profile_name\033[0m"
             log_message "Successfully connected to $profile_name on attempt $attempt"
-            
+
             notify-send "VPN Connector" "Connected to $profile_name" --icon=network-vpn 2>/dev/null || true
-            
+
             pkill -RTMIN+4 dwmblocks 2>/dev/null || true
-            
+
             return 0
         fi
-        
+
         echo -e "\033[1;33m  Connection attempt $attempt failed\033[0m"
         log_message "Connection attempt $attempt failed for $profile_name"
-        
+
         if [[ $attempt -lt $max_attempts ]]; then
             echo "  Waiting before retry..."
             sleep 5
         fi
     done
-    
+
     echo -e "\033[1;31m✗ Failed to connect to $profile_name after $max_attempts attempts\033[0m"
     log_message "Failed to connect to $profile_name after $max_attempts attempts"
-    
+
     notify-send "VPN Connector" "Failed to connect to $profile_name" --icon=dialog-error 2>/dev/null || true
-    
+
     return 1
 }
 
 connect_random() {
     local country_code="$1"
-    
+
     local profiles
     profiles=$(find_profiles_by_country "$country_code")
-    
+
     if [[ -z "$profiles" ]]; then
         if [[ -n "$country_code" ]]; then
             echo -e "\033[1;31mNo profiles found for country: $country_code\033[0m"
@@ -383,17 +383,17 @@ connect_random() {
         fi
         return 1
     fi
-    
+
     local profile_array=()
     while IFS= read -r profile; do
         profile_array+=("$profile")
     done <<< "$profiles"
-    
+
     local random_index=$((RANDOM % ${#profile_array[@]}))
     local selected_profile="${profile_array[$random_index]}"
-    
+
     echo -e "\033[1;36mSelected profile: $(basename "$selected_profile" .ovpn)\033[0m"
-    
+
     connect_to_profile "$selected_profile"
 }
 
@@ -401,37 +401,37 @@ load_performance_cache() {
     if [[ ! -f "$PERFORMANCE_CACHE" ]]; then
         return 1
     fi
-    
+
     # Check if cache is older than 2 hours (7200 seconds)
     local cache_age
     cache_age=$(($(date +%s) - $(stat -f %m "$PERFORMANCE_CACHE" 2>/dev/null || stat -c %Y "$PERFORMANCE_CACHE" 2>/dev/null || echo 0)))
-    
+
     if [[ $cache_age -gt 7200 ]]; then
         echo -e "\033[1;33mPerformance cache expired (${cache_age}s old), will refresh\033[0m"
         return 1
     fi
-    
+
     echo -e "\033[1;36mUsing cached performance data (${cache_age}s old)\033[0m"
     return 0
 }
 
 save_performance_cache() {
     local cache_data="$1"
-    
+
     echo "$cache_data" > "$PERFORMANCE_CACHE"
     log_message "Performance cache updated with $(echo "$cache_data" | wc -l) entries"
 }
 
 get_cached_best_profile() {
     local country_filter="$1"
-    
+
     if ! load_performance_cache; then
         return 1
     fi
-    
+
     local best_profile=""
     local best_latency=999
-    
+
     while IFS='|' read -r profile latency timestamp; do
         if [[ -n "$country_filter" ]]; then
             local profile_name
@@ -440,19 +440,19 @@ get_cached_best_profile() {
                 continue
             fi
         fi
-        
+
         if [[ -f "$profile" ]] && (( $(echo "$latency < $best_latency" | bc -l) )); then
             best_latency="$latency"
             best_profile="$profile"
         fi
     done < "$PERFORMANCE_CACHE"
-    
+
     if [[ -n "$best_profile" ]]; then
         echo -e "\033[1;32mCached best server: $(basename "$best_profile" .ovpn) (${best_latency}ms)\033[0m"
         echo "$best_profile"
         return 0
     fi
-    
+
     return 1
 }
 
@@ -460,50 +460,50 @@ test_and_cache_performance() {
     local country_filter="$1"
     local max_tests="${2:-8}"
     local cache_data=""
-    
+
     echo -e "\033[1;36m╔════════════════════════════════════════╗\033[0m"
-    echo -e "\033[1;36m║       Testing VPN Server Performance   ║\033[0m"  
+    echo -e "\033[1;36m║       Testing VPN Server Performance   ║\033[0m"
     echo -e "\033[1;36m╚════════════════════════════════════════╝\033[0m"
     echo
-    
+
     if ! check_internet; then
         return 1
     fi
-    
+
     local profiles
     profiles=$(find_profiles_by_country "$country_filter")
-    
+
     if [[ -z "$profiles" ]]; then
         echo -e "\033[1;31mNo VPN profiles available for testing\033[0m"
         return 1
     fi
-    
+
     echo -e "\033[1;33mTesting servers (max $max_tests)...\033[0m"
-    
+
     local best_profile=""
     local best_latency=999
     local test_count=0
     local timestamp
     timestamp=$(date +%s)
-    
+
     while IFS= read -r profile && [[ $test_count -lt $max_tests ]]; do
         local profile_name
         profile_name=$(basename "$profile" .ovpn)
-        
+
         echo -n "  Testing $profile_name... "
-        
+
         local server_ip
         server_ip=$(grep -m1 "^remote " "$profile" | awk '{print $2}')
-        
+
         if [[ -n "$server_ip" ]]; then
             local latency
             latency=$(test_server_latency "$server_ip")
-            
+
             echo "${latency}ms"
-            
+
             # Add to cache data
             cache_data="${cache_data}${profile}|${latency}|${timestamp}\n"
-            
+
             if (( $(echo "$latency < $best_latency" | bc -l) )); then
                 best_latency="$latency"
                 best_profile="$profile"
@@ -512,17 +512,17 @@ test_and_cache_performance() {
             echo "Unable to extract server IP"
             cache_data="${cache_data}${profile}|999|${timestamp}\n"
         fi
-        
+
         ((test_count++))
-        
+
     done <<< "$profiles"
-    
+
     # Save performance data to cache
     if [[ -n "$cache_data" ]]; then
         printf "%b" "$cache_data" | head -n -1 > "$PERFORMANCE_CACHE"
         log_message "Performance cache updated with $test_count entries"
     fi
-    
+
     if [[ -n "$best_profile" ]]; then
         echo
         echo -e "\033[1;32mBest server found: $(basename "$best_profile" .ovpn) (${best_latency}ms)\033[0m"
@@ -537,15 +537,15 @@ test_and_cache_performance() {
 best_server_connect() {
     local use_cache="$1"
     local country_filter="$2"
-    
+
     local best_profile=""
-    
+
     if [[ "$use_cache" == "fast" ]] && best_profile=$(get_cached_best_profile "$country_filter"); then
         echo -e "\033[1;36mUsing cached performance data for fast connection\033[0m"
     else
         best_profile=$(test_and_cache_performance "$country_filter")
     fi
-    
+
     if [[ -n "$best_profile" ]]; then
         echo
         connect_to_profile "$best_profile"
@@ -554,38 +554,61 @@ best_server_connect() {
     fi
 }
 
+secure_core_connect() {
+    echo -e "\033[1;36mSecure core server selection\033[0m"
+    local secure_profiles
+    secure_profiles=$(detect_secure_core_profiles)
+
+    if [[ -z "$secure_profiles" ]]; then
+        echo -e "\033[1;33mNo secure core profiles detected, using regular profiles\033[0m"
+        connect_random
+    else
+        echo -e "\033[1;32mFound $(echo "$secure_profiles" | wc -l) secure core profiles\033[0m"
+        local profile_array=()
+        while IFS= read -r profile; do
+            profile_array+=("$profile")
+        done <<< "$secure_profiles"
+
+        local random_index=$((RANDOM % ${#profile_array[@]}))
+        local selected_profile="${profile_array[$random_index]}"
+
+        echo -e "\033[1;36mSelected secure core: $(basename "$selected_profile" .ovpn)\033[0m"
+        connect_to_profile "$selected_profile"
+    fi
+}
+
 case "$1" in
     "connect"|"c")
         if ! check_dependencies; then
             exit 1
         fi
-        
+
         if ! acquire_lock; then
             exit 1
         fi
-        
+
         connect_random "$2"
         ;;
     "best"|"b")
         if ! check_dependencies; then
             exit 1
         fi
-        
+
         if ! acquire_lock; then
             exit 1
         fi
-        
+
         best_server_connect "full" "$2"
         ;;
     "fast"|"f")
         if ! check_dependencies; then
             exit 1
         fi
-        
+
         if ! acquire_lock; then
             exit 1
         fi
-        
+
         echo -e "\033[1;33mFast connect mode (using cached results if available)\033[0m"
         best_server_connect "fast" "$2"
         ;;
@@ -593,41 +616,22 @@ case "$1" in
         if ! check_dependencies; then
             exit 1
         fi
-        
+
         if ! acquire_lock; then
             exit 1
         fi
-        
-        echo -e "\033[1;36mSecure core server selection\033[0m"
-        local secure_profiles
-        secure_profiles=$(detect_secure_core_profiles)
-        
-        if [[ -z "$secure_profiles" ]]; then
-            echo -e "\033[1;33mNo secure core profiles detected, using regular profiles\033[0m"
-            connect_random
-        else
-            echo -e "\033[1;32mFound $(echo "$secure_profiles" | wc -l) secure core profiles\033[0m"
-            local profile_array=()
-            while IFS= read -r profile; do
-                profile_array+=("$profile")
-            done <<< "$secure_profiles"
-            
-            local random_index=$((RANDOM % ${#profile_array[@]}))
-            local selected_profile="${profile_array[$random_index]}"
-            
-            echo -e "\033[1;36mSelected secure core: $(basename "$selected_profile" .ovpn)\033[0m"
-            connect_to_profile "$selected_profile"
-        fi
+
+        secure_core_connect
         ;;
     "interactive"|"i")
         if ! check_dependencies; then
             exit 1
         fi
-        
+
         if ! acquire_lock; then
             exit 1
         fi
-        
+
         interactive_profile_selection "$2"
         ;;
     "countries")
@@ -656,17 +660,16 @@ case "$1" in
                 ;;
             "info")
                 if [[ -f "$PERFORMANCE_CACHE" ]]; then
-                    local cache_age cache_size cache_entries
                     cache_age=$(($(date +%s) - $(stat -c %Y "$PERFORMANCE_CACHE" 2>/dev/null || echo 0)))
                     cache_size=$(du -h "$PERFORMANCE_CACHE" 2>/dev/null | cut -f1)
                     cache_entries=$(wc -l < "$PERFORMANCE_CACHE" 2>/dev/null)
-                    
+
                     echo -e "\033[1;36mPerformance Cache Information:\033[0m"
                     echo "  File: $PERFORMANCE_CACHE"
                     echo "  Age: ${cache_age}s ($(( cache_age / 60 ))m $(( cache_age % 60 ))s)"
                     echo "  Size: $cache_size"
                     echo "  Entries: $cache_entries"
-                    
+
                     if [[ $cache_age -gt 7200 ]]; then
                         echo -e "  \033[1;33mStatus: Expired (>2 hours)\033[0m"
                     else
@@ -686,22 +689,22 @@ case "$1" in
             echo -e "\033[1;31mDependency check failed\033[0m"
             exit 1
         fi
-        
+
         if ! check_internet; then
             echo -e "\033[1;31mInternet connectivity test failed\033[0m"
             exit 1
         fi
-        
+
         if [[ ! -f "$CREDENTIALS_FILE" ]]; then
             echo -e "\033[1;31mCredentials file missing: $CREDENTIALS_FILE\033[0m"
             exit 1
         fi
-        
+
         if ! list_profiles >/dev/null; then
             echo -e "\033[1;31mNo VPN profiles available\033[0m"
             exit 1
         fi
-        
+
         echo -e "\033[1;32m✓ All VPN connector tests passed\033[0m"
         ;;
     *)
