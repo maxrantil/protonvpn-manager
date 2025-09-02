@@ -110,7 +110,7 @@ case "$1" in
     "list"|"l")
         if [[ -d "$LOCATIONS_DIR" ]]; then
             echo -e "\033[1;33mAvailable VPN Profiles:\033[0m"
-            ls -1 "$LOCATIONS_DIR"/*.ovpn 2>/dev/null | sed 's|.*/||; s|\.ovpn$||' | sort
+            find "$LOCATIONS_DIR" -name "*.ovpn" 2>/dev/null | sed 's|.*/||; s|\.ovpn$||' | sort
         else
             echo -e "\033[1;31mError: Locations directory not found\033[0m"
             exit 1
