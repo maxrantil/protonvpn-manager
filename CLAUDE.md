@@ -58,45 +58,109 @@ When you are trying to fix a bug or compilation error or any other issue, YOU MU
 
 NEVER name things as 'improved' or 'new' or 'enhanced', etc. Code naming should be evergreen. What is new today will be "old" someday.
 
+## Test-Driven Development (TDD) - MANDATORY
+
+**CRITICAL: WE PRACTICE STRICT TDD - NO EXCEPTIONS**
+
+Every single line of production code MUST be written to make a failing test pass. This is non-negotiable.
+
+### TDD Process (Follow This Exactly)
+
+1. **RED** - Write a failing test that defines the desired function or improvement
+2. **GREEN** - Write the minimal code needed to make the test pass (nothing more)
+3. **REFACTOR** - Improve the code while keeping tests green
+4. **REPEAT** - Continue the cycle for each new feature or bugfix
+
+### TDD Implementation Steps
+
+**Before writing ANY production code:**
+
+1. Write a failing test that defines what you want to build
+2. Run the test to confirm it fails as expected (RED phase)
+3. Write the smallest amount of code to make the test pass
+4. Run the test to confirm success (GREEN phase)
+5. Refactor the code to improve design while keeping tests green
+6. Repeat this cycle for each new feature or bugfix
+
+### TDD Enforcement Rules
+
+- **NEVER write production code without a failing test first**
+- **NEVER write more code than needed to make the test pass**
+- **NEVER skip the refactor step**
+- **Tests must fail for the right reason** (not syntax errors)
+- **Each test should focus on one specific behavior**
+- **All tests must pass before moving to the next feature**
+
+### TDD in Practice Example
+
+```bash
+# 1. Write failing test
+echo "Testing country code validation..."
+test_validates_country_code() {
+    # This should fail initially
+    assert_true validate_country "se"
+}
+
+# 2. Run test - should fail with "validate_country command not found"
+
+# 3. Write minimal implementation
+validate_country() {
+    case "$1" in
+        se|dk|nl) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+# 4. Run test - should now pass
+# 5. Refactor if needed while keeping tests green
+# 6. Move to next requirement
+```
+
+### TDD Checklist for Every Task
+
+Before starting work, create this checklist in your GitHub issue:
+
+- [ ] Tests written first (RED phase)
+- [ ] Tests fail for the right reason
+- [ ] Minimal code written to pass tests (GREEN phase)
+- [ ] Code refactored while keeping tests green
+- [ ] All tests pass before considering task complete
+- [ ] No production code written without tests
+
 Getting help
 
 ALWAYS ask for clarification rather than making assumptions.
 
 If you're having trouble with something, it's ok to stop and ask for help. Especially if it's something your human might be better at.
 
-Testing
+Testing Requirements
+
+**ALL TESTING FOLLOWS TDD PRINCIPLES** (see TDD section above)
 
 Tests MUST cover the functionality being implemented.
 
 NEVER ignore the output of the system or the tests - Logs and messages often contain CRITICAL information.
 
-TEST OUTPUT MUST BE PRISTINE TO PASS
+**TEST OUTPUT MUST BE PRISTINE TO PASS**
 
 If the logs are supposed to contain errors, capture and test it.
 
-NO EXCEPTIONS POLICY: Under no circumstances should you mark any test type as "not applicable". Every project, regardless of size or complexity, MUST have unit tests, integration tests, AND end-to-end tests. If you believe a test type doesn't apply, you need the human to say exactly "I AUTHORIZE YOU TO SKIP WRITING TESTS THIS TIME"
+**NO EXCEPTIONS POLICY**: Under no circumstances should you mark any test type as "not applicable". Every project, regardless of size or complexity, MUST have unit tests, integration tests, AND end-to-end tests. If you believe a test type doesn't apply, you need the human to say exactly "I AUTHORIZE YOU TO SKIP WRITING TESTS THIS TIME"
 
-We practice TDD. That means:
+### Required Test Types
 
-Write tests before writing the implementation code
+Every feature must have:
+- **Unit Tests**: Test individual functions and components in isolation
+- **Integration Tests**: Test component interactions and interfaces
+- **End-to-End Tests**: Test complete user workflows and scenarios
 
-Only write enough code to make the failing test pass
+### Test Quality Standards
 
-Refactor code continuously while ensuring tests still pass
-
-TDD Implementation Process
-
-Write a failing test that defines a desired function or improvement
-
-Run the test to confirm it fails as expected
-
-Write minimal code to make the test pass
-
-Run the test to confirm success
-
-Refactor code to improve design while keeping tests green
-
-Repeat the cycle for each new feature or bugfix
+- Tests must be written BEFORE implementation code (TDD requirement)
+- Test names should clearly describe what behavior is being tested
+- Each test should focus on one specific aspect of functionality
+- Tests should be fast, reliable, and independent of each other
+- All tests must pass before code can be considered complete
 
 Specific Technologies
 
