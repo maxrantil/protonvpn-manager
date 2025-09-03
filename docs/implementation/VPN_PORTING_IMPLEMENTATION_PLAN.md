@@ -159,6 +159,17 @@
   - **Complete when**: `vpn custom /path/file.ovpn` works with any valid profile
   - **Depends on**: 5.2
 
+### 5.4 WireGuard Protocol Support
+- [ ] **Implement WireGuard alongside OpenVPN**
+  - [ ] Add protocol detection for .conf vs .ovpn files
+  - [ ] Implement `wg-quick` command integration
+  - [ ] Test WireGuard config parsing and validation
+  - [ ] Add protocol selection logic in vpn-connector
+  - [ ] Verify WireGuard connection establishment and teardown
+  - [ ] Test performance comparison between OpenVPN and WireGuard
+  - **Complete when**: `vpn connect` works with both .ovpn and .conf files seamlessly
+  - **Depends on**: 5.3, Phase 4 (Performance Testing)
+
 ---
 
 ## **PHASE 6: SYSTEM INTEGRATION**
