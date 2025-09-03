@@ -104,16 +104,27 @@ list_profiles() {
             local server_ip country_info secure_core=""
             server_ip=$(grep -m1 "^remote " "$profile" | awk '{print $2}')
 
-            # Check for secure core indicators
-            if echo "$name" | grep -iq "secure\|core"; then
+            # Check for secure core indicators using two-country-code pattern
+            if echo "$name" | grep -E '^[a-z]{2}-[a-z]{2}-[0-9]+' >/dev/null; then
+                # Secure core: extract entry and exit countries
+                if [[ "$name" =~ ^([a-z]{2})-([a-z]{2})-([0-9]+) ]]; then
+                    country_info=" (${BASH_REMATCH[1]^^} → ${BASH_REMATCH[2]^^})"
+                    secure_core=" [SECURE CORE]"
+                fi
+            elif echo "$name" | grep -iq "secure\|core"; then
+                # Legacy secure core detection
                 secure_core=" [SECURE CORE]"
-            fi
-
-            # Extract country info from filename
-            if [[ "$name" =~ ^([a-z]{2})-([0-9]+) ]]; then
-                country_info=" (${BASH_REMATCH[1]^^})"
+                # Extract country info from filename for legacy patterns
+                if [[ "$name" =~ ^([a-z]{2})-([0-9]+) ]]; then
+                    country_info=" (${BASH_REMATCH[1]^^})"
+                fi
             else
-                country_info=""
+                # Normal profile: extract single country
+                if [[ "$name" =~ ^([a-z]{2})-([0-9]+) ]]; then
+                    country_info=" (${BASH_REMATCH[1]^^})"
+                else
+                    country_info=""
+                fi
             fi
 
             printf "  %-3d %-30s %-15s%s%s\n" "$count" "$name" "${server_ip:-N/A}" "$country_info" "$secure_core"
@@ -131,8 +142,12 @@ detect_secure_core_profiles() {
         local name
         name=$(basename "$profile" .ovpn)
 
-        # Check filename patterns for secure core indicators
-        if echo "$name" | grep -iq "secure\|core\|tor"; then
+        # Check for two-country-code pattern: [country1]-[country2]-[number]
+        # Examples: is-br-01, se-au-01, ch-us-10
+        if echo "$name" | grep -E '^[a-z]{2}-[a-z]{2}-[0-9]+' >/dev/null; then
+            echo "$profile"
+        # Fallback: check for legacy secure core indicators in filename or content
+        elif echo "$name" | grep -iq "secure\|core\|tor"; then
             echo "$profile"
         elif grep -q "# Secure Core" "$profile" 2>/dev/null; then
             echo "$profile"
@@ -318,13 +333,25 @@ connect_to_profile() {
         return 1
     fi
 
+    # CRITICAL: Check for ANY existing processes before connecting
+    local existing_processes
+    existing_processes=$(pgrep -f "openvpn.*config" 2>/dev/null | wc -l)
+
+    if [[ $existing_processes -gt 0 ]]; then
+        echo -e "\033[1;31m⚠️  BLOCKED: $existing_processes OpenVPN process(es) already running!\033[0m"
+        echo -e "\033[1;33m   Multiple processes cause overheating and high CPU usage.\033[0m"
+        echo -e "\033[1;33m   Run 'vpn cleanup' first, then try again.\033[0m"
+        return 1
+    fi
+
     local profile_name
     profile_name=$(basename "$profile_path" .ovpn)
 
     echo -e "\033[1;33mConnecting to $profile_name...\033[0m"
     log_message "Attempting connection to $profile_name"
 
-    "$VPN_DIR/vpn-manager" stop >/dev/null 2>&1
+    # Double-check: ensure clean state before connecting
+    "$VPN_DIR/vpn-manager" cleanup >/dev/null 2>&1
     sleep 2
 
     for attempt in $(seq 1 $max_attempts); do
