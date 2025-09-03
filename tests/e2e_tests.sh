@@ -17,7 +17,7 @@ test_complete_workflow_dry_run() {
     mock_command "ping" "PING 8.8.8.8: 64 bytes from 8.8.8.8: icmp_seq=1 ttl=54 time=25.2 ms\n--- 8.8.8.8 ping statistics ---\n1 packets transmitted, 1 received, 0% packet loss\nround-trip min/avg/max/stddev = 25.2/25.2/25.2/0.0 ms" 0
     mock_command "curl" "192.168.1.50" 0
 
-    local vpn_script="$PROJECT_DIR/vpn"
+    local vpn_script="$PROJECT_DIR/src/vpn"
 
     # Test the complete workflow
     log_test "INFO" "$CURRENT_TEST: Testing help command"
@@ -55,7 +55,7 @@ test_profile_management_workflow() {
 
     setup_test_env
 
-    local connector_script="$PROJECT_DIR/vpn-connector"
+    local connector_script="$PROJECT_DIR/src/vpn-connector"
 
     # Test profile listing
     LOCATIONS_DIR="$TEST_LOCATIONS_DIR" "$connector_script" list > /tmp/profile_list 2>/dev/null || true
@@ -99,7 +99,7 @@ test_profile_management_workflow() {
 test_cache_management_workflow() {
     start_test "Cache Management Workflow"
 
-    local connector_script="$PROJECT_DIR/vpn-connector"
+    local connector_script="$PROJECT_DIR/src/vpn-connector"
 
     # Test cache info when no cache exists
     local cache_info
@@ -137,7 +137,7 @@ test_cache_management_workflow() {
 test_error_recovery_scenarios() {
     start_test "Error Recovery Scenarios"
 
-    local connector_script="$PROJECT_DIR/vpn-connector"
+    local connector_script="$PROJECT_DIR/src/vpn-connector"
 
     # Test behavior with missing locations directory
     LOCATIONS_DIR="/nonexistent" error_output=$("$connector_script" list 2>&1) || true
@@ -215,7 +215,7 @@ test_performance_scenarios() {
     # Mock ping for performance testing
     mock_command "ping" "PING 192.168.1.100: 64 bytes from 192.168.1.100: icmp_seq=1 ttl=64 time=25.2 ms\nround-trip min/avg/max/stddev = 25.2/25.2/25.2/0.0 ms" 0
 
-    local connector_script="$PROJECT_DIR/vpn-connector"
+    local connector_script="$PROJECT_DIR/src/vpn-connector"
 
     # Test that large numbers of profiles can be handled
     for i in {1..20}; do
@@ -257,7 +257,7 @@ test_concurrent_operations() {
 
     setup_test_env
 
-    local connector_script="$PROJECT_DIR/vpn-connector"
+    local connector_script="$PROJECT_DIR/src/vpn-connector"
 
     # Test that lock files prevent concurrent operations
     echo "$$" > "/tmp/vpn_connect.lock"

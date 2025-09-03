@@ -11,6 +11,7 @@ source "$TEST_DIR/test_framework.sh"
 ENABLE_UNIT_TESTS=1
 ENABLE_INTEGRATION_TESTS=1
 ENABLE_E2E_TESTS=1
+ENABLE_REALISTIC_TESTS=1
 VERBOSE=0
 FAIL_FAST=0
 
@@ -22,6 +23,7 @@ usage() {
     echo "  -u, --unit-only      Run only unit tests"
     echo "  -i, --integration-only Run only integration tests"
     echo "  -e, --e2e-only       Run only end-to-end tests"
+    echo "  -r, --realistic-only Run only realistic connection tests"
     echo "  -v, --verbose        Enable verbose output"
     echo "  -f, --fail-fast      Stop on first test failure"
     echo "  -h, --help           Show this help message"
@@ -39,18 +41,28 @@ parse_arguments() {
                 ENABLE_UNIT_TESTS=1
                 ENABLE_INTEGRATION_TESTS=0
                 ENABLE_E2E_TESTS=0
+                ENABLE_REALISTIC_TESTS=0
                 shift
                 ;;
             -i|--integration-only)
                 ENABLE_UNIT_TESTS=0
                 ENABLE_INTEGRATION_TESTS=1
                 ENABLE_E2E_TESTS=0
+                ENABLE_REALISTIC_TESTS=0
                 shift
                 ;;
             -e|--e2e-only)
                 ENABLE_UNIT_TESTS=0
                 ENABLE_INTEGRATION_TESTS=0
                 ENABLE_E2E_TESTS=1
+                ENABLE_REALISTIC_TESTS=0
+                shift
+                ;;
+            -r|--realistic-only)
+                ENABLE_UNIT_TESTS=0
+                ENABLE_INTEGRATION_TESTS=0
+                ENABLE_E2E_TESTS=0
+                ENABLE_REALISTIC_TESTS=1
                 shift
                 ;;
             -v|--verbose)
@@ -93,18 +105,18 @@ check_prerequisites() {
     fi
 
     # Check project structure
-    if [[ ! -f "$PROJECT_DIR/vpn" ]]; then
-        log_test "FAIL" "VPN script not found at $PROJECT_DIR/vpn"
+    if [[ ! -f "$PROJECT_DIR/src/vpn" ]]; then
+        log_test "FAIL" "VPN script not found at $PROJECT_DIR/src/vpn"
         return 1
     fi
 
-    if [[ ! -f "$PROJECT_DIR/vpn-manager" ]]; then
-        log_test "FAIL" "VPN manager not found at $PROJECT_DIR/vpn-manager"
+    if [[ ! -f "$PROJECT_DIR/src/vpn-manager" ]]; then
+        log_test "FAIL" "VPN manager not found at $PROJECT_DIR/src/vpn-manager"
         return 1
     fi
 
-    if [[ ! -f "$PROJECT_DIR/vpn-connector" ]]; then
-        log_test "FAIL" "VPN connector not found at $PROJECT_DIR/vpn-connector"
+    if [[ ! -f "$PROJECT_DIR/src/vpn-connector" ]]; then
+        log_test "FAIL" "VPN connector not found at $PROJECT_DIR/src/vpn-connector"
         return 1
     fi
 
@@ -257,6 +269,16 @@ main() {
 
     if [[ $ENABLE_E2E_TESTS -eq 1 ]]; then
         if ! run_test_suite "End-to-End Tests" "$TEST_DIR/e2e_tests.sh"; then
+            overall_exit_code=1
+            if [[ $FAIL_FAST -eq 1 ]]; then
+                generate_test_report
+                exit $overall_exit_code
+            fi
+        fi
+    fi
+
+    if [[ $ENABLE_REALISTIC_TESTS -eq 1 ]]; then
+        if ! run_test_suite "Realistic Connection Tests" "$TEST_DIR/realistic_connection_tests.sh"; then
             overall_exit_code=1
             if [[ $FAIL_FAST -eq 1 ]]; then
                 generate_test_report
