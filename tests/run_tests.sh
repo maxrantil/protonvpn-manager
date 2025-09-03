@@ -12,6 +12,7 @@ ENABLE_UNIT_TESTS=1
 ENABLE_INTEGRATION_TESTS=1
 ENABLE_E2E_TESTS=1
 ENABLE_REALISTIC_TESTS=1
+ENABLE_SAFETY_TESTS=1
 VERBOSE=0
 FAIL_FAST=0
 
@@ -24,6 +25,7 @@ usage() {
     echo "  -i, --integration-only Run only integration tests"
     echo "  -e, --e2e-only       Run only end-to-end tests"
     echo "  -r, --realistic-only Run only realistic connection tests"
+    echo "  -s, --safety-only    Run only process safety tests"
     echo "  -v, --verbose        Enable verbose output"
     echo "  -f, --fail-fast      Stop on first test failure"
     echo "  -h, --help           Show this help message"
@@ -42,6 +44,7 @@ parse_arguments() {
                 ENABLE_INTEGRATION_TESTS=0
                 ENABLE_E2E_TESTS=0
                 ENABLE_REALISTIC_TESTS=0
+                ENABLE_SAFETY_TESTS=0
                 shift
                 ;;
             -i|--integration-only)
@@ -49,6 +52,7 @@ parse_arguments() {
                 ENABLE_INTEGRATION_TESTS=1
                 ENABLE_E2E_TESTS=0
                 ENABLE_REALISTIC_TESTS=0
+                ENABLE_SAFETY_TESTS=0
                 shift
                 ;;
             -e|--e2e-only)
@@ -56,6 +60,7 @@ parse_arguments() {
                 ENABLE_INTEGRATION_TESTS=0
                 ENABLE_E2E_TESTS=1
                 ENABLE_REALISTIC_TESTS=0
+                ENABLE_SAFETY_TESTS=0
                 shift
                 ;;
             -r|--realistic-only)
@@ -63,6 +68,15 @@ parse_arguments() {
                 ENABLE_INTEGRATION_TESTS=0
                 ENABLE_E2E_TESTS=0
                 ENABLE_REALISTIC_TESTS=1
+                ENABLE_SAFETY_TESTS=0
+                shift
+                ;;
+            -s|--safety-only)
+                ENABLE_UNIT_TESTS=0
+                ENABLE_INTEGRATION_TESTS=0
+                ENABLE_E2E_TESTS=0
+                ENABLE_REALISTIC_TESTS=0
+                ENABLE_SAFETY_TESTS=1
                 shift
                 ;;
             -v|--verbose)
@@ -206,6 +220,18 @@ generate_test_report() {
         echo "  ✗ End-to-End Tests: Disabled"
     fi
 
+    if [[ $ENABLE_REALISTIC_TESTS -eq 1 ]]; then
+        echo "  ✓ Realistic Connection Tests: Enabled"
+    else
+        echo "  ✗ Realistic Connection Tests: Disabled"
+    fi
+
+    if [[ $ENABLE_SAFETY_TESTS -eq 1 ]]; then
+        echo "  ✓ Process Safety Tests: Enabled"
+    else
+        echo "  ✗ Process Safety Tests: Disabled"
+    fi
+
     echo ""
     echo "Overall Statistics:"
     echo "  Total Tests: $total_tests"
@@ -279,6 +305,16 @@ main() {
 
     if [[ $ENABLE_REALISTIC_TESTS -eq 1 ]]; then
         if ! run_test_suite "Realistic Connection Tests" "$TEST_DIR/realistic_connection_tests.sh"; then
+            overall_exit_code=1
+            if [[ $FAIL_FAST -eq 1 ]]; then
+                generate_test_report
+                exit $overall_exit_code
+            fi
+        fi
+    fi
+
+    if [[ $ENABLE_SAFETY_TESTS -eq 1 ]]; then
+        if ! run_test_suite "Process Safety Tests" "$TEST_DIR/process_safety_tests.sh"; then
             overall_exit_code=1
             if [[ $FAIL_FAST -eq 1 ]]; then
                 generate_test_report
