@@ -218,6 +218,50 @@ test_working_directory_independence() {
     cd "$original_pwd" || exit 1
 }
 
+test_multiple_connection_prevention_regression() {
+    start_test "Multiple Connection Prevention (Regression Test)"
+
+    setup_test_env
+
+    # This test prevents regression of the multiple process accumulation issue
+    # that was causing overheating during development
+
+    local vpn_script="$PROJECT_DIR/src/vpn"
+
+    # Mock a clean state first
+    mock_command "pgrep" "" 1  # No processes initially
+    mock_command "openvpn" "Mock OpenVPN started" 0
+    mock_command "sudo" "Mock sudo" 0
+
+    # Start first connection (should work)
+    local first_connection
+    first_connection=$(timeout 10 "$vpn_script" connect se 2>&1) || true
+
+    # Now mock that a process exists
+    cleanup_mocks
+    mock_command "pgrep" "12345" 0  # One process exists
+
+    # Attempt second connection (should be blocked)
+    local second_connection
+    second_connection=$(timeout 5 "$vpn_script" connect dk 2>&1) || true
+
+    # Verify second connection was blocked
+    assert_contains "$second_connection" "BLOCKED" "Second connection should be blocked"
+    assert_contains "$second_connection" "already running" "Should mention existing process"
+
+    # Verify no accumulation occurred
+    if ! echo "$second_connection" | grep -q "Connecting to"; then
+        log_test "PASS" "$CURRENT_TEST: Process accumulation prevention works"
+        ((TESTS_PASSED++))
+    else
+        log_test "FAIL" "$CURRENT_TEST: REGRESSION - Multiple connections allowed!"
+        FAILED_TESTS+=("$CURRENT_TEST: multiple connection prevention regression")
+        ((TESTS_FAILED++))
+    fi
+
+    cleanup_mocks
+}
+
 # Run all realistic connection tests
 run_realistic_connection_tests() {
     log_test "INFO" "Starting Realistic Connection Tests"
@@ -232,6 +276,7 @@ run_realistic_connection_tests() {
     test_credentials_file_access
     test_cleanup_and_reconnection
     test_working_directory_independence
+    test_multiple_connection_prevention_regression
 
     return 0
 }
