@@ -10,7 +10,7 @@ source "$TEST_DIR/test_framework.sh"
 test_cli_interface() {
     start_test "CLI Interface Integration"
 
-    local vpn_script="$PROJECT_DIR/vpn"
+    local vpn_script="$PROJECT_DIR/src/vpn"
 
     # Test help command
     local help_output
@@ -37,7 +37,7 @@ test_script_communication() {
     mock_command "vpn-manager" "VPN Status: DISCONNECTED" 0
 
     # Test that vpn script can call vpn-manager
-    local vpn_script="$PROJECT_DIR/vpn"
+    local vpn_script="$PROJECT_DIR/src/vpn"
     local status_output
     status_output=$("$vpn_script" status 2>/dev/null)
 
@@ -52,7 +52,7 @@ test_profile_listing_integration() {
     setup_test_env
 
     # Test vpn-connector list functionality with real profiles
-    local connector_script="$PROJECT_DIR/vpn-connector"
+    local connector_script="$PROJECT_DIR/src/vpn-connector"
 
     # Override LOCATIONS_DIR for testing
     LOCATIONS_DIR="$TEST_LOCATIONS_DIR" "$connector_script" list > /tmp/list_output 2>/dev/null || true
@@ -76,7 +76,7 @@ test_country_filtering_integration() {
     setup_test_env
 
     # Test country-specific filtering
-    local connector_script="$PROJECT_DIR/vpn-connector"
+    local connector_script="$PROJECT_DIR/src/vpn-connector"
 
     # Test SE filtering
     LOCATIONS_DIR="$TEST_LOCATIONS_DIR" "$connector_script" list se > /tmp/se_output 2>/dev/null || true
@@ -124,7 +124,7 @@ test_dependency_checking() {
     local original_path="$PATH"
     export PATH="/tmp/empty_path"
 
-    local connector_script="$PROJECT_DIR/vpn-connector"
+    local connector_script="$PROJECT_DIR/src/vpn-connector"
 
     # Test dependency check with missing commands
     local dep_output
@@ -191,7 +191,7 @@ test_error_handling() {
     start_test "Error Handling Integration"
 
     # Test handling of missing locations directory
-    local connector_script="$PROJECT_DIR/vpn-connector"
+    local connector_script="$PROJECT_DIR/src/vpn-connector"
 
     LOCATIONS_DIR="/nonexistent/path" "$connector_script" list > /tmp/error_output 2>&1 || true
 
