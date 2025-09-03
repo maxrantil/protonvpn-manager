@@ -551,6 +551,7 @@ best_server_connect() {
 
 secure_core_connect() {
     echo -e "\033[1;36mSecure core server selection\033[0m"
+    # Secure core provides enhanced privacy through double-hop routing
     local secure_profiles
     secure_profiles=$(detect_secure_core_profiles)
 
