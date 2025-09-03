@@ -1,0 +1,23 @@
+#!/bin/bash
+# ABOUTME: Network connectivity testing script for Phase 4.1
+# ABOUTME: Minimal implementation to pass TDD tests
+
+set -euo pipefail
+
+# Main command handler
+case "${1:-}" in
+    "connectivity")
+        # Test internet connectivity - ping Google DNS
+        ping -c 1 -W 5 8.8.8.8 >/dev/null 2>&1
+        ;;
+    "latency")
+        # Test latency to specified server
+        server="${2:-8.8.8.8}"
+        result=$(ping -c 3 -W 10 "$server" 2>/dev/null | grep "rtt min/avg/max/mdev" | sed 's/.*= //' | awk -F '/' '{print $2}' || echo "999")
+        echo "$result"
+        ;;
+    *)
+        echo "Usage: $0 {connectivity|latency [server]}"
+        exit 1
+        ;;
+esac

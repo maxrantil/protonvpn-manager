@@ -52,6 +52,19 @@ show_help() {
 case "$1" in
     "connect"|"c")
         if [[ -x "$VPN_CONNECTOR" ]]; then
+            # Check for process health issues before connecting
+            if [[ -x "$VPN_MANAGER" ]]; then
+                "$VPN_MANAGER" health >/dev/null 2>&1
+                if [[ $? -eq 1 ]]; then
+                    echo -e "\033[1;31m⚠️  WARNING: Multiple OpenVPN processes detected!\033[0m"
+                    echo -e "\033[1;33m   Run 'vpn cleanup' before connecting to prevent issues.\033[0m"
+                    read -p "Continue anyway? (y/N): " -r
+                    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+                        echo "Connection cancelled."
+                        exit 1
+                    fi
+                fi
+            fi
             "$VPN_CONNECTOR" connect "$2"
         else
             echo -e "\033[1;31mError: VPN connector not found or not executable\033[0m"

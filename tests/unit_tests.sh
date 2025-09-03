@@ -152,9 +152,9 @@ test_path_resolution() {
     start_test "Path Resolution"
 
     # Test that script paths resolve correctly
-    local vpn_script="$PROJECT_DIR/vpn"
-    local vpn_manager="$PROJECT_DIR/vpn-manager"
-    local vpn_connector="$PROJECT_DIR/vpn-connector"
+    local vpn_script="$PROJECT_DIR/src/vpn"
+    local vpn_manager="$PROJECT_DIR/src/vpn-manager"
+    local vpn_connector="$PROJECT_DIR/src/vpn-connector"
 
     assert_file_exists "$vpn_script" "Main VPN script should exist"
     assert_file_exists "$vpn_manager" "VPN manager script should exist"
