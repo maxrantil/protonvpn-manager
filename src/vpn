@@ -3,9 +3,10 @@
 # ABOUTME: Routes commands to appropriate VPN management sub-scripts
 
 VPN_DIR="$(dirname "$(realpath "$0")")"
+PROJECT_ROOT="$(dirname "$VPN_DIR")"
 VPN_MANAGER="$VPN_DIR/vpn-manager"
 VPN_CONNECTOR="$VPN_DIR/vpn-connector"
-LOCATIONS_DIR="$VPN_DIR/locations"
+LOCATIONS_DIR="$PROJECT_ROOT/locations"
 
 show_banner() {
     echo -e "\033[1;36m╔════════════════════════════════════════╗\033[0m"
