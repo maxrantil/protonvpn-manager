@@ -3,8 +3,9 @@
 # ABOUTME: Handles server selection, connection attempts, and performance testing
 
 VPN_DIR="$(dirname "$(realpath "$0")")"
-LOCATIONS_DIR="$VPN_DIR/locations"
-CREDENTIALS_FILE="$VPN_DIR/credentials.txt"
+PROJECT_ROOT="$(dirname "$VPN_DIR")"
+LOCATIONS_DIR="$PROJECT_ROOT/locations"
+CREDENTIALS_FILE="$PROJECT_ROOT/credentials.txt"
 PERFORMANCE_CACHE="/tmp/vpn_performance.cache"
 CONNECTION_LOG="/tmp/vpn_connect.log"
 LOCK_FILE="/tmp/vpn_connect.lock"
