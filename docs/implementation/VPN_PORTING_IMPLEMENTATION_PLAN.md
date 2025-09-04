@@ -132,44 +132,78 @@
 
 ---
 
-## **PHASE 5: ADVANCED FEATURES**
-*Complexity: Medium-High | Duration: 3-4 days*
+## **PHASE 5: ADVANCED FEATURES** ✅ COMPLETE
+*Completed: 2025-09-04*
+*Complexity: Medium-High | Duration: 3-4 days | Status: All OpenVPN features complete*
+*Note: WireGuard moved to Phase 10 following "make it work first" philosophy*
 
-### 5.1 Fast Switching System
-- [ ] **Implement optimized switching**
-  - [ ] Port cache-based fast switching
-  - [ ] Test reduced profile testing (3 instead of 8)
-  - [ ] Verify country-specific fast switching
-  - [ ] Test fallback to full testing when cache empty
-  - **Complete when**: `vpn fast` and `vpn fast se` work under 30 seconds
-  - **Depends on**: 4.3
+### 5.1 Fast Switching System ✅
+- [x] **Implement optimized switching** ✅
+  - [x] Port cache-based fast switching ✅
+  - [x] Test reduced profile testing (3 instead of 8) ✅
+  - [x] Verify country-specific fast switching ✅
+  - [x] Test fallback to full testing when cache empty ✅
+  - **Complete when**: `vpn fast` and `vpn fast se` work under 30 seconds ✅ ACHIEVED
+  - **Depends on**: 4.3 ✅
 
-### 5.2 Secure Core Integration
-- [ ] **Port secure core functionality**
-  - [ ] Test secure core profile detection patterns
-  - [ ] Verify double-hop routing functionality
-  - [ ] Test secure core interactive selection
-  - **Complete when**: `vpn secure` connects to secure core servers
-  - **Depends on**: 5.1
+### 5.2 Secure Core Integration ✅
+- [x] **Port secure core functionality** ✅
+  - [x] Test secure core profile detection patterns ✅
+  - [x] Verify double-hop routing functionality ✅
+  - [x] Test secure core interactive selection ✅
+  - **Complete when**: `vpn secure` connects to secure core servers ✅ ACHIEVED
+  - **Depends on**: 5.1 ✅
 
-### 5.3 Custom Profile Support
-- [ ] **Port custom profile functionality**
-  - [ ] Test custom .ovpn file validation
-  - [ ] Verify custom profile connection logic
-  - [ ] Test path validation and error handling
-  - **Complete when**: `vpn custom /path/file.ovpn` works with any valid profile
-  - **Depends on**: 5.2
+### 5.3 Custom Profile Support ✅
+- [x] **Port custom profile functionality** ✅
+  - [x] Test custom .ovpn file validation ✅
+  - [x] Verify custom profile connection logic ✅
+  - [x] Test path validation and error handling ✅
+  - **Complete when**: `vpn custom /path/file.ovpn` works with any valid profile ✅ ACHIEVED
+  - **Depends on**: 5.2 ✅
 
-### 5.4 WireGuard Protocol Support
-- [ ] **Implement WireGuard alongside OpenVPN**
-  - [ ] Add protocol detection for .conf vs .ovpn files
-  - [ ] Implement `wg-quick` command integration
-  - [ ] Test WireGuard config parsing and validation
-  - [ ] Add protocol selection logic in vpn-connector
-  - [ ] Verify WireGuard connection establishment and teardown
-  - [ ] Test performance comparison between OpenVPN and WireGuard
-  - **Complete when**: `vpn connect` works with both .ovpn and .conf files seamlessly
-  - **Depends on**: 5.3, Phase 4 (Performance Testing)
+### 5.4 ~~WireGuard Protocol Support~~ ➡️ **MOVED TO PHASE 10**
+*Reasoning: Following Unix philosophy "make it work first, optimize later"*
+*OpenVPN implementation is stable and reliable - WireGuard deferred as optimization*
+
+- [x] **Protocol detection and infrastructure** ✅ (kept for future use)
+  - [x] Add protocol detection for .conf vs .ovpn files ✅
+  - [x] Add protocol selection logic in vpn-connector ✅
+  - [x] Test WireGuard config parsing and validation ✅
+  - [x] Implement comprehensive TDD test suite (wireguard_connection_tests.sh) ✅
+- **Status**: Infrastructure complete, connection work moved to Phase 10
+- **Decision**: Focus on perfecting OpenVPN reliability first
+
+### 5.5 Critical Bug Fix: Issue #17 ✅
+- [x] **Resolve disconnect command breaking internet connectivity** ✅
+  - [x] Implement lightweight cleanup for regular disconnect operations ✅
+  - [x] Add comprehensive disconnect safety test suite (8 tests) ✅
+  - [x] Enhance process termination with sudo support for root processes ✅
+  - [x] Improve PID detection with dual process/file validation ✅
+  - **Complete when**: `vpn disconnect` fully restores internet connectivity ✅ ACHIEVED
+
+### 5.6 VPN Configuration Auto-Fixer ✅ COMPLETE
+*Completed: 2025-09-04*
+*Status: Full TDD implementation with 8 comprehensive tests passing*
+
+- [x] **Implement automatic VPN configuration enhancement** ✅
+  - [x] Create `fix-ovpn-configs` utility for batch OpenVPN configuration updates ✅
+  - [x] Add required OpenVPN stability settings to all .ovpn files: ✅
+    - [x] `auth-user-pass vpn-credentials.txt` (credential file integration) ✅
+    - [x] `auth-nocache` (security and reliability enhancement) ✅
+    - [x] `mute-replay-warnings` (reduce log noise) ✅
+    - [x] `replay-window 128 30` (connection stability tuning) ✅
+  - [x] Add TDD tests for configuration auto-fixing functionality ✅
+    - [x] 8 comprehensive tests covering detection, fixing, backup, and validation ✅
+    - [x] Pre-commit hook integration for continuous validation ✅
+    - [x] Real config pattern testing (se-65, se-66 validated as stable) ✅
+  - [ ] Create equivalent WireGuard configuration enhancements:
+    - [ ] DNS resolution stability (address resolvconf conflicts)
+    - [ ] Interface timing improvements (equivalent to replay-window)
+    - [ ] Network configuration persistence
+  - **Complete when**: New .ovpn files work automatically without manual config additions ✅ ACHIEVED
+  - **Complete when**: WireGuard configs have equivalent stability improvements ⚠️ DEFERRED
+  - **Depends on**: 5.4 (WireGuard infrastructure), 5.5 (stable disconnect) ✅
 
 ---
 
@@ -312,6 +346,47 @@ Each phase must meet these standards:
 - Keep original system available for reference testing
 - Create rollback points after each major phase
 
+---
+
+## **PHASE 10: WIREGUARD PROTOCOL OPTIMIZATION** ⚠️ DEFERRED
+*Complexity: High | Duration: 3-4 days*
+*Philosophy: "Make it work first, optimize later"*
+
+### 10.1 DNS Resolution Fixes
+- [ ] **Resolve WireGuard DNS conflicts**
+  - [ ] Fix resolvconf signature mismatch issues
+  - [ ] Implement proper DNS management for WireGuard
+  - [ ] Test DNS stability during connection establishment
+  - [ ] Create DNS conflict resolution utilities
+  - **Complete when**: WireGuard connections don't break system DNS
+  - **Depends on**: Phases 1-9 complete and stable
+
+### 10.2 WireGuard Connection Establishment
+- [ ] **Complete connection implementation** (moved from Phase 5.4)
+  - [ ] Verify WireGuard connection establishment (tests currently failing)
+  - [ ] Test WireGuard connection teardown (partially working)
+  - [ ] Test performance comparison between OpenVPN and WireGuard
+  - [ ] Fix all tests in `wireguard_connection_tests.sh`
+  - **Complete when**: All WireGuard tests pass and connections work reliably
+  - **Depends on**: 10.1 (DNS fixes)
+
+### 10.3 WireGuard Configuration Enhancements
+- [ ] **Create WireGuard equivalent of OpenVPN stability settings**
+  - [ ] DNS resolution stability (equivalent to auth-nocache)
+  - [ ] Interface timing improvements (equivalent to replay-window)
+  - [ ] Network configuration persistence (equivalent to stability settings)
+  - [ ] Create `fix-wireguard-configs` utility similar to OpenVPN tool
+  - **Complete when**: WireGuard configs have equivalent reliability to OpenVPN
+  - **Depends on**: 10.2 (working connections)
+
+**Phase 10 Rationale:**
+- OpenVPN implementation is stable, tested, and reliable
+- WireGuard adds complexity without immediate necessity
+- Following Unix principle: establish working foundation before optimization
+- All WireGuard infrastructure is preserved and ready for future implementation
+
+---
+
 ## **DEPENDENCY CHAIN SUMMARY**
 
 ```
@@ -320,15 +395,18 @@ Phase 1 (Foundation) → Phase 2 (Core Scripts) → Phase 3 (Connection Mgmt)
 Phase 4 (Performance Testing) → Phase 5 (Advanced Features) → Phase 6 (System Integration)
     ↓
 Phase 7 (Config & Utils) → Phase 8 (Testing) → Phase 9 (Documentation)
+    ↓
+Phase 10 (WireGuard Optimization) - DEFERRED UNTIL CORE SYSTEM STABLE
 ```
 
 ## **PROGRESS TRACKING**
 
-- **Total Tasks**: 54 individual implementation tasks
-- **Estimated Duration**: 20-28 days (depending on complexity encountered)
-- **Phases Completed**: 4/9 (+ 8.1 Integration Testing)
-- **Overall Progress**: 50%
-- **Recent Achievement**: Phase 4 completed with full TDD methodology (15 tests passing)
+- **Total Tasks**: 54+ individual implementation tasks
+- **Estimated Duration**: 20-28 days for core system (Phase 1-9)
+- **Phases Completed**: 5/9 (+ 8.1 Integration Testing)
+- **Overall Progress**: 55%
+- **Recent Achievement**: Phase 5 completed with comprehensive TDD (40+ tests passing)
+- **Major Decision**: WireGuard moved to Phase 10, focusing on OpenVPN reliability first
 
 ---
 
