@@ -13,15 +13,27 @@ log_message() {
 get_vpn_pid() {
     local pid_from_file pid_from_process
 
+    # First, try to find running OpenVPN process
+    pid_from_process=$(pgrep -f "openvpn.*--config" 2>/dev/null | head -1)
+
+    # If we have a PID file, check if it matches the running process
     if [[ -f "$VPN_PID_FILE" ]]; then
         pid_from_file=$(cat "$VPN_PID_FILE" 2>/dev/null)
+
+        # If PID file matches running process, prefer it
+        if [[ -n "$pid_from_file" && -n "$pid_from_process" && "$pid_from_file" == "$pid_from_process" ]]; then
+            echo "$pid_from_file"
+            return 0
+        fi
+
+        # If we can signal the PID from file (user has permission), use it
         if [[ -n "$pid_from_file" ]] && kill -0 "$pid_from_file" 2>/dev/null; then
             echo "$pid_from_file"
             return 0
         fi
     fi
 
-    pid_from_process=$(pgrep -f "openvpn.*--config" 2>/dev/null | head -1)
+    # Fall back to process search result
     if [[ -n "$pid_from_process" ]]; then
         echo "$pid_from_process"
         return 0
@@ -33,11 +45,20 @@ get_vpn_pid() {
 is_vpn_running() {
     local pid
     pid=$(get_vpn_pid)
-    if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
-        return 0
-    else
-        return 1
+
+    if [[ -n "$pid" ]]; then
+        # First try kill -0 (works if we have permission)
+        if kill -0 "$pid" 2>/dev/null; then
+            return 0
+        fi
+
+        # Fall back to ps check (works for any process)
+        if ps -p "$pid" >/dev/null 2>&1; then
+            return 0
+        fi
     fi
+
+    return 1
 }
 
 check_process_health() {
@@ -160,18 +181,38 @@ stop_vpn() {
     if [[ -n "$pid" ]]; then
         echo "Terminating OpenVPN process (PID: $pid)"
 
+        # Try regular kill first, then sudo if needed
+        local kill_success=false
         if kill -TERM "$pid" 2>/dev/null; then
+            kill_success=true
+        elif sudo kill -TERM "$pid" 2>/dev/null; then
+            kill_success=true
+            echo "  Used sudo to terminate root process"
+        fi
+
+        if [[ "$kill_success" == "true" ]]; then
             local count=0
-            while kill -0 "$pid" 2>/dev/null && [[ $count -lt 10 ]]; do
-                sleep 1
-                ((count++))
+            # Wait for process to terminate, using ps check for root processes
+            while [[ $count -lt 10 ]]; do
+                if ps -p "$pid" >/dev/null 2>&1; then
+                    sleep 1
+                    ((count++))
+                else
+                    break
+                fi
             done
 
-            if kill -0 "$pid" 2>/dev/null; then
+            # If still running, try KILL signal
+            if ps -p "$pid" >/dev/null 2>&1; then
                 echo "Process still running, sending KILL signal"
-                kill -KILL "$pid" 2>/dev/null
+                if ! kill -KILL "$pid" 2>/dev/null; then
+                    sudo kill -KILL "$pid" 2>/dev/null || true
+                fi
                 sleep 2
             fi
+        else
+            echo -e "\033[1;31mError: Unable to send termination signal to process $pid\033[0m"
+            return 1
         fi
 
         if is_vpn_running; then
@@ -185,7 +226,7 @@ stop_vpn() {
     fi
 
     cleanup_files
-    cleanup_routes
+    cleanup_routes_light
 
     notify-send "VPN Manager" "VPN disconnected successfully" --icon=network-idle 2>/dev/null || true
 
@@ -265,23 +306,34 @@ kill_all_vpn() {
     fi
 
     cleanup_files
-    cleanup_routes
+    cleanup_routes_light
 
     notify-send "VPN Manager" "All VPN processes killed" --icon=dialog-warning 2>/dev/null || true
 }
 
 cleanup_files() {
-    [[ -f "$VPN_PID_FILE" ]] && rm -f "$VPN_PID_FILE" 2>/dev/null
+    # Clean up PID file (may need sudo since OpenVPN creates it as root)
+    if [[ -f "$VPN_PID_FILE" ]]; then
+        if ! rm -f "$VPN_PID_FILE" 2>/dev/null; then
+            # Try with sudo if regular removal fails
+            sudo rm -f "$VPN_PID_FILE" 2>/dev/null || true
+        fi
+    fi
+
+    # Clean up lock files (these should be user-writable)
     [[ -f "$LOCK_FILE" ]] && rm -f "$LOCK_FILE" 2>/dev/null
     [[ -f "/tmp/vpn_connect.lock" ]] && rm -f "/tmp/vpn_connect.lock" 2>/dev/null
 }
 
-cleanup_routes() {
+cleanup_routes_light() {
+    # Lightweight cleanup for regular disconnect - no NetworkManager restart
+
+    # Clean up OpenVPN tunnel interfaces
     local interfaces
     interfaces=$(ip addr show | grep -E "tun[0-9]+" | awk '{print $2}' | sed 's/:$//')
 
     if [[ -n "$interfaces" ]]; then
-        echo "Cleaning up tunnel interfaces..."
+        echo "Cleaning up OpenVPN tunnel interfaces..."
         while IFS= read -r interface; do
             if [[ -n "$interface" ]]; then
                 echo "  Removing interface: $interface"
@@ -291,8 +343,17 @@ cleanup_routes() {
         done <<< "$interfaces"
     fi
 
-    echo "Flushing DNS cache..."
-    sudo resolvconf -u 2>/dev/null || true
+    # NOTE: WireGuard cleanup REMOVED from lightweight cleanup
+    # WireGuard operations cause DNS/network disruption due to resolvconf conflicts
+    # WireGuard interfaces will only be cleaned in emergency full cleanup
+
+    # Skip potentially disruptive DNS operations during regular disconnect
+    echo "Skipping DNS operations to prevent network disruption..."
+}
+
+cleanup_routes() {
+    # Full cleanup including NetworkManager restart for emergency situations
+    cleanup_routes_light
 }
 
 full_cleanup() {
