@@ -32,11 +32,13 @@ EOF
         fi
         ;;
     "best")
-        # For minimal implementation, just return first available profile
+        # Support both OpenVPN (.ovpn) and WireGuard (.conf) protocols
         if [[ -d "$VPN_LOCATIONS" ]]; then
-            profile=$(find "$VPN_LOCATIONS" -name "*.ovpn" | head -n1)
+            # Look for both .ovpn and .conf files
+            profile=$(find "$VPN_LOCATIONS" \( -name "*.ovpn" -o -name "*.conf" \) | head -n1)
             if [[ -n "$profile" ]]; then
-                basename "$profile" .ovpn
+                # Return basename without extension
+                basename "$profile" | sed 's/\.\(ovpn\|conf\)$//'
             else
                 echo "No profiles found"
                 exit 1
