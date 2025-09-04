@@ -30,6 +30,7 @@ show_help() {
     echo "  best                - Connect to best performing server"
     echo "  fast [country]      - Quick connect using cached results"
     echo "  secure              - Connect to secure core server"
+    echo "  custom <profile>    - Connect using custom profile path"
     echo "  list                - List available VPN profiles"
     echo
     echo -e "\033[1;32mManagement:\033[0m"
@@ -121,10 +122,18 @@ case "$1" in
             exit 1
         fi
         ;;
+    "custom")
+        if [[ -x "$VPN_CONNECTOR" ]]; then
+            "$VPN_CONNECTOR" custom "$2"
+        else
+            echo -e "\033[1;31mError: VPN connector not found or not executable\033[0m"
+            exit 1
+        fi
+        ;;
     "list"|"l")
         if [[ -d "$LOCATIONS_DIR" ]]; then
             echo -e "\033[1;33mAvailable VPN Profiles:\033[0m"
-            find "$LOCATIONS_DIR" -name "*.ovpn" 2>/dev/null | sed 's|.*/||; s|\.ovpn$||' | sort
+            find "$LOCATIONS_DIR" \( -name "*.ovpn" -o -name "*.conf" \) 2>/dev/null | sed 's|.*/||; s|\.ovpn$||; s|\.conf$||' | sort
         else
             echo -e "\033[1;31mError: Locations directory not found\033[0m"
             exit 1
