@@ -81,3 +81,10 @@ repos:
         entry: bash -c 'if [ -f "tests/test_framework.sh" ]; then bash -n tests/test_framework.sh || exit 1; fi'
         language: system
         pass_filenames: false
+
+      - id: config-fixing-tests
+        name: VPN Config Fixing Tests
+        entry: bash -c 'cd tests && ./config_fixing_tests.sh'
+        language: system
+        pass_filenames: false
+        files: '^(src/fix-ovpn-configs|tests/config_fixing_tests\.sh|locations/.*\.ovpn)$'
