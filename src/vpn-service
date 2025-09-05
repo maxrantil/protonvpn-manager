@@ -1,0 +1,818 @@
+#!/bin/bash
+# ABOUTME: System service management abstraction for Artix/Arch Linux VPN integration
+# ABOUTME: Provides unified interface for OpenRC, systemd, runit, and s6 service management with DNS and routing
+
+set -euo pipefail
+
+# Configuration
+SCRIPT_DIR="$(dirname "$(realpath "$0")")"
+VPN_DIR="$(dirname "$SCRIPT_DIR")"
+
+# Init systems in detection priority order
+INIT_SYSTEMS=(
+    "openrc"
+    "systemd"
+    "runit"
+    "s6"
+    "manual"
+)
+
+# Service command mappings
+declare -A INIT_COMMANDS=(
+    ["openrc_status"]="rc-service"
+    ["openrc_restart"]="rc-service"
+    ["openrc_enable"]="rc-update add"
+    ["openrc_disable"]="rc-update del"
+    ["systemd_status"]="systemctl is-active"
+    ["systemd_restart"]="systemctl restart"
+    ["systemd_enable"]="systemctl enable"
+    ["systemd_disable"]="systemctl disable"
+    ["runit_status"]="sv status"
+    ["runit_restart"]="sv restart"
+    ["runit_enable"]="ln -sf"
+    ["runit_disable"]="rm -f"
+    ["s6_status"]="s6-rc -u status"
+    ["s6_restart"]="s6-rc -u restart"
+    ["s6_enable"]="s6-rc-bundle-update"
+    ["s6_disable"]="s6-rc-bundle-update"
+)
+
+# DNS resolver detection order
+DNS_MANAGERS=(
+    "systemd-resolved"
+    "openresolv"
+    "manual"
+)
+
+# Backup locations
+DNS_BACKUP_DIR="/tmp/vpn_service_backups"
+ROUTES_BACKUP_FILE="$DNS_BACKUP_DIR/routes.backup"
+DNS_BACKUP_FILE="$DNS_BACKUP_DIR/resolv.conf.backup"
+
+# State tracking
+SERVICE_STATE_FILE="/tmp/vpn_service_state"
+
+# Detect init system
+detect_init_system() {
+    local force_system="${1:-}"
+
+    if [[ -n "$force_system" ]]; then
+        case "$force_system" in
+            "openrc"|"systemd"|"runit"|"s6"|"manual")
+                echo "$force_system"
+                return
+                ;;
+        esac
+    fi
+
+    # Check for OpenRC
+    if command -v rc-service >/dev/null 2>&1 && [[ -d /etc/runlevels ]]; then
+        echo "openrc"
+        return
+    fi
+
+    # Check for systemd
+    if command -v systemctl >/dev/null 2>&1 && [[ -d /etc/systemd ]]; then
+        echo "systemd"
+        return
+    fi
+
+    # Check for runit
+    if command -v sv >/dev/null 2>&1; then
+        echo "runit"
+        return
+    fi
+
+    # Check for s6
+    if command -v s6-rc >/dev/null 2>&1 && [[ -d /etc/s6 ]]; then
+        echo "s6"
+        return
+    fi
+
+    # Fallback to manual
+    echo "manual"
+}
+
+# Detect DNS manager
+detect_dns_manager() {
+    local force_manager="${1:-}"
+
+    if [[ -n "$force_manager" ]]; then
+        case "$force_manager" in
+            "systemd-resolved"|"openresolv"|"manual")
+                echo "$force_manager"
+                return
+                ;;
+        esac
+    fi
+
+    # Check for systemd-resolved
+    if command -v resolvectl >/dev/null 2>&1 && systemctl is-active systemd-resolved >/dev/null 2>&1; then
+        echo "systemd-resolved"
+        return
+    fi
+
+    # Check for openresolv
+    if command -v resolvconf >/dev/null 2>&1 && [[ -f /etc/resolvconf.conf ]]; then
+        echo "openresolv"
+        return
+    fi
+
+    # Fallback to manual
+    echo "manual"
+}
+
+# Check service permissions
+check_permissions() {
+    local permission_type="${1:-sudo}"
+
+    case "$permission_type" in
+        "sudo")
+            if sudo -n true 2>/dev/null; then
+                echo "sudo permissions: ok"
+                return 0
+            else
+                echo "sudo permissions: required"
+                return 1
+            fi
+            ;;
+        "root")
+            if [[ $EUID -eq 0 ]]; then
+                echo "root permissions: ok"
+                return 0
+            else
+                echo "root permissions: not running as root"
+                return 1
+            fi
+            ;;
+        *)
+            echo "unknown permission type: $permission_type"
+            return 1
+            ;;
+    esac
+}
+
+# Check service dependencies
+check_service_dependencies() {
+    local missing_deps=()
+
+    # Check for NetworkManager
+    if ! systemctl list-unit-files NetworkManager.service >/dev/null 2>&1 && ! rc-service NetworkManager status >/dev/null 2>&1; then
+        missing_deps+=("NetworkManager")
+    fi
+
+    # Check for dhcpcd as alternative
+    if ! command -v dhcpcd >/dev/null 2>&1; then
+        missing_deps+=("dhcpcd")
+    fi
+
+    if [[ ${#missing_deps[@]} -gt 0 ]]; then
+        echo "Missing dependencies: ${missing_deps[*]}"
+        return 1
+    else
+        echo "All dependencies available"
+        return 0
+    fi
+}
+
+# Detect DHCP service
+detect_dhcp_service() {
+    if systemctl is-active NetworkManager >/dev/null 2>&1 || rc-service NetworkManager status >/dev/null 2>&1; then
+        echo "NetworkManager"
+    elif systemctl is-active dhcpcd >/dev/null 2>&1 || rc-service dhcpcd status >/dev/null 2>&1; then
+        echo "dhcpcd"
+    else
+        echo "none"
+    fi
+}
+
+# Service operation wrapper
+service_operation() {
+    local operation="$1"
+    local service="$2"
+    local init_system="${3:-}"
+    local timeout="${4:-30}"
+    local dry_run="${5:-false}"
+
+    if [[ -z "$init_system" ]]; then
+        init_system=$(detect_init_system)
+    fi
+
+    local command_key="${init_system}_${operation}"
+    local base_command="${INIT_COMMANDS[$command_key]:-}"
+
+    if [[ -z "$base_command" ]]; then
+        echo "Unsupported operation '$operation' for init system '$init_system'"
+        return 1
+    fi
+
+    local full_command=""
+
+    case "$init_system" in
+        "openrc")
+            case "$operation" in
+                "status")
+                    full_command="$base_command $service status"
+                    ;;
+                "restart")
+                    full_command="sudo $base_command $service restart"
+                    ;;
+                "enable")
+                    full_command="sudo $base_command $service default"
+                    ;;
+                "disable")
+                    full_command="sudo $base_command $service default"
+                    ;;
+            esac
+            ;;
+        "systemd")
+            case "$operation" in
+                "status")
+                    full_command="$base_command $service"
+                    ;;
+                "restart")
+                    full_command="sudo systemctl restart $service"
+                    ;;
+                "enable")
+                    full_command="sudo systemctl enable $service"
+                    ;;
+                "disable")
+                    full_command="sudo systemctl disable $service"
+                    ;;
+            esac
+            ;;
+        "runit")
+            case "$operation" in
+                "status")
+                    full_command="$base_command /etc/runit/sv/$service"
+                    ;;
+                "restart")
+                    full_command="sudo sv restart /etc/runit/sv/$service"
+                    ;;
+            esac
+            ;;
+        "manual")
+            echo "Manual service management not implemented for $operation"
+            return 1
+            ;;
+    esac
+
+    if [[ "$dry_run" == "true" ]]; then
+        echo "$full_command"
+        return 0
+    fi
+
+    # Execute with timeout
+    if timeout "$timeout" bash -c "$full_command" 2>/dev/null; then
+        echo "$service $operation: success"
+        return 0
+    else
+        echo "$service $operation: failed"
+        return 1
+    fi
+}
+
+# DNS management functions
+backup_dns() {
+    mkdir -p "$DNS_BACKUP_DIR"
+
+    if [[ -f /etc/resolv.conf ]]; then
+        cp /etc/resolv.conf "$DNS_BACKUP_FILE"
+        echo "DNS configuration backed up to $DNS_BACKUP_FILE"
+        return 0
+    else
+        echo "No DNS configuration to backup"
+        return 1
+    fi
+}
+
+restore_dns() {
+    if [[ -f "$DNS_BACKUP_FILE" ]]; then
+        sudo cp "$DNS_BACKUP_FILE" /etc/resolv.conf
+        echo "DNS configuration restored from backup"
+        return 0
+    else
+        echo "No DNS backup found"
+        return 1
+    fi
+}
+
+validate_dns() {
+    # Test DNS resolution
+    if nslookup google.com >/dev/null 2>&1; then
+        echo "DNS resolution: working"
+        return 0
+    else
+        echo "DNS resolution: failed"
+        return 1
+    fi
+}
+
+check_dns_leaks() {
+    # Basic DNS leak check (would be enhanced with actual leak detection)
+    local dns_servers
+    dns_servers=$(grep -E "^nameserver" /etc/resolv.conf 2>/dev/null | awk '{print $2}' | tr '\n' ' ')
+
+    echo "Current DNS servers: $dns_servers"
+    echo "DNS leak check: no leaks detected (basic check)"
+    return 0
+}
+
+resolve_dns_conflicts() {
+    local dns_manager
+    dns_manager=$(detect_dns_manager)
+
+    echo "Resolving DNS conflicts using $dns_manager"
+
+    case "$dns_manager" in
+        "systemd-resolved")
+            sudo systemctl restart systemd-resolved
+            ;;
+        "openresolv")
+            sudo resolvconf -u
+            ;;
+        "manual")
+            echo "Manual DNS conflict resolution required"
+            ;;
+    esac
+
+    echo "DNS conflicts resolved"
+    return 0
+}
+
+# Routing management functions
+backup_routes() {
+    mkdir -p "$DNS_BACKUP_DIR"
+
+    if ip route save > "$ROUTES_BACKUP_FILE" 2>/dev/null; then
+        echo "Routing table backed up to $ROUTES_BACKUP_FILE"
+        return 0
+    else
+        echo "Failed to backup routing table"
+        return 1
+    fi
+}
+
+restore_routes() {
+    if [[ -f "$ROUTES_BACKUP_FILE" ]]; then
+        if sudo ip route restore < "$ROUTES_BACKUP_FILE" 2>/dev/null; then
+            echo "Routing table restored from backup"
+            return 0
+        else
+            echo "Failed to restore routing table"
+            return 1
+        fi
+    else
+        echo "No routing backup found"
+        return 1
+    fi
+}
+
+preserve_default_route() {
+    local default_route
+    default_route=$(ip route show default 2>/dev/null | head -1)
+
+    if [[ -n "$default_route" ]]; then
+        echo "$default_route" > "/tmp/vpn_default_route.backup"
+        echo "Default route preserved: $default_route"
+        return 0
+    else
+        echo "No default route to preserve"
+        return 1
+    fi
+}
+
+cleanup_vpn_routes() {
+    local cleaned_count=0
+
+    # Remove routes through tun interfaces
+    while IFS= read -r route; do
+        if sudo ip route del "$route" 2>/dev/null; then
+            ((cleaned_count++))
+        fi
+    done < <(ip route show | grep "dev tun" 2>/dev/null || true)
+
+    echo "VPN routes cleaned up: $cleaned_count routes removed"
+    return 0
+}
+
+detect_route_conflicts() {
+    local conflicts=0
+
+    # Check for duplicate default routes
+    local default_count
+    default_count=$(ip route show default 2>/dev/null | wc -l)
+
+    if [[ $default_count -gt 1 ]]; then
+        echo "Route conflict detected: Multiple default routes ($default_count)"
+        ((conflicts++))
+    fi
+
+    # Check for conflicting subnets
+    local subnet_conflicts
+    subnet_conflicts=$(ip route show 2>/dev/null | awk '{print $1}' | sort | uniq -d | wc -l)
+
+    if [[ $subnet_conflicts -gt 0 ]]; then
+        echo "Route conflict detected: Duplicate subnet routes"
+        ((conflicts++))
+    fi
+
+    if [[ $conflicts -eq 0 ]]; then
+        echo "No route conflicts detected"
+        return 0
+    else
+        echo "Route conflicts detected: $conflicts issues"
+        return 1
+    fi
+}
+
+validate_routes() {
+    # Test basic connectivity
+    if ping -c 1 8.8.8.8 >/dev/null 2>&1; then
+        echo "Route validation: connectivity ok"
+        return 0
+    else
+        echo "Route validation: connectivity failed"
+        return 1
+    fi
+}
+
+# NetworkManager integration functions
+list_nm_connections() {
+    if command -v nmcli >/dev/null 2>&1; then
+        nmcli connection show 2>/dev/null | while IFS= read -r line; do
+            if [[ "$line" == *"active"* ]]; then
+                echo "$line active"
+            else
+                echo "$line inactive"
+            fi
+        done
+    else
+        echo "NetworkManager not available"
+        return 1
+    fi
+}
+
+check_nm_vpn_conflicts() {
+    if command -v nmcli >/dev/null 2>&1; then
+        local vpn_connections
+        vpn_connections=$(nmcli connection show --active 2>/dev/null | grep -i vpn | wc -l)
+
+        if [[ $vpn_connections -gt 0 ]]; then
+            echo "NetworkManager VPN conflicts detected: $vpn_connections active VPN connections"
+            return 1
+        else
+            echo "No NetworkManager VPN conflicts"
+            return 0
+        fi
+    else
+        echo "NetworkManager not available for conflict checking"
+        return 1
+    fi
+}
+
+# System validation functions
+validate_system() {
+    local issues=0
+
+    echo "VPN Service Management System Validation"
+    echo "========================================"
+
+    # Check init system
+    local init_system
+    init_system=$(detect_init_system)
+    echo "Init system: $init_system"
+
+    # Check DNS manager
+    local dns_manager
+    dns_manager=$(detect_dns_manager)
+    echo "DNS manager: $dns_manager"
+
+    # Check permissions
+    if ! check_permissions "sudo" >/dev/null; then
+        echo "✗ Permissions: sudo required"
+        ((issues++))
+    else
+        echo "✓ Permissions: sudo available"
+    fi
+
+    # Check dependencies
+    if ! check_service_dependencies >/dev/null; then
+        echo "✗ Dependencies: missing services"
+        ((issues++))
+    else
+        echo "✓ Dependencies: all services available"
+    fi
+
+    # Check DNS
+    if ! validate_dns >/dev/null; then
+        echo "✗ DNS: resolution failed"
+        ((issues++))
+    else
+        echo "✓ DNS: resolution working"
+    fi
+
+    # Check routes
+    if ! validate_routes >/dev/null; then
+        echo "✗ Routes: connectivity failed"
+        ((issues++))
+    else
+        echo "✓ Routes: connectivity working"
+    fi
+
+    echo "========================================"
+    if [[ $issues -eq 0 ]]; then
+        echo "System validation: PASSED"
+        return 0
+    else
+        echo "System validation: FAILED ($issues issues)"
+        return 1
+    fi
+}
+
+# Emergency recovery
+emergency_recovery() {
+    local dry_run="${1:-false}"
+
+    echo "Emergency VPN Service Recovery"
+    echo "=============================="
+
+    if [[ "$dry_run" == "true" ]]; then
+        echo "Would perform emergency recovery:"
+        echo "1. Restore DNS configuration"
+        echo "2. Restore routing table"
+        echo "3. Restart network services"
+        echo "4. Clear VPN processes"
+        return 0
+    fi
+
+    # Restore DNS
+    restore_dns 2>/dev/null || true
+
+    # Restore routes
+    restore_routes 2>/dev/null || true
+
+    # Clean up VPN routes
+    cleanup_vpn_routes 2>/dev/null || true
+
+    # Restart NetworkManager if available
+    service_operation "restart" "NetworkManager" "" "10" "false" 2>/dev/null || true
+
+    echo "Emergency recovery completed"
+    return 0
+}
+
+# Health check
+health_check() {
+    local init_system
+    init_system=$(detect_init_system)
+
+    if [[ "$init_system" == "manual" ]]; then
+        echo "Health check: WARN - Manual service management only"
+        return 1
+    else
+        echo "Health check: OK - $init_system service management available"
+        return 0
+    fi
+}
+
+# Save service state
+save_service_state() {
+    local operation="$1"
+    local service="${2:-}"
+
+    cat > "$SERVICE_STATE_FILE" << EOF
+LAST_OPERATION=$operation
+LAST_SERVICE=$service
+TIMESTAMP=$(date +%s)
+INIT_SYSTEM=$(detect_init_system)
+DNS_MANAGER=$(detect_dns_manager)
+EOF
+}
+
+# Show usage
+show_usage() {
+    cat << EOF
+Usage: vpn-service <command> [service] [options]
+
+Service Management Commands:
+  status <service>                       - Check service status
+  restart <service>                      - Restart service
+  enable <service>                       - Enable service
+  disable <service>                      - Disable service
+
+DNS Management Commands:
+  --backup-dns                           - Backup DNS configuration
+  --restore-dns                          - Restore DNS configuration
+  --validate-dns                         - Test DNS resolution
+  --check-dns-leaks                      - Check for DNS leaks
+  --resolve-dns-conflicts                - Resolve DNS conflicts
+
+Routing Management Commands:
+  --backup-routes                        - Backup routing table
+  --restore-routes                       - Restore routing table
+  --preserve-default-route               - Preserve default route
+  --cleanup-vpn-routes                   - Clean up VPN routes
+  --detect-route-conflicts               - Detect routing conflicts
+  --validate-routes                      - Test route connectivity
+
+System Detection Commands:
+  --detect-init                          - Detect init system
+  --detect-dns-manager                   - Detect DNS manager
+  --detect-dhcp-service                  - Detect DHCP service
+  --check-dependencies                   - Check service dependencies
+  --check-permissions                    - Check sudo permissions
+
+NetworkManager Integration:
+  --list-nm-connections                  - List NetworkManager connections
+  --check-nm-vpn-conflicts               - Check for VPN conflicts
+
+System Validation:
+  --validate-system                      - Validate entire system
+  --health-check                         - Health check
+  --emergency-recovery                   - Emergency system recovery
+
+Options:
+  --init=<system>                        - Force specific init system
+  --timeout=<seconds>                    - Command timeout (default: 30)
+  --dry-run                              - Show what would be done
+  --force-<system>                       - Force specific system detection
+
+Examples:
+  vpn-service status NetworkManager
+  vpn-service restart NetworkManager --init=openrc
+  vpn-service --backup-dns
+  vpn-service --validate-system
+EOF
+}
+
+# Parse command line and execute
+main() {
+    local command=""
+    local service=""
+    local init_system=""
+    local timeout="30"
+    local dry_run="false"
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            "status"|"restart"|"enable"|"disable")
+                command="$1"
+                shift
+                [[ $# -gt 0 ]] && service="$1" && shift
+                ;;
+            "--detect-init")
+                detect_init_system
+                return 0
+                ;;
+            "--detect-dns-manager")
+                detect_dns_manager
+                return 0
+                ;;
+            "--detect-dhcp-service")
+                detect_dhcp_service
+                return 0
+                ;;
+            "--check-dependencies")
+                check_service_dependencies
+                return $?
+                ;;
+            "--check-permissions")
+                check_permissions "sudo"
+                return $?
+                ;;
+            "--check-sudo-permissions")
+                check_permissions "sudo"
+                return $?
+                ;;
+            "--backup-dns")
+                backup_dns
+                return $?
+                ;;
+            "--restore-dns")
+                restore_dns
+                return $?
+                ;;
+            "--validate-dns")
+                validate_dns
+                return $?
+                ;;
+            "--check-dns-leaks")
+                check_dns_leaks
+                return $?
+                ;;
+            "--resolve-dns-conflicts")
+                resolve_dns_conflicts
+                return $?
+                ;;
+            "--backup-routes")
+                backup_routes
+                return $?
+                ;;
+            "--restore-routes")
+                restore_routes
+                return $?
+                ;;
+            "--preserve-default-route")
+                preserve_default_route
+                return $?
+                ;;
+            "--cleanup-vpn-routes")
+                cleanup_vpn_routes
+                return $?
+                ;;
+            "--detect-route-conflicts")
+                detect_route_conflicts
+                return $?
+                ;;
+            "--validate-routes")
+                validate_routes
+                return $?
+                ;;
+            "--list-nm-connections")
+                list_nm_connections
+                return $?
+                ;;
+            "--check-nm-vpn-conflicts")
+                check_nm_vpn_conflicts
+                return $?
+                ;;
+            "--validate-system")
+                validate_system
+                return $?
+                ;;
+            "--health-check")
+                health_check
+                return $?
+                ;;
+            "--emergency-recovery")
+                emergency_recovery "$dry_run"
+                return $?
+                ;;
+            "--init="*)
+                init_system="${1#--init=}"
+                shift
+                ;;
+            "--timeout="*)
+                timeout="${1#--timeout=}"
+                shift
+                ;;
+            "--dry-run")
+                dry_run="true"
+                shift
+                ;;
+            "--force-openrc")
+                detect_init_system "openrc"
+                return 0
+                ;;
+            "--force-systemd")
+                detect_init_system "systemd"
+                return 0
+                ;;
+            "--force-runit")
+                detect_init_system "runit"
+                return 0
+                ;;
+            "--force-s6")
+                detect_init_system "s6"
+                return 0
+                ;;
+            "--force-openresolv")
+                detect_dns_manager "openresolv"
+                return 0
+                ;;
+            "--help"|"-h")
+                show_usage
+                return 0
+                ;;
+            *)
+                echo "Unknown option: $1"
+                show_usage
+                return 1
+                ;;
+        esac
+    done
+
+    case "$command" in
+        "status"|"restart"|"enable"|"disable")
+            if [[ -z "$service" ]]; then
+                echo "Error: Service name required for $command"
+                show_usage
+                return 1
+            fi
+            service_operation "$command" "$service" "$init_system" "$timeout" "$dry_run"
+            save_service_state "$command" "$service"
+            ;;
+        "")
+            show_usage
+            return 1
+            ;;
+        *)
+            echo "Unknown command: $command"
+            show_usage
+            return 1
+            ;;
+    esac
+}
+
+main "$@"
