@@ -2,6 +2,8 @@
 # ABOUTME: Process safety and cleanup tests for VPN management system
 # ABOUTME: Tests using REAL system interactions - no mocking per CLAUDE.md
 
+set -euo pipefail
+
 # Source the test framework
 TEST_DIR="$(dirname "$(realpath "$0")")"
 # shellcheck source=tests/test_framework.sh
