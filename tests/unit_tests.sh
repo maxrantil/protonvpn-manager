@@ -2,6 +2,8 @@
 # ABOUTME: Unit tests for VPN management system core functions
 # ABOUTME: Tests individual functions and components in isolation
 
+set -euo pipefail
+
 # Source the test framework
 TEST_DIR="$(dirname "$(realpath "$0")")"
 # shellcheck source=tests/test_framework.sh
