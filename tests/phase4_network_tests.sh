@@ -2,6 +2,8 @@
 # ABOUTME: Phase 4.1 Network Connectivity Testing - TDD Tests
 # ABOUTME: Tests for internet connectivity, latency testing, DNS resolution, and NetworkManager functionality
 
+set -euo pipefail
+
 # Source the test framework
 TEST_DIR="$(dirname "$(realpath "$0")")"
 source "$TEST_DIR/test_framework.sh"
