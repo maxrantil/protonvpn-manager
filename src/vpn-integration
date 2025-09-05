@@ -7,7 +7,10 @@ set -uo pipefail
 
 # Configuration
 SCRIPT_DIR="$(dirname "$(realpath "$0")")"
-VPN_DIR="$(dirname "$SCRIPT_DIR")"
+# Note: VPN_DIR should be set by the calling script, don't override it
+if [[ -z "${VPN_DIR:-}" ]]; then
+    VPN_DIR="$SCRIPT_DIR"  # fallback to script directory if not set
+fi
 
 # Integration functions
 

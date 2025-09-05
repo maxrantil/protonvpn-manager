@@ -152,7 +152,7 @@ show_status() {
             echo -e "  Uptime: $uptime"
         fi
 
-        notify-send "VPN Status" "Connected - IP: $external_ip" --icon=network-vpn 2>/dev/null || true
+        notify_event "connection_established" "VPN" "$external_ip"
     else
         echo -e "\033[1;31m✗ VPN Status: DISCONNECTED\033[0m"
 
@@ -164,7 +164,7 @@ show_status() {
             echo -e "\033[1;33m  Warning: Stale PID file exists\033[0m"
         fi
 
-        notify-send "VPN Status" "Disconnected - IP: $external_ip" --icon=network-idle 2>/dev/null || true
+        notify_event "status_check" "DISCONNECTED" "$external_ip"
     fi
 
     echo
@@ -242,7 +242,7 @@ stop_vpn() {
     cleanup_files
     cleanup_routes_light
 
-    notify-send "VPN Manager" "VPN disconnected successfully" --icon=network-idle 2>/dev/null || true
+    notify_event "status_check" "DISCONNECTED"
 
     pkill -RTMIN+4 dwmblocks 2>/dev/null || true
 
@@ -322,7 +322,7 @@ kill_all_vpn() {
     cleanup_files
     cleanup_routes_light
 
-    notify-send "VPN Manager" "All VPN processes killed" --icon=dialog-warning 2>/dev/null || true
+    notify_event "process_health" "All processes killed"
 }
 
 cleanup_files() {
@@ -402,7 +402,7 @@ full_cleanup() {
     echo -e "\033[1;32m✓ VPN cleanup completed\033[0m"
     log_message "VPN cleanup completed"
 
-    notify-send "VPN Manager" "VPN cleanup completed" --icon=dialog-information 2>/dev/null || true
+    notify_event "process_health" "Cleanup completed"
 }
 
 emergency_network_reset() {
@@ -428,7 +428,7 @@ emergency_network_reset() {
     echo -e "\033[1;33m  Your internet connection should recover in a few seconds.\033[0m"
     log_message "Emergency network reset completed"
 
-    notify-send "VPN Manager" "Emergency network reset completed" --icon=dialog-warning 2>/dev/null || true
+    notify_event "process_health" "Emergency network reset"
 }
 
 case "$1" in
