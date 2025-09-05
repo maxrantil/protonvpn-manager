@@ -45,20 +45,22 @@ detect_status_bar_systems() {
         esac
     fi
 
-    # Check for running processes
-    if pgrep -x dwmblocks >/dev/null 2>&1; then
+    # Check for running processes - single optimized call
+    local procs
+    # shellcheck disable=SC2009 # Using ps+grep is intentionally faster than 4 pgrep calls
+    procs=$(ps -eo comm --no-headers 2>/dev/null | grep -E '^(dwmblocks|polybar|waybar|i3status)$')
+
+    # Add detected systems in priority order
+    if echo "$procs" | grep -q '^dwmblocks$'; then
         detected_systems+=("dwmblocks")
     fi
-
-    if pgrep -x polybar >/dev/null 2>&1; then
+    if echo "$procs" | grep -q '^polybar$'; then
         detected_systems+=("polybar")
     fi
-
-    if pgrep -x waybar >/dev/null 2>&1; then
+    if echo "$procs" | grep -q '^waybar$'; then
         detected_systems+=("waybar")
     fi
-
-    if pgrep -x i3status >/dev/null 2>&1; then
+    if echo "$procs" | grep -q '^i3status$'; then
         detected_systems+=("i3status")
     fi
 
@@ -516,9 +518,22 @@ main() {
             "update")
                 command="update"
                 shift
-                [[ $# -gt 0 ]] && state="$1" && shift
-                [[ $# -gt 0 ]] && profile="$1" && shift
-                [[ $# -gt 0 ]] && ip="$1" && shift
+                # Parse positional arguments for update command
+                while [[ $# -gt 0 && ! "$1" =~ ^-- ]]; do
+                    if [[ -z "$state" ]]; then
+                        state="$1"
+                        shift
+                    elif [[ -z "$profile" ]]; then
+                        profile="$1"
+                        shift
+                    elif [[ -z "$ip" ]]; then
+                        ip="$1"
+                        shift
+                    else
+                        # Extra positional argument, skip it
+                        shift
+                    fi
+                done
                 ;;
             "clear")
                 command="clear"
