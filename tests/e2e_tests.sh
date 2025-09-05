@@ -2,6 +2,8 @@
 # ABOUTME: End-to-end tests for VPN management system
 # ABOUTME: Tests complete workflows and user scenarios
 
+set -euo pipefail
+
 # Source the test framework
 TEST_DIR="$(dirname "$(realpath "$0")")"
 # shellcheck source=tests/test_framework.sh
