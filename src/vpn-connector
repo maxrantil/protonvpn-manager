@@ -10,6 +10,11 @@ PERFORMANCE_CACHE="/tmp/vpn_performance.cache"
 CONNECTION_LOG="/tmp/vpn_connect.log"
 LOCK_FILE="/tmp/vpn_connect.lock"
 
+# Load VPN integration system
+if [[ -f "$VPN_DIR/vpn-integration" ]]; then
+    source "$VPN_DIR/vpn-integration"
+fi
+
 log_message() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "$CONNECTION_LOG"
 }
