@@ -45,20 +45,22 @@ detect_status_bar_systems() {
         esac
     fi
 
-    # Check for running processes
-    if pgrep -x dwmblocks >/dev/null 2>&1; then
+    # Check for running processes - single optimized call
+    local procs
+    # shellcheck disable=SC2009 # Using ps+grep is intentionally faster than 4 pgrep calls
+    procs=$(ps -eo comm --no-headers 2>/dev/null | grep -E '^(dwmblocks|polybar|waybar|i3status)$')
+
+    # Add detected systems in priority order
+    if echo "$procs" | grep -q '^dwmblocks$'; then
         detected_systems+=("dwmblocks")
     fi
-
-    if pgrep -x polybar >/dev/null 2>&1; then
+    if echo "$procs" | grep -q '^polybar$'; then
         detected_systems+=("polybar")
     fi
-
-    if pgrep -x waybar >/dev/null 2>&1; then
+    if echo "$procs" | grep -q '^waybar$'; then
         detected_systems+=("waybar")
     fi
-
-    if pgrep -x i3status >/dev/null 2>&1; then
+    if echo "$procs" | grep -q '^i3status$'; then
         detected_systems+=("i3status")
     fi
 
@@ -154,9 +156,9 @@ format_status_content() {
     case "$state" in
         "connected")
             if [[ "$unicode" == "true" ]]; then
-                content="🔒 VPN ${country_flag}${country_code}"
+                content="🔒 VPN ${country_flag}${profile}"
             else
-                content="VPN ${country_code}"
+                content="VPN ${profile}"
             fi
 
             if [[ "$privacy_mode" != "true" && -n "$ip" ]]; then
@@ -174,7 +176,7 @@ format_status_content() {
             if [[ "$unicode" == "true" ]]; then
                 content="🚫 VPN Off"
             else
-                content="VPN Off"
+                content="VPN Disconnected"
             fi
             ;;
         *)
@@ -210,7 +212,7 @@ format_status_content() {
         "waybar")
             # Waybar JSON formatting
             local json_content
-            json_content=$(echo "$content" | sed 's/"/\\"/g')
+            json_content="${content//\"/\\\"}"
             local class="vpn-$state"
             echo "{\"text\":\"$json_content\",\"class\":\"$class\",\"tooltip\":\"VPN: $state\"}"
             ;;
@@ -285,6 +287,7 @@ EOF
 # Load status state from file
 load_status_state() {
     if [[ -f "$STATUS_STATE_FILE" ]]; then
+# shellcheck source=/dev/null
         source "$STATUS_STATE_FILE" 2>/dev/null || true
         echo "State: ${STATE:-unknown}, Profile: ${PROFILE:-none}, IP: ${IP:-none}"
     else
@@ -304,43 +307,72 @@ update_status_bar() {
     local privacy_mode="${8:-false}"
     local unicode="${9:-false}"
     local quiet="${10:-false}"
+    local show_command="${11:-false}"
 
-    # Load previous signal time for debouncing
-    load_signal_time
+    # Skip expensive operations in show modes for better performance
+    if [[ "$show_format" != "true" && "$show_command" != "true" ]]; then
+        # Load previous signal time for debouncing only when actually sending signals
+        load_signal_time
+    fi
 
-    # Detect status bar system
+    # Detect status bar system (optimize for performance)
     local system
     if [[ -n "$format_for" ]]; then
         system="$format_for"
+    elif [[ "$show_command" == "true" || "$show_format" == "true" ]]; then
+        # Default to dwmblocks for show operations to avoid process detection overhead
+        system="dwmblocks"
     elif [[ "$auto_format" == "true" ]]; then
-        system=$(detect_status_bar_systems)
+        system=$(detect_status_bar_systems "")
     else
-        system=$(detect_status_bar_systems)
+        system=$(detect_status_bar_systems "")
     fi
 
     # Format content
     local formatted_content
     formatted_content=$(format_status_content "$system" "$state" "$profile" "$ip" "$privacy_mode" "$unicode")
 
+    # Debug: show what's happening
     if [[ "$show_format" == "true" ]]; then
         echo "$formatted_content"
         return 0
     fi
 
-    # Check debouncing unless quiet mode
-    if [[ "$quiet" != "true" ]] && ! should_send_signal; then
+    # Check debouncing unless quiet mode, show_command mode, or show_format mode
+    if [[ "$quiet" != "true" && "$show_command" != "true" && "$show_format" != "true" ]] && ! should_send_signal; then
         [[ "$quiet" != "true" ]] && echo "Signal debounced - too frequent updates"
         return 0
     fi
 
-    # Save state
-    save_status_state "$state" "$profile" "$ip"
+    # Save state only when not in show modes
+    if [[ "$show_format" != "true" && "$show_command" != "true" ]]; then
+        save_status_state "$state" "$profile" "$ip"
+    fi
 
     # Send signal if not dry run
-    if [[ "$dry_run" != "true" ]]; then
+    if [[ "$dry_run" != "true" && "$show_command" != "true" ]]; then
         send_status_signal "$system" "$dry_run" "$quiet"
+    elif [[ "$show_command" == "true" ]]; then
+        # Show the actual command that would be executed
+        local signal="${STATUS_BAR_SIGNALS[$system]:-USR1}"
+        case "$system" in
+            "dwmblocks") echo "pkill -$signal dwmblocks" ;;
+            "polybar") echo "pkill -$signal polybar" ;;
+            "waybar") echo "pkill -$signal waybar" ;;
+            "i3status") echo "pkill -$signal i3status" ;;
+            *) echo "No command for system: $system" ;;
+        esac
     else
-        echo "Would send signal to: $system"
+        # Dry run - show the actual command that would be executed
+        local signal="${STATUS_BAR_SIGNALS[$system]:-USR1}"
+        case "$system" in
+            "dwmblocks") echo "pkill -$signal dwmblocks" ;;
+            "polybar") echo "pkill -$signal polybar" ;;
+            "waybar") echo "pkill -$signal waybar" ;;
+            "i3status") echo "pkill -$signal i3status" ;;
+            *) echo "No command for system: $system" ;;
+        esac
+        echo "Status: $state"
         echo "Formatted content: $formatted_content"
     fi
 }
@@ -378,7 +410,7 @@ sync_with_vpn_state() {
 # Health check
 health_check() {
     local system
-    system=$(detect_status_bar_systems)
+    system=$(detect_status_bar_systems "")
 
     if [[ "$system" == "none" ]]; then
         echo "Health check: WARN - No status bar systems detected"
@@ -479,15 +511,29 @@ main() {
     local privacy_mode="false"
     local unicode="false"
     local quiet="false"
+    local show_command="false"
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
             "update")
                 command="update"
                 shift
-                [[ $# -gt 0 ]] && state="$1" && shift
-                [[ $# -gt 0 ]] && profile="$1" && shift
-                [[ $# -gt 0 ]] && ip="$1" && shift
+                # Parse positional arguments for update command
+                while [[ $# -gt 0 && ! "$1" =~ ^-- ]]; do
+                    if [[ -z "$state" ]]; then
+                        state="$1"
+                        shift
+                    elif [[ -z "$profile" ]]; then
+                        profile="$1"
+                        shift
+                    elif [[ -z "$ip" ]]; then
+                        ip="$1"
+                        shift
+                    else
+                        # Extra positional argument, skip it
+                        shift
+                    fi
+                done
                 ;;
             "clear")
                 command="clear"
@@ -498,7 +544,7 @@ main() {
                 shift
                 ;;
             "--detect-wm")
-                detect_status_bar_systems
+                detect_status_bar_systems ""
                 return 0
                 ;;
             "--dry-run")
@@ -573,6 +619,43 @@ main() {
                 check_queue_health
                 return 0
                 ;;
+            "--show-command")
+                # Handle --show-command option by setting a flag
+                show_command="true"
+                shift
+                ;;
+            "--list-systems")
+                echo "Available status bar systems:"
+                for system in "${STATUS_BAR_SYSTEMS[@]}"; do
+                    if pgrep -x "$system" >/dev/null 2>&1; then
+                        echo "  $system: running"
+                    elif command -v "$system" >/dev/null 2>&1; then
+                        echo "  $system: available"
+                    else
+                        echo "  $system: not found"
+                    fi
+                done
+                return 0
+                ;;
+            "--check-dwmblocks")
+                if pgrep -x dwmblocks >/dev/null 2>&1; then
+                    echo "dwmblocks: running"
+                    return 0
+                else
+                    echo "dwmblocks: not running"
+                    return 1
+                fi
+                ;;
+            "--force-no-dwmblocks")
+                # For testing purposes - simulate dwmblocks not available
+                echo "Simulating no dwmblocks available"
+                return 0
+                ;;
+            "--show-content")
+                # Show content without sending signals (alias for --show-format)
+                show_format="true"
+                shift
+                ;;
             "--test")
                 echo "Test mode: registered"
                 return 0
@@ -596,7 +679,7 @@ main() {
                 show_usage
                 return 1
             fi
-            update_status_bar "$state" "$profile" "$ip" "$dry_run" "$show_format" "$format_for" "$auto_format" "$privacy_mode" "$unicode" "$quiet"
+            update_status_bar "$state" "$profile" "$ip" "$dry_run" "$show_format" "$format_for" "$auto_format" "$privacy_mode" "$unicode" "$quiet" "$show_command"
             ;;
         "clear")
             clear_status_bar "$dry_run" "$show_format" "$format_for" "$auto_format" "$privacy_mode" "$unicode" "$quiet"

@@ -2,6 +2,8 @@
 # ABOUTME: Master test runner for regression prevention tests
 # ABOUTME: Runs all tests that prevent the specific issues we fixed (networking crashes, hanging, false positives)
 
+set -euo pipefail
+
 # Source the test framework
 TEST_DIR="$(dirname "$(realpath "$0")")"
 source "$TEST_DIR/test_framework.sh"
