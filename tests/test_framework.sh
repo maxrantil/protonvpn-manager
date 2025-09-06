@@ -238,7 +238,7 @@ EOF
 }
 
 cleanup_test_env() {
-    if [[ -n "$TEST_TEMP_DIR" ]] && [[ -d "$TEST_TEMP_DIR" ]]; then
+    if [[ -n "${TEST_TEMP_DIR:-}" ]] && [[ -d "$TEST_TEMP_DIR" ]]; then
         rm -rf "$TEST_TEMP_DIR"
         log_test "INFO" "Test environment cleaned up"
     fi
