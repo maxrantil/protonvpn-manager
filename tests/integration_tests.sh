@@ -7,6 +7,21 @@ TEST_DIR="$(dirname "$(realpath "$0")")"
 # shellcheck source=tests/test_framework.sh
 source "$TEST_DIR/test_framework.sh"
 
+run_regression_prevention_tests() {
+    start_test "Regression Prevention Tests"
+
+    echo "Running simple regression prevention test suite..."
+
+    if "$TEST_DIR/simple_regression_tests.sh" >/dev/null 2>&1; then
+        log_test "PASS" "$CURRENT_TEST: All regression prevention tests passed"
+        ((TESTS_PASSED++))
+    else
+        log_test "FAIL" "$CURRENT_TEST: Some regression prevention tests failed"
+        FAILED_TESTS+=("$CURRENT_TEST")
+        ((TESTS_FAILED++))
+    fi
+}
+
 test_cli_interface() {
     start_test "CLI Interface Integration"
 
@@ -260,6 +275,7 @@ run_integration_tests() {
     test_logging_integration
     test_error_handling
     test_configuration_file_parsing
+    run_regression_prevention_tests
 
     return 0
 }
