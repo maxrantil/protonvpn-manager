@@ -25,6 +25,12 @@
 - [ ] **NEVER use `--no-verify`** to bypass hooks
 - [ ] All commits must pass quality gates
 
+### ✅ Agent Analysis (MANDATORY - Before Code)
+- [ ] **Identify required agents** using trigger word matrix
+- [ ] **Run primary agent analysis** on requirements/existing code
+- [ ] **Document agent recommendations** in issue or PR description
+- [ ] **Validate with secondary agents** for cross-functional concerns
+
 ### ✅ TDD Workflow (MANDATORY)
 - [ ] **Write failing test FIRST** (RED)
 - [ ] **Write minimal code to pass** (GREEN)
@@ -51,6 +57,13 @@
 - Open draft PR early for visibility; convert to ready when complete
 - Ensure tests pass locally before marking ready for review
 - Use PRs to trigger CI/CD and enable async reviews
+
+### Agent Review Checklist (MANDATORY before marking PR ready)
+- [ ] **code-quality-analyzer**: Test coverage and bug detection complete
+- [ ] **security-validator**: Security scan passed with no critical issues
+- [ ] **performance-optimizer**: No performance regressions identified
+- [ ] **ux-accessibility-i18n-agent**: UI changes meet WCAG standards (if applicable)
+- [ ] **architecture-designer**: Changes align with system architecture (if structural)
 
 ### Commit Practices
 - Make atomic commits (one logical change per commit)
@@ -79,11 +92,12 @@
 
 **CRITICAL: Every line of production code MUST be written to make a failing test pass.**
 
-### TDD Process (Follow Exactly)
-1. **RED** - Write failing test that defines desired function
-2. **GREEN** - Write minimal code to make test pass (nothing more)
-3. **REFACTOR** - Improve code while keeping tests green
-4. **REPEAT** - Continue cycle for each feature/bugfix
+### TDD Process with Agent Support (Follow Exactly)
+1. **RED** - Write failing test that defines desired function (use **code-quality-analyzer** for comprehensive test scenarios)
+2. **GREEN** - Write minimal code to make test pass (use **performance-optimizer** for efficient implementations)
+3. **REFACTOR** - Improve code while keeping tests green (use **security-validator** for vulnerability checks)
+4. **AGENT VALIDATION** - Run full agent sweep before commit
+5. **REPEAT** - Continue cycle for each feature/bugfix
 
 ### TDD Rules
 - **NEVER write production code without failing test first**
@@ -103,7 +117,57 @@ Every feature must have:
 
 ---
 
-## Code Standards
+## Agent-Driven Development (MANDATORY)
+
+### Agent Selection Matrix
+**When starting ANY task, determine required agents:**
+
+| Task Type | Primary Agent | Secondary Agents | Trigger Words |
+|-----------|---------------|------------------|---------------|
+| New features | architecture-designer | code-quality-analyzer, security-validator | "implement", "build", "create" |
+| Bug fixes | code-quality-analyzer | security-validator, performance-optimizer | "fix", "bug", "error" |
+| Performance issues | performance-optimizer | architecture-designer | "slow", "optimize", "bottleneck" |
+| Security concerns | security-validator | code-quality-analyzer | "auth", "security", "vulnerability" |
+| UI/Frontend | ux-accessibility-i18n-agent | architecture-designer | "UI", "frontend", "accessibility" |
+| Deployment | devops-deployment-agent | security-validator | "deploy", "CI/CD", "infrastructure" |
+
+### Multi-Agent Workflow
+1. **Primary Agent Analysis** - Deep dive with main agent
+2. **Cross-Agent Validation** - Secondary agents review primary's recommendations
+3. **Conflict Resolution** - Address any contradictions between agent recommendations
+4. **Implementation Priority Matrix** - Rank all agent recommendations by impact/effort
+5. **Validation Loop** - Re-run agents after implementation to confirm fixes
+
+### Agent Communication Protocol
+- **Agent Handoffs**: Always summarize findings when switching agents
+- **Conflict Documentation**: Record when agents disagree and resolution chosen
+- **Learning Loop**: Update agent selection based on outcome effectiveness
+
+### Agent Integration Commands
+```bash
+# Run comprehensive agent analysis
+claude-code analyze --agents=all
+
+# Run specific agent on current changes
+claude-code analyze --agent=security-validator --scope=changed-files
+
+# Pre-commit agent check
+claude-code pre-commit-agents
+```
+
+---
+
+## Code Standards (Agent-Enforced)
+
+### Multi-Agent Review Process (MANDATORY)
+Every code change must pass through relevant agents:
+
+1. **Architecture Review**: Use `architecture-designer` for structural changes
+2. **Quality Gates**: Use `code-quality-analyzer` for all code
+3. **Security Scanning**: Use `security-validator` for data handling, auth, APIs
+4. **Performance Validation**: Use `performance-optimizer` for algorithms, queries
+5. **UX Compliance**: Use `ux-accessibility-i18n-agent` for user-facing features
+6. **Deployment Readiness**: Use `devops-deployment-agent` for infrastructure
 
 ### Writing Principles
 - **CRITICAL: NEVER USE `--no-verify` WHEN COMMITTING**
@@ -144,6 +208,20 @@ repos:
     rev: v0.9.0.6
     hooks:
       - id: shellcheck
+
+  - repo: local
+    hooks:
+      - id: code-quality-analysis
+        name: Claude Code Quality Analysis
+        entry: claude-code quality-check
+        language: system
+        pass_filenames: false
+
+      - id: security-validation
+        name: Claude Security Validation
+        entry: claude-code security-scan
+        language: system
+        pass_filenames: false
 ```
 
 ---
@@ -192,6 +270,15 @@ Must include and keep updated:
 
 Format for completed phases:
 ```markdown
+## **PHASE X: NAME**
+### Agent Validation Status:
+- [ ] Code Quality: Not started | In progress | ✅ Complete
+- [ ] Security: Not started | In progress | ✅ Complete
+- [ ] Performance: Not started | In progress | ✅ Complete
+- [ ] Architecture: Not started | In progress | ✅ Complete
+
+**Complete when**: All agent validations pass ✅
+
 ## **PHASE X: NAME** ✅ COMPLETE
 *Completed: Date*
 *Status: Brief summary*
