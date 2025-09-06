@@ -2,19 +2,28 @@
 # ABOUTME: VPN process and connection management script for Artix/Arch Linux
 # ABOUTME: Handles OpenVPN process lifecycle, status checking, and cleanup operations
 
+VPN_DIR="$(dirname "$(realpath "$0")")"
 VPN_PID_FILE="/var/run/openvpn.pid"
-VPN_LOG_FILE="/tmp/vpn_manager.log"
+VPN_LOG_FILE="/tmp/vpn_manager_$(id -u).log"
 LOCK_FILE="/tmp/vpn_manager.lock"
 
+# Load VPN integration system
+if [[ -f "$VPN_DIR/vpn-integration" ]]; then
+    source "$VPN_DIR/vpn-integration"
+fi
+
 log_message() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "$VPN_LOG_FILE"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "$VPN_LOG_FILE" 2>/dev/null || {
+        # Fallback if log file not writable
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >&2
+    }
 }
 
 get_vpn_pid() {
     local pid_from_file pid_from_process
 
     # First, try to find running OpenVPN process
-    pid_from_process=$(pgrep -f "openvpn.*--config" 2>/dev/null | head -1)
+    pid_from_process=$(pgrep -f "^openvpn.*--config" 2>/dev/null | head -1 || true)
 
     # If we have a PID file, check if it matches the running process
     if [[ -f "$VPN_PID_FILE" ]]; then
@@ -62,8 +71,13 @@ is_vpn_running() {
 }
 
 check_process_health() {
-    local process_count
-    process_count=$(pgrep -f "openvpn.*config" 2>/dev/null | wc -l)
+    local process_count pids
+    pids=$(pgrep -f "^openvpn.*--config" 2>/dev/null || true)
+    if [[ -n "$pids" ]]; then
+        process_count=$(echo "$pids" | wc -l)
+    else
+        process_count=0
+    fi
 
     if [[ $process_count -gt 1 ]]; then
         echo -e "\033[1;31m⚠️  CRITICAL WARNING: $process_count OpenVPN processes detected!\033[0m" >&2
@@ -138,7 +152,7 @@ show_status() {
             echo -e "  Uptime: $uptime"
         fi
 
-        notify-send "VPN Status" "Connected - IP: $external_ip" --icon=network-vpn 2>/dev/null || true
+        notify_event "connection_established" "VPN" "$external_ip"
     else
         echo -e "\033[1;31m✗ VPN Status: DISCONNECTED\033[0m"
 
@@ -150,7 +164,7 @@ show_status() {
             echo -e "\033[1;33m  Warning: Stale PID file exists\033[0m"
         fi
 
-        notify-send "VPN Status" "Disconnected - IP: $external_ip" --icon=network-idle 2>/dev/null || true
+        notify_event "status_check" "DISCONNECTED" "$external_ip"
     fi
 
     echo
@@ -228,7 +242,7 @@ stop_vpn() {
     cleanup_files
     cleanup_routes_light
 
-    notify-send "VPN Manager" "VPN disconnected successfully" --icon=network-idle 2>/dev/null || true
+    notify_event "status_check" "DISCONNECTED"
 
     pkill -RTMIN+4 dwmblocks 2>/dev/null || true
 
@@ -240,7 +254,7 @@ kill_all_vpn() {
     log_message "Force kill all VPN processes requested"
 
     local pids
-    pids=$(pgrep -f "openvpn.*config" 2>/dev/null)
+    pids=$(pgrep -f "^openvpn.*--config" 2>/dev/null || true)
 
     if [[ -z "$pids" ]]; then
         echo -e "\033[1;33mNo VPN processes found\033[0m"
@@ -282,18 +296,18 @@ kill_all_vpn() {
         # Final verification
         sleep 2
         local remaining_pids
-        remaining_pids=$(pgrep -f "openvpn.*config" 2>/dev/null)
+        remaining_pids=$(pgrep -f "^openvpn.*--config" 2>/dev/null || true)
 
         if [[ -n "$remaining_pids" ]]; then
             echo -e "\033[1;31mError: Some processes still running: $remaining_pids\033[0m"
             echo -e "\033[1;31mTrying more aggressive cleanup...\033[0m"
 
             # Nuclear option: kill by command pattern
-            sudo pkill -KILL -f "openvpn.*config.*locations" 2>/dev/null || true
+            sudo pkill -KILL -f "^openvpn.*--config.*locations" 2>/dev/null || true
             sleep 2
 
             # Final final check
-            remaining_pids=$(pgrep -f "openvpn.*config" 2>/dev/null)
+            remaining_pids=$(pgrep -f "^openvpn.*--config" 2>/dev/null || true)
             if [[ -n "$remaining_pids" ]]; then
                 echo -e "\033[1;31mCRITICAL: Processes $remaining_pids still running after aggressive cleanup!\033[0m"
                 echo -e "\033[1;31mYou may need to reboot to fully clean up these processes.\033[0m"
@@ -308,7 +322,7 @@ kill_all_vpn() {
     cleanup_files
     cleanup_routes_light
 
-    notify-send "VPN Manager" "All VPN processes killed" --icon=dialog-warning 2>/dev/null || true
+    notify_event "process_health" "All processes killed"
 }
 
 cleanup_files() {
@@ -357,12 +371,17 @@ cleanup_routes() {
 }
 
 full_cleanup() {
-    echo -e "\033[1;33mPerforming full VPN cleanup...\033[0m"
+    echo -e "\033[1;33mPerforming VPN cleanup...\033[0m"
     log_message "Full cleanup requested"
 
     # Check for multiple processes before cleanup
-    local process_count
-    process_count=$(pgrep -f "openvpn.*config" 2>/dev/null | wc -l)
+    local process_count pids
+    pids=$(pgrep -f "^openvpn.*--config" 2>/dev/null || true)
+    if [[ -n "$pids" ]]; then
+        process_count=$(echo "$pids" | wc -l)
+    else
+        process_count=0
+    fi
 
     if [[ $process_count -gt 1 ]]; then
         echo -e "\033[1;31m⚠️  CRITICAL: Found $process_count OpenVPN processes running simultaneously!\033[0m"
@@ -374,6 +393,23 @@ full_cleanup() {
 
     echo "Cleaning up temporary files..."
     rm -f /tmp/vpn_*.log /tmp/vpn_*.cache /tmp/vpn_*.lock 2>/dev/null || true
+
+    # REMOVED: NetworkManager restart that was causing internet disruption
+    # The NetworkManager restart was too aggressive and caused connectivity issues
+    # VPN cleanup should focus on VPN-specific resources only
+    echo "VPN cleanup completed (NetworkManager left intact)"
+
+    echo -e "\033[1;32m✓ VPN cleanup completed\033[0m"
+    log_message "VPN cleanup completed"
+
+    notify_event "process_health" "Cleanup completed"
+}
+
+emergency_network_reset() {
+    echo -e "\033[1;31m⚠️  EMERGENCY NETWORK RESET - This will disrupt internet temporarily!\033[0m"
+    log_message "Emergency network reset requested"
+
+    full_cleanup
 
     echo "Resetting network configuration..."
     # Try different init systems
@@ -388,10 +424,11 @@ full_cleanup() {
         sudo service NetworkManager restart 2>/dev/null || true
     fi
 
-    echo -e "\033[1;32m✓ Full cleanup completed\033[0m"
-    log_message "Full cleanup completed"
+    echo -e "\033[1;32m✓ Emergency network reset completed\033[0m"
+    echo -e "\033[1;33m  Your internet connection should recover in a few seconds.\033[0m"
+    log_message "Emergency network reset completed"
 
-    notify-send "VPN Manager" "Full cleanup completed" --icon=dialog-information 2>/dev/null || true
+    notify_event "process_health" "Emergency network reset"
 }
 
 case "$1" in
@@ -407,6 +444,9 @@ case "$1" in
     "cleanup"|"clean"|"c")
         full_cleanup
         ;;
+    "emergency-reset"|"emergency"|"reset")
+        emergency_network_reset
+        ;;
     "health"|"check"|"h")
         check_process_health
         case $? in
@@ -417,14 +457,15 @@ case "$1" in
         ;;
     *)
         echo "VPN Manager - Process Management"
-        echo "Usage: $0 {status|stop|kill-all|cleanup|health}"
+        echo "Usage: $0 {status|stop|kill-all|cleanup|emergency-reset|health}"
         echo ""
         echo "Commands:"
-        echo "  status    - Show VPN connection status"
-        echo "  stop      - Gracefully stop VPN connection"
-        echo "  kill-all  - Force kill all VPN processes"
-        echo "  cleanup   - Full cleanup of VPN processes and routes"
-        echo "  health    - Check OpenVPN process health"
+        echo "  status          - Show VPN connection status"
+        echo "  stop            - Gracefully stop VPN connection"
+        echo "  kill-all        - Force kill all VPN processes"
+        echo "  cleanup         - Cleanup VPN processes and routes (safe)"
+        echo "  emergency-reset - Emergency network reset (restarts NetworkManager)"
+        echo "  health          - Check OpenVPN process health"
         exit 1
         ;;
 esac
