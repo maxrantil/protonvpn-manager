@@ -1,0 +1,244 @@
+#!/bin/bash
+# ABOUTME: VPN system integration library providing unified interfaces for notifications, status bar, and services
+# ABOUTME: Centralizes system integration calls across all VPN management scripts
+
+# Using less strict options to prevent hanging when commands fail
+set -uo pipefail
+
+# Configuration
+SCRIPT_DIR="$(dirname "$(realpath "$0")")"
+# Note: VPN_DIR should be set by the calling script, don't override it
+if [[ -z "${VPN_DIR:-}" ]]; then
+    VPN_DIR="$SCRIPT_DIR"  # fallback to script directory if not set
+fi
+
+# Integration functions
+
+# Send notification via centralized system
+notify_event() {
+    local event_type="$1"
+    local arg1="${2:-}"
+    local arg2="${3:-}"
+
+    if [[ -x "$SCRIPT_DIR/vpn-notify" ]]; then
+        "$SCRIPT_DIR/vpn-notify" "$event_type" "$arg1" "$arg2"
+    else
+        # Fallback to echo if vpn-notify not available
+        echo "[NOTIFICATION] $event_type: $arg1 $arg2"
+    fi
+}
+
+# Alternative function name for compatibility
+send_notification() {
+    notify_event "$@"
+}
+
+# Update status bar via centralized system
+update_statusbar() {
+    local state="$1"
+    local profile="${2:-}"
+    local ip="${3:-}"
+
+    if [[ -x "$SCRIPT_DIR/vpn-statusbar" ]]; then
+        "$SCRIPT_DIR/vpn-statusbar" update "$state" "$profile" "$ip"
+    else
+        # Fallback - attempt legacy dwmblocks signal
+        if command -v pkill >/dev/null 2>&1 && pgrep dwmblocks >/dev/null 2>&1; then
+            pkill -RTMIN+4 dwmblocks 2>/dev/null || true
+        fi
+    fi
+}
+
+# Alternative function name for compatibility
+statusbar_update() {
+    update_statusbar "$@"
+}
+
+# Manage services via centralized system
+service_operation() {
+    local operation="$1"
+    local service="${2:-}"
+
+    if [[ -x "$SCRIPT_DIR/vpn-service" ]]; then
+        "$SCRIPT_DIR/vpn-service" "$operation" "$service"
+    else
+        # Fallback to direct service commands
+        case "$operation" in
+            "restart")
+                if command -v systemctl >/dev/null 2>&1; then
+                    sudo systemctl restart "$service" 2>/dev/null || true
+                elif command -v rc-service >/dev/null 2>&1; then
+                    sudo rc-service "$service" restart 2>/dev/null || true
+                fi
+                ;;
+            "status")
+                if command -v systemctl >/dev/null 2>&1; then
+                    systemctl is-active "$service" 2>/dev/null || echo "inactive"
+                elif command -v rc-service >/dev/null 2>&1; then
+                    rc-service "$service" status 2>/dev/null || echo "stopped"
+                fi
+                ;;
+        esac
+    fi
+}
+
+# Backup and restore DNS settings
+dns_backup() {
+    if [[ -x "$SCRIPT_DIR/vpn-service" ]]; then
+        "$SCRIPT_DIR/vpn-service" --backup-dns
+    else
+        # Simple fallback
+        if [[ -f /etc/resolv.conf ]]; then
+            sudo cp /etc/resolv.conf /tmp/resolv.conf.vpn-backup 2>/dev/null || true
+        fi
+    fi
+}
+
+dns_restore() {
+    if [[ -x "$SCRIPT_DIR/vpn-service" ]]; then
+        "$SCRIPT_DIR/vpn-service" --restore-dns
+    else
+        # Simple fallback
+        if [[ -f /tmp/resolv.conf.vpn-backup ]]; then
+            sudo cp /tmp/resolv.conf.vpn-backup /etc/resolv.conf 2>/dev/null || true
+        fi
+    fi
+}
+
+# Service management functions
+manage_service() {
+    service_operation "$@"
+}
+
+service_restart() {
+    service_operation "restart" "$1"
+}
+
+service_status() {
+    service_operation "status" "$1"
+}
+
+# Initialize integration system
+init_integration() {
+    # Verify integration components are available
+    local components=("vpn-notify" "vpn-statusbar" "vpn-service")
+    local available_count=0
+
+    for component in "${components[@]}"; do
+        if [[ -x "$SCRIPT_DIR/$component" ]]; then
+            ((available_count++))
+        fi
+    done
+
+    echo "Integration system initialized: $available_count/3 components available"
+    return 0
+}
+
+# Health check for integration system
+integration_health_check() {
+    local issues=0
+
+    echo "VPN Integration System Health Check"
+    echo "=================================="
+
+    # Check vpn-notify
+    if [[ -x "$SCRIPT_DIR/vpn-notify" ]]; then
+        if "$SCRIPT_DIR/vpn-notify" --health-check >/dev/null 2>&1; then
+            echo "✓ Notification system: OK"
+        else
+            echo "✗ Notification system: Issues detected"
+            ((issues++))
+        fi
+    else
+        echo "⚠ Notification system: Not available"
+        ((issues++))
+    fi
+
+    # Check vpn-statusbar
+    if [[ -x "$SCRIPT_DIR/vpn-statusbar" ]]; then
+        if "$SCRIPT_DIR/vpn-statusbar" --health-check >/dev/null 2>&1; then
+            echo "✓ Status bar system: OK"
+        else
+            echo "✗ Status bar system: Issues detected"
+            ((issues++))
+        fi
+    else
+        echo "⚠ Status bar system: Not available"
+        ((issues++))
+    fi
+
+    # Check vpn-service
+    if [[ -x "$SCRIPT_DIR/vpn-service" ]]; then
+        if "$SCRIPT_DIR/vpn-service" --health-check >/dev/null 2>&1; then
+            echo "✓ Service management: OK"
+        else
+            echo "✗ Service management: Issues detected"
+            ((issues++))
+        fi
+    else
+        echo "⚠ Service management: Not available"
+        ((issues++))
+    fi
+
+    echo "=================================="
+    if [[ $issues -eq 0 ]]; then
+        echo "Overall health: GOOD"
+        return 0
+    else
+        echo "Overall health: $issues issues detected"
+        return 1
+    fi
+}
+
+# Usage information
+show_usage() {
+    cat << EOF
+VPN Integration Library Functions:
+
+Notification Functions:
+  notify_event <event> [arg1] [arg2]       - Send notification
+  send_notification <event> [arg1] [arg2]  - Alias for notify_event
+
+Status Bar Functions:
+  update_statusbar <state> [profile] [ip]  - Update status bar
+  statusbar_update <state> [profile] [ip]  - Alias for update_statusbar
+
+Service Management Functions:
+  service_operation <op> [service]         - Generic service operation
+  service_restart <service>                - Restart service
+  service_status <service>                 - Check service status
+  manage_service <op> [service]            - Alias for service_operation
+
+DNS Management Functions:
+  dns_backup                               - Backup DNS configuration
+  dns_restore                              - Restore DNS configuration
+
+System Functions:
+  init_integration                         - Initialize integration system
+  integration_health_check                 - Check system health
+
+Usage:
+  source /path/to/vpn-integration          - Load functions into script
+  /path/to/vpn-integration --health-check  - Run health check
+EOF
+}
+
+# If called directly (not sourced), handle command line arguments
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    case "${1:-}" in
+        "--health-check"|"--check")
+            integration_health_check
+            ;;
+        "--init")
+            init_integration
+            ;;
+        "--help"|"-h"|"")
+            show_usage
+            ;;
+        *)
+            echo "Unknown option: $1"
+            show_usage
+            exit 1
+            ;;
+    esac
+fi
