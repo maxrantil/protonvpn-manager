@@ -107,8 +107,8 @@ cleanup_on_exit() {
 trap cleanup_on_exit EXIT
 
 list_profiles() {
-    local filter="$1"
-    local show_details="$2"
+    local filter="${1:-}"
+    local show_details="${2:-}"
 
     if [[ ! -d "$LOCATIONS_DIR" ]]; then
         echo -e "\033[1;31mError: Locations directory not found: $LOCATIONS_DIR\033[0m"
@@ -445,13 +445,7 @@ connect_openvpn_profile() {
     for attempt in $(seq 1 "$max_attempts"); do
         echo "  Attempt $attempt of $max_attempts"
 
-        # Mid-attempt process health check and cleanup
-        local process_count
-        process_count=$(pgrep -f "openvpn.*--config" 2>/dev/null | wc -l)
-        if [[ $process_count -gt 0 ]]; then
-            echo -e "\033[1;33m  Mid-attempt cleanup of $process_count process(es)\033[0m"
-            "$VPN_DIR/vpn-manager" cleanup >/dev/null 2>&1
-        fi
+        # Mid-attempt cleanup removed to prevent connection interference
 
         # Connection attempt notification removed - using centralized system for result only
 
@@ -478,13 +472,7 @@ connect_openvpn_profile() {
         echo -e "\033[1;33m  Connection attempt $attempt failed\033[0m"
         log_message "Connection attempt $attempt failed for OpenVPN $profile_name"
 
-        # Post-attempt cleanup: Clean up any failed processes from this attempt
-        local failed_processes
-        failed_processes=$(pgrep -f "openvpn.*--config" 2>/dev/null | wc -l)
-        if [[ $failed_processes -gt 0 ]]; then
-            echo -e "\033[1;33m  Post-attempt cleanup of $failed_processes process(es)\033[0m"
-            "$VPN_DIR/vpn-manager" cleanup >/dev/null 2>&1
-        fi
+        # Post-attempt cleanup removed to prevent connection interference
 
         if [[ $attempt -lt $max_attempts ]]; then
             echo "  Waiting before retry..."
