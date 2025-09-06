@@ -10,6 +10,11 @@ PERFORMANCE_CACHE="/tmp/vpn_performance.cache"
 CONNECTION_LOG="/tmp/vpn_connect.log"
 LOCK_FILE="/tmp/vpn_connect.lock"
 
+# Load VPN integration system
+if [[ -f "$VPN_DIR/vpn-integration" ]]; then
+    source "$VPN_DIR/vpn-integration"
+fi
+
 log_message() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "$CONNECTION_LOG"
 }
@@ -440,7 +445,7 @@ connect_openvpn_profile() {
     for attempt in $(seq 1 "$max_attempts"); do
         echo "  Attempt $attempt of $max_attempts"
 
-        notify-send "VPN Connector" "Connecting to $profile_name (attempt $attempt)" --icon=network-vpn 2>/dev/null || true
+        # Connection attempt notification removed - using centralized system for result only
 
         timeout 30 sudo openvpn \
             --config "$profile_path" \
@@ -456,7 +461,7 @@ connect_openvpn_profile() {
             echo -e "\033[1;32m✓ Successfully connected to OpenVPN $profile_name\033[0m"
             log_message "Successfully connected to OpenVPN $profile_name on attempt $attempt"
 
-            notify-send "VPN Connector" "Connected to $profile_name" --icon=network-vpn 2>/dev/null || true
+            notify_event "connection_established" "$profile_name"
             pkill -RTMIN+4 dwmblocks 2>/dev/null || true
 
             return 0
@@ -473,7 +478,7 @@ connect_openvpn_profile() {
 
     echo -e "\033[1;31m✗ Failed to connect to OpenVPN $profile_name after $max_attempts attempts\033[0m"
     log_message "Failed to connect to OpenVPN $profile_name after $max_attempts attempts"
-    notify-send "VPN Connector" "Failed to connect to $profile_name" --icon=dialog-error 2>/dev/null || true
+    notify_event "connection_failed" "$profile_name"
 
     return 1
 }
@@ -503,7 +508,7 @@ connect_wireguard_profile() {
     for attempt in $(seq 1 "$max_attempts"); do
         echo "  Attempt $attempt of $max_attempts"
 
-        notify-send "VPN Connector" "Connecting to WireGuard $interface_name (attempt $attempt)" --icon=network-vpn 2>/dev/null || true
+        # WireGuard connection attempt notification removed - using centralized system for result only
 
         # Simple WireGuard connection attempt (reverted to prevent network disruption)
         if sudo wg-quick up "$profile_path" >/dev/null 2>&1; then
@@ -514,7 +519,7 @@ connect_wireguard_profile() {
                 echo -e "\033[1;32m✓ Successfully connected to WireGuard $interface_name\033[0m"
                 log_message "Successfully connected to WireGuard $interface_name on attempt $attempt"
 
-                notify-send "VPN Connector" "Connected to WireGuard $interface_name" --icon=network-vpn 2>/dev/null || true
+                notify_event "connection_established" "$interface_name"
                 pkill -RTMIN+4 dwmblocks 2>/dev/null || true
 
                 return 0
@@ -535,7 +540,7 @@ connect_wireguard_profile() {
 
     echo -e "\033[1;31m✗ Failed to connect to WireGuard $interface_name after $max_attempts attempts\033[0m"
     log_message "Failed to connect to WireGuard $interface_name after $max_attempts attempts"
-    notify-send "VPN Connector" "Failed to connect to WireGuard $interface_name" --icon=dialog-error 2>/dev/null || true
+    notify_event "connection_failed" "$interface_name"
 
     return 1
 }

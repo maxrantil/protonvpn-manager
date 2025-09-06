@@ -5,8 +5,14 @@
 set -euo pipefail
 
 # Configuration
+VPN_DIR="$(dirname "$(realpath "$0")")"
 readonly VPN_LOCATIONS="/home/mqx/workspace/claude-code/vpn/locations"
 readonly CACHE_FILE="/tmp/vpn_performance.cache"
+
+# Load VPN integration system
+if [[ -f "$VPN_DIR/vpn-integration" ]]; then
+    source "$VPN_DIR/vpn-integration"
+fi
 
 # Main command handler
 case "${1:-}" in
