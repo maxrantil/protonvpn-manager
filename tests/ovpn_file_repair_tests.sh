@@ -152,14 +152,23 @@ assert_contains() {
     local pattern="$2"
     local message="$3"
 
-    if echo "$text" | grep -q "$pattern"; then
-        echo -e "  ${GREEN}✓ PASS: $message${NC}"
-        return 0
+    # Use fixed string matching for patterns starting with -- (command options)
+    # Use regex matching for patterns containing regex metacharacters like \| or \[
+    if [[ "$pattern" == --* ]]; then
+        if echo "$text" | grep -qF -- "$pattern"; then
+            echo -e "  ${GREEN}✓ PASS: $message${NC}"
+            return 0
+        fi
     else
-        echo -e "  ${RED}✗ FAIL: $message (pattern '$pattern' not found)${NC}"
-        echo -e "  ${YELLOW}  Actual content: $text${NC}"
-        return 1
+        if echo "$text" | grep -q -- "$pattern"; then
+            echo -e "  ${GREEN}✓ PASS: $message${NC}"
+            return 0
+        fi
     fi
+
+    echo -e "  ${RED}✗ FAIL: $message (pattern '$pattern' not found)${NC}"
+    echo -e "  ${YELLOW}  Actual content: $text${NC}"
+    return 1
 }
 
 assert_not_contains() {
@@ -167,13 +176,22 @@ assert_not_contains() {
     local pattern="$2"
     local message="$3"
 
-    if ! echo "$text" | grep -q "$pattern"; then
-        echo -e "  ${GREEN}✓ PASS: $message${NC}"
-        return 0
+    # Use fixed string matching for patterns starting with -- (command options)
+    # Use regex matching for patterns containing regex metacharacters like \| or \[
+    if [[ "$pattern" == --* ]]; then
+        if ! echo "$text" | grep -qF -- "$pattern"; then
+            echo -e "  ${GREEN}✓ PASS: $message${NC}"
+            return 0
+        fi
     else
-        echo -e "  ${RED}✗ FAIL: $message (pattern '$pattern' found but shouldn't be)${NC}"
-        return 1
+        if ! echo "$text" | grep -q -- "$pattern"; then
+            echo -e "  ${GREEN}✓ PASS: $message${NC}"
+            return 0
+        fi
     fi
+
+    echo -e "  ${RED}✗ FAIL: $message (pattern '$pattern' found but shouldn't be)${NC}"
+    return 1
 }
 
 assert_exit_code() {
