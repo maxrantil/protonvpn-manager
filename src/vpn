@@ -35,7 +35,9 @@ show_help() {
     echo
     echo -e "\033[1;32mManagement:\033[0m"
     echo "  kill                - Force kill all VPN processes"
-    echo "  cleanup             - Clean up VPN processes and routes"
+    echo "  cleanup             - Clean up VPN processes and routes (safe)"
+    echo "  emergency-reset     - Emergency network reset (restarts NetworkManager)"
+    echo "  health              - Check VPN process health"
     echo "  test                - Test VPN performance"
     echo
     echo -e "\033[1;32mConfiguration:\033[0m"
@@ -150,6 +152,22 @@ case "$1" in
     "cleanup")
         if [[ -x "$VPN_MANAGER" ]]; then
             "$VPN_MANAGER" cleanup
+        else
+            echo -e "\033[1;31mError: VPN manager not found or not executable\033[0m"
+            exit 1
+        fi
+        ;;
+    "emergency-reset")
+        if [[ -x "$VPN_MANAGER" ]]; then
+            "$VPN_MANAGER" emergency-reset
+        else
+            echo -e "\033[1;31mError: VPN manager not found or not executable\033[0m"
+            exit 1
+        fi
+        ;;
+    "health")
+        if [[ -x "$VPN_MANAGER" ]]; then
+            "$VPN_MANAGER" health
         else
             echo -e "\033[1;31mError: VPN manager not found or not executable\033[0m"
             exit 1

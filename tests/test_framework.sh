@@ -97,6 +97,23 @@ assert_contains() {
     fi
 }
 
+assert_not_contains() {
+    local haystack="$1"
+    local needle="$2"
+    local message="${3:-String should not contain substring}"
+
+    if [[ "$haystack" != *"$needle"* ]]; then
+        log_test "PASS" "$CURRENT_TEST: $message"
+        ((TESTS_PASSED++))
+        return 0
+    else
+        log_test "FAIL" "$CURRENT_TEST: $message - '$haystack' contains '$needle'"
+        FAILED_TESTS+=("$CURRENT_TEST: $message")
+        ((TESTS_FAILED++))
+        return 1
+    fi
+}
+
 assert_file_exists() {
     local filepath="$1"
     local message="${2:-File should exist}"
