@@ -37,6 +37,11 @@
 - [ ] **Refactor while keeping tests green** (REFACTOR)
 - [ ] **No production code without failing test first**
 
+### ✅ Issue Closure (MANDATORY)
+- [ ] **Close GitHub issues after completion**
+- [ ] Verify auto-closure via `Fixes #123` in merge commit
+- [ ] Manual closure if auto-link failed with completion comment
+
 ---
 
 ## Git Workflow (DETAILED)
@@ -51,6 +56,8 @@
 - Issues must clearly describe problem, acceptance criteria, expected outcome
 - Reference issue in branch names: `feat/issue-123-description`
 - Use commit/PR messages like `Fixes #123` for auto-linking and closure
+- **MANDATORY: Verify issue closes when PR merges**
+- If auto-closure fails, manually close with completion comment linking to merged PR
 
 ### Pull Request Process
 - Create pull requests for all changes
@@ -84,6 +91,7 @@
 # 7. Convert to ready PR when complete and tests pass
 # 8. Update implementation plan - mark phases complete
 # 9. Merge after reviews and checks pass
+# 10. Verify GitHub issue auto-closed (or close manually with PR link)
 ```
 
 ---
@@ -267,6 +275,8 @@ Must include and keep updated:
 ## Implementation Plan Management
 
 **MANDATORY: Mark phases as complete when finished**
+
+**After Phase Completion**: Update implementation plan AND ensure related GitHub issues are closed with reference to completed work.
 
 Format for completed phases:
 ```markdown
