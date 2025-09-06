@@ -249,80 +249,184 @@ stop_vpn() {
     return 0
 }
 
+validate_pid() {
+    local pid="$1"
+    [[ -n "$pid" && "$pid" =~ ^[0-9]+$ && "$pid" -gt 0 && "$pid" -lt 4194304 ]]
+}
+
+validate_openvpn_process() {
+    local pid="$1"
+    if ! validate_pid "$pid"; then
+        return 1
+    fi
+    local cmd_line
+    cmd_line=$(ps -p "$pid" -o cmd= 2>/dev/null || true)
+    [[ "$cmd_line" =~ ^openvpn.*--config ]]
+}
+
+hierarchical_process_cleanup() {
+    local force="${1:-false}"
+    local max_cleanup_time=30
+    local start_time=$(date +%s)
+
+    echo -e "\033[1;33mPerforming hierarchical VPN process cleanup...\033[0m"
+    log_message "Hierarchical process cleanup requested (force=$force)"
+
+    # Enhanced process discovery with secure zombie detection
+    local pids openvpn_pids zombie_pids
+    openvpn_pids=$(pgrep -f "openvpn.*--config" 2>/dev/null || true)
+    zombie_pids=$(ps -eo pid,stat,comm | awk '$2~/^Z/ && $3=="openvpn" {print $1}' 2>/dev/null || true)
+
+    # Combine all VPN-related PIDs and remove duplicates
+    pids=$(echo -e "$openvpn_pids\n$zombie_pids" | grep -v '^$' | sort -u || true)
+
+    if [[ -z "$pids" ]]; then
+        echo -e "\033[1;32m✓ No VPN processes found to cleanup\033[0m"
+        return 0
+    fi
+
+    local process_count
+    process_count=$(echo "$pids" | wc -l)
+
+    if [[ $process_count -gt 1 ]]; then
+        echo -e "\033[1;31m⚠️  CRITICAL: Found $process_count VPN processes (should be 0 or 1)\033[0m"
+        echo -e "\033[1;31m⚠️  This can cause system overheating and high CPU usage!\033[0m"
+    fi
+
+    echo "Target processes for cleanup: $(echo "$pids" | tr '\n' ' ')"
+
+    # Enhanced escalation levels with timeout and pattern matching
+    local escalation_levels=("TERM" "KILL" "sudo_KILL" "pkill_pattern")
+
+    for level in "${escalation_levels[@]}"; do
+        local current_time=$(date +%s)
+        if [[ $((current_time - start_time)) -gt $max_cleanup_time ]]; then
+            echo -e "\033[1;31mCleanup timeout reached (${max_cleanup_time}s), escalating to emergency mode\033[0m"
+            break
+        fi
+
+        echo "Cleanup escalation level: $level"
+
+        case "$level" in
+            "TERM")
+                while IFS= read -r pid; do
+                    if validate_openvpn_process "$pid"; then
+                        echo "  Sending TERM signal to process $pid..."
+                        kill -TERM "$pid" 2>/dev/null || true
+                    else
+                        log_message "SECURITY: Skipped invalid/non-OpenVPN PID $pid"
+                    fi
+                done <<< "$pids"
+                sleep 3
+                ;;
+            "KILL")
+                while IFS= read -r pid; do
+                    if validate_openvpn_process "$pid"; then
+                        echo "  Sending KILL signal to process $pid..."
+                        kill -KILL "$pid" 2>/dev/null || true
+                    else
+                        log_message "SECURITY: Skipped invalid/non-OpenVPN PID $pid"
+                    fi
+                done <<< "$pids"
+                sleep 2
+                ;;
+            "sudo_KILL")
+                while IFS= read -r pid; do
+                    if validate_openvpn_process "$pid"; then
+                        echo "  Using sudo KILL on process $pid..."
+                        sudo kill -KILL "$pid" 2>/dev/null || true
+                    else
+                        log_message "SECURITY: Skipped invalid/non-OpenVPN PID $pid"
+                    fi
+                done <<< "$pids"
+                sleep 2
+                ;;
+            "pkill_pattern")
+                echo "  Using validated PID-based process killing..."
+                # Only kill processes we've validated as OpenVPN
+                while IFS= read -r pid; do
+                    if [[ -n "$pid" ]] && [[ "$pid" =~ ^[0-9]+$ ]]; then
+                        local cmd_line
+                        cmd_line=$(ps -p "$pid" -o cmd= 2>/dev/null || true)
+                        if [[ "$cmd_line" =~ ^openvpn.*--config ]]; then
+                            sudo kill -KILL "$pid" 2>/dev/null || true
+                        fi
+                    fi
+                done <<< "$pids"
+                sleep 3
+                ;;
+        esac
+
+        # Verify cleanup at this level
+        local remaining_pids
+        remaining_pids=$(pgrep -f "openvpn.*--config" 2>/dev/null || true)
+
+        if [[ -z "$remaining_pids" ]]; then
+            echo -e "\033[1;32m✓ All VPN processes terminated at escalation level: $level\033[0m"
+            return 0
+        else
+            echo "  Remaining processes after $level: $(echo "$remaining_pids" | tr '\n' ' ')"
+        fi
+    done
+
+    # Final verification
+    sleep 1
+    local final_check
+    final_check=$(pgrep -f "openvpn.*--config" 2>/dev/null || true)
+
+    if [[ -n "$final_check" ]]; then
+        if [[ "$force" == "true" ]]; then
+            echo -e "\033[1;33mForce mode: Attempting validated emergency process group termination...\033[0m"
+            # Try to kill entire process groups, but only if they contain only OpenVPN processes
+            while IFS= read -r pid; do
+                if validate_openvpn_process "$pid"; then
+                    local pgid
+                    pgid=$(ps -o pgid= -p "$pid" 2>/dev/null | tr -d ' ')
+                    if [[ -n "$pgid" ]]; then
+                        # Check if process group contains only OpenVPN processes
+                        local non_openvpn_count
+                        non_openvpn_count=$(pgrep -g "$pgid" | xargs -r ps -o comm= | grep -c -v "openvpn" || echo 0)
+                        if [[ $non_openvpn_count -eq 0 ]]; then
+                            echo "  Killing validated OpenVPN-only process group $pgid..."
+                            sudo kill -KILL -"$pgid" 2>/dev/null || true
+                        else
+                            log_message "SECURITY: Skipped process group $pgid - contains non-OpenVPN processes"
+                        fi
+                    fi
+                fi
+            done <<< "$final_check"
+
+            sleep 2
+            final_check=$(pgrep -f "openvpn.*--config" 2>/dev/null || true)
+        fi
+
+        if [[ -n "$final_check" ]]; then
+            echo -e "\033[1;31mFAILED: Cannot cleanup processes $(echo "$final_check" | tr '\n' ' ')\033[0m"
+            echo -e "\033[1;33mRecommendation: Run 'vpn emergency-reset' or consider system reboot\033[0m"
+            return 1
+        else
+            echo -e "\033[1;32m✓ Emergency cleanup successful\033[0m"
+        fi
+    else
+        echo -e "\033[1;32m✓ All VPN processes successfully terminated\033[0m"
+    fi
+
+    return 0
+}
+
 kill_all_vpn() {
     echo -e "\033[1;33mForce killing all VPN processes...\033[0m"
     log_message "Force kill all VPN processes requested"
 
-    local pids
-    pids=$(pgrep -f "^openvpn.*--config" 2>/dev/null || true)
-
-    if [[ -z "$pids" ]]; then
-        echo -e "\033[1;33mNo VPN processes found\033[0m"
+    if hierarchical_process_cleanup "true"; then
+        cleanup_files
+        cleanup_routes_light
+        notify_event "process_health" "All processes killed"
+        return 0
     else
-        local process_count
-        process_count=$(echo "$pids" | wc -l)
-
-        if [[ $process_count -gt 1 ]]; then
-            echo -e "\033[1;31m⚠️  WARNING: Found $process_count OpenVPN processes (should be 0 or 1)\033[0m"
-            echo -e "\033[1;31m⚠️  This can cause overheating and high CPU usage!\033[0m"
-        fi
-
-        echo "Killing processes: $pids"
-
-        # Kill processes individually by PID to ensure they die
-        while IFS= read -r pid; do
-            if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
-                echo "  Terminating process $pid..."
-                # Try TERM first
-                kill -TERM "$pid" 2>/dev/null || true
-                sleep 1
-
-                # If still running, use KILL
-                if kill -0 "$pid" 2>/dev/null; then
-                    echo "  Force killing process $pid..."
-                    kill -KILL "$pid" 2>/dev/null || true
-                    sleep 1
-                fi
-
-                # If STILL running, try sudo
-                if kill -0 "$pid" 2>/dev/null; then
-                    echo "  Using sudo to kill process $pid..."
-                    sudo kill -KILL "$pid" 2>/dev/null || true
-                    sleep 1
-                fi
-            fi
-        done <<< "$pids"
-
-        # Final verification
-        sleep 2
-        local remaining_pids
-        remaining_pids=$(pgrep -f "^openvpn.*--config" 2>/dev/null || true)
-
-        if [[ -n "$remaining_pids" ]]; then
-            echo -e "\033[1;31mError: Some processes still running: $remaining_pids\033[0m"
-            echo -e "\033[1;31mTrying more aggressive cleanup...\033[0m"
-
-            # Nuclear option: kill by command pattern
-            sudo pkill -KILL -f "^openvpn.*--config.*locations" 2>/dev/null || true
-            sleep 2
-
-            # Final final check
-            remaining_pids=$(pgrep -f "^openvpn.*--config" 2>/dev/null || true)
-            if [[ -n "$remaining_pids" ]]; then
-                echo -e "\033[1;31mCRITICAL: Processes $remaining_pids still running after aggressive cleanup!\033[0m"
-                echo -e "\033[1;31mYou may need to reboot to fully clean up these processes.\033[0m"
-            else
-                echo -e "\033[1;32m✓ All VPN processes terminated (aggressive cleanup successful)\033[0m"
-            fi
-        else
-            echo -e "\033[1;32m✓ All VPN processes terminated\033[0m"
-        fi
+        echo -e "\033[1;31mProcess cleanup failed\033[0m"
+        return 1
     fi
-
-    cleanup_files
-    cleanup_routes_light
-
-    notify_event "process_health" "All processes killed"
 }
 
 cleanup_files() {
@@ -374,35 +478,23 @@ full_cleanup() {
     echo -e "\033[1;33mPerforming VPN cleanup...\033[0m"
     log_message "Full cleanup requested"
 
-    # Check for multiple processes before cleanup
-    local process_count pids
-    pids=$(pgrep -f "^openvpn.*--config" 2>/dev/null || true)
-    if [[ -n "$pids" ]]; then
-        process_count=$(echo "$pids" | wc -l)
+    # Use hierarchical process cleanup
+    if hierarchical_process_cleanup "false"; then
+        echo "Cleaning up temporary files..."
+        rm -f /tmp/vpn_*.log /tmp/vpn_*.cache /tmp/vpn_*.lock 2>/dev/null || true
+
+        cleanup_files
+        cleanup_routes_light
+
+        echo -e "\033[1;32m✓ VPN cleanup completed\033[0m"
+        log_message "VPN cleanup completed"
+        notify_event "process_health" "Cleanup completed"
+        return 0
     else
-        process_count=0
+        echo -e "\033[1;31mVPN cleanup failed - some processes could not be terminated\033[0m"
+        log_message "VPN cleanup failed"
+        return 1
     fi
-
-    if [[ $process_count -gt 1 ]]; then
-        echo -e "\033[1;31m⚠️  CRITICAL: Found $process_count OpenVPN processes running simultaneously!\033[0m"
-        echo -e "\033[1;31m⚠️  This can cause system overheating and high CPU usage!\033[0m"
-        echo -e "\033[1;33m   Cleaning up immediately...\033[0m"
-    fi
-
-    kill_all_vpn
-
-    echo "Cleaning up temporary files..."
-    rm -f /tmp/vpn_*.log /tmp/vpn_*.cache /tmp/vpn_*.lock 2>/dev/null || true
-
-    # REMOVED: NetworkManager restart that was causing internet disruption
-    # The NetworkManager restart was too aggressive and caused connectivity issues
-    # VPN cleanup should focus on VPN-specific resources only
-    echo "VPN cleanup completed (NetworkManager left intact)"
-
-    echo -e "\033[1;32m✓ VPN cleanup completed\033[0m"
-    log_message "VPN cleanup completed"
-
-    notify_event "process_health" "Cleanup completed"
 }
 
 emergency_network_reset() {

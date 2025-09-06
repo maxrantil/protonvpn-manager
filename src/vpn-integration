@@ -2,8 +2,8 @@
 # ABOUTME: VPN system integration library providing unified interfaces for notifications, status bar, and services
 # ABOUTME: Centralizes system integration calls across all VPN management scripts
 
-# Using less strict options to prevent hanging when commands fail
-set -uo pipefail
+# Using compatible options to prevent script conflicts
+set -o pipefail
 
 # Configuration
 SCRIPT_DIR="$(dirname "$(realpath "$0")")"
