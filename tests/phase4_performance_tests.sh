@@ -4,6 +4,7 @@
 
 # Source the test framework
 TEST_DIR="$(dirname "$(realpath "$0")")"
+# shellcheck source=tests/test_framework.sh
 source "$TEST_DIR/test_framework.sh"
 
 # Test constants

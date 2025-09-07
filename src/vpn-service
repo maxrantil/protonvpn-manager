@@ -355,7 +355,7 @@ backup_routes() {
 
 restore_routes() {
     if [[ -f "$ROUTES_BACKUP_FILE" ]]; then
-        if sudo ip route restore < "$ROUTES_BACKUP_FILE" 2>/dev/null; then
+        if sudo bash -c "ip route restore < '$ROUTES_BACKUP_FILE'" 2>/dev/null; then
             echo "Routing table restored from backup"
             return 0
         else
@@ -456,7 +456,7 @@ list_nm_connections() {
 check_nm_vpn_conflicts() {
     if command -v nmcli >/dev/null 2>&1; then
         local vpn_connections
-        vpn_connections=$(nmcli connection show --active 2>/dev/null | grep -i vpn | wc -l)
+        vpn_connections=$(nmcli connection show --active 2>/dev/null | grep -c -i vpn)
 
         if [[ $vpn_connections -gt 0 ]]; then
             echo "NetworkManager VPN conflicts detected: $vpn_connections active VPN connections"
