@@ -3,10 +3,10 @@
 A comprehensive VPN management suite with intelligent server selection, performance testing, and automated connection handling for Artix/Arch Linux systems.
 
 ## Status
-- **Current Phase**: Phase 6: System Integration (Status Bar Integration Complete)
-- **Progress**: 6.2/9 phases completed (69%)
-- **Last Updated**: September 5, 2025
-- **Latest Achievement**: Status bar integration with 58% performance improvement (16/16 tests passing)
+- **Current Phase**: Phase 9: Documentation & Packaging
+- **Progress**: 8/9 phases completed (89%)
+- **Last Updated**: September 7, 2025
+- **Latest Achievement**: Phase 8 Testing & Validation complete - 15/15 tests passing with 2.0s connection speed
 
 ## Project Structure
 
@@ -41,27 +41,80 @@ vpn-management/
 
 ### Prerequisites
 - Artix Linux or Arch Linux system
-- Git and GitHub CLI (`gh`) installed
-- Pre-commit hooks support
+- Required packages:
+  ```bash
+  sudo pacman -S openvpn curl bc libnotify iproute2 git
+  ```
+- ProtonVPN account with OpenVPN configuration files
 
-### Setup Development Environment
+### Automated Installation
 
-1. **Clone and setup project**:
+**One-command installation:**
+```bash
+git clone https://github.com/maxrantil/protonvpn-manager.git
+cd protonvpn-manager
+./install.sh
+```
+
+The installer will:
+- Install required system packages (`openvpn`, `curl`, `bc`, `libnotify`, `iproute2`)
+- Set up directory structure
+- Create credential template and locations guide
+- Make all scripts executable
+- Add VPN tools to your PATH
+- Run post-installation verification tests
+
+### Manual Installation
+
+1. **Install dependencies**:
+   ```bash
+   sudo pacman -S openvpn curl bc libnotify iproute2 git
+   ```
+
+2. **Clone repository**:
    ```bash
    git clone https://github.com/maxrantil/protonvpn-manager.git
    cd protonvpn-manager
    ```
 
-2. **Install pre-commit hooks**:
+3. **Set up VPN profiles directory**:
    ```bash
-   pip install pre-commit
-   pre-commit install
+   mkdir -p locations/
+   # Copy your ProtonVPN .ovpn files to locations/ directory
    ```
 
-3. **Run tests** (comprehensive test suite):
+4. **Create credentials file**:
    ```bash
-   ./tests/run_tests.sh
+   # Create vpn-credentials.txt with your ProtonVPN username and password
+   echo "your-username" > vpn-credentials.txt
+   echo "your-password" >> vpn-credentials.txt
+   chmod 600 vpn-credentials.txt
    ```
+
+5. **Make scripts executable**:
+   ```bash
+   chmod +x src/*
+   ```
+
+6. **Test installation**:
+   ```bash
+   ./src/vpn help
+   ```
+
+### Uninstallation
+
+To completely remove the VPN Management System:
+```bash
+./uninstall.sh
+```
+
+The uninstaller will:
+- Safely disconnect any active VPN connections
+- Back up your configuration files and credentials
+- Remove all VPN management components
+- Clean up temporary files and caches
+- Remove PATH modifications
+- Provide options for removing system packages
 
 ## Development Status
 
@@ -80,31 +133,85 @@ vpn-management/
 - Performance caching system implementation
 
 ### ✅ Recently Completed
+**Phase 4: Performance Testing Engine** (Completed: September 3, 2025)
+- Multi-server performance testing with intelligent server selection
+- Latency and speed testing with automatic ranking
+- 10/10 TDD tests passing
+
 **Phase 5: Advanced Features** (Completed: September 4, 2025)
-**Phase 6.1: Desktop Notifications** (Completed: September 5, 2025)
-- Centralized notification system with desktop environment detection
-- Fallback chain for maximum compatibility (notify-send → zenity → kdialog → echo)
-- Legacy notification migration completed (12 calls centralized)
+- Fast switching system with cache-based optimization
+- Secure core integration and custom profile support
+- OpenVPN configuration auto-fixer with stability enhancements
+
+**Phase 6: System Integration** (Completed: September 5, 2025)
+- Desktop notifications with multi-environment fallback system
+- Status bar integration (dwmblocks) with 58% performance improvement
+- Runit service integration for Artix Linux
+
+**Phase 7: Configuration & Utilities** (Completed: September 7, 2025)
+- Centralized logging infrastructure with credential sanitization
+- Configuration repair system for corrupted OpenVPN files
+- 19/19 comprehensive tests passing
+
+**Phase 8: Testing & Validation** (Completed: September 7, 2025)
+- Comprehensive test framework with 15/15 tests passing
+- Performance validation: 2.0s connection speed (< 30s requirement)
+- Edge case testing with graceful error handling
 
 ### 🚧 Current Work
-**Phase 6.2-6.3: System Integration** (Status Bar & Service Integration)
-- dwmblocks status bar integration
-- Artix/OpenRC system service compatibility
+**Phase 9: Documentation & Packaging** (In Progress)
+- Artix/Arch Linux documentation updates
+- Installation automation scripts
+- Complete user documentation
 
-### 📋 Upcoming Phases
-- Phase 5: Advanced Features (Fast switching, secure core)
-- Phase 6: System Integration (Desktop notifications, status bar)
-- Phase 7: Configuration & Utilities
-- Phase 8: Testing & Validation
-- Phase 9: Documentation & Packaging
+### 📋 Future Phases
+- Phase 10: WireGuard Protocol Optimization (Deferred - OpenVPN stable)
+
+## Usage
+
+### Basic Commands
+
+```bash
+# Show help and available commands
+./src/vpn help
+
+# Connect to VPN (automatic best server)
+./src/vpn best
+
+# Connect to specific country (e.g., Sweden)
+./src/vpn connect se
+
+# Fast switching with cache
+./src/vpn fast
+
+# Check VPN status
+./src/vpn status
+
+# Disconnect from VPN
+./src/vpn disconnect
+
+# Connect to secure core servers
+./src/vpn secure
+
+# Use custom OpenVPN profile
+./src/vpn custom /path/to/profile.ovpn
+```
+
+### System Integration
+
+- **Desktop Notifications**: Automatic notifications for connection events
+- **Status Bar Integration**: Works with dwmblocks and other status bars
+- **Service Management**: Integrates with Artix runit services
+- **Logging**: Comprehensive logging to `/tmp/vpn_tester.log`
 
 ## Testing
 
 This project follows **strict Test-Driven Development (TDD)** practices:
 
-- **76+ comprehensive tests** across unit, integration, and end-to-end categories
-- **Professional test framework** with mocking, isolation, and reporting
-- **Pre-commit quality gates** ensure all commits pass testing standards
+- **100+ comprehensive tests** across all system components
+- **Phase-specific test suites** with complete validation
+- **Performance benchmarking** with regression detection
+- **Edge case coverage** for robust error handling
 
 ### Run Tests
 
@@ -112,10 +219,14 @@ This project follows **strict Test-Driven Development (TDD)** practices:
 # Run all tests
 ./tests/run_tests.sh
 
-# Run specific test types
-./tests/run_tests.sh --unit-only
-./tests/run_tests.sh --integration-only
-./tests/run_tests.sh --e2e-only
+# Run Phase 8 validation tests
+./tests/phase8_complete_validation_tests.sh
+
+# Run performance tests
+./tests/phase8_2_performance_validation_tests.sh
+
+# Run edge case tests
+./tests/phase8_3_edge_case_tests.sh
 ```
 
 ## Development
@@ -147,16 +258,39 @@ All contributions must follow our established workflow:
 
 See [CLAUDE.md](CLAUDE.md) for complete development guidelines and [docs/templates/](docs/templates/) for issue templates.
 
-## Architecture
+## System Architecture
 
-The VPN management system consists of:
+### Core Components
 
-- **CLI Interface**: Main `vpn` command with subcommand routing
-- **Process Management**: VPN connection lifecycle and monitoring
-- **Connection Logic**: Intelligent server selection and switching
-- **Performance Testing**: Multi-server latency and speed testing
-- **Caching System**: Performance data caching for fast switching
-- **Security Features**: Credential protection and secure core support
+- **`src/vpn`**: Main CLI interface with command routing
+- **`src/vpn-manager`**: Process management and connection lifecycle
+- **`src/vpn-connector`**: Server selection and connection logic
+- **`src/best-vpn-profile`**: Performance testing and server ranking
+- **`src/connect-vpn-bg`**: Background connection handling
+
+### Utilities
+
+- **`src/vpn-statusbar`**: Status bar integration (dwmblocks)
+- **`src/vpn-notify`**: Centralized notification system
+- **`src/vpn-service`**: System service integration (runit/systemd)
+- **`src/vpn-logger`**: Centralized logging with credential sanitization
+- **`src/fix-ovpn-files`**: Configuration repair and enhancement
+
+### Key Features
+
+- **Intelligent Server Selection**: Automatic best server detection
+- **Performance Caching**: Fast switching with cached performance data
+- **Multi-Protocol Support**: OpenVPN ready, WireGuard infrastructure in place
+- **System Integration**: Desktop notifications, status bar, service management
+- **Robust Error Handling**: Comprehensive edge case coverage
+- **Security**: Credential protection and secure core server support
+
+### Performance
+
+- **Connection Speed**: < 2.0s (requirement: < 30s)
+- **Fast Switching**: < 2.0s (requirement: < 20s)
+- **Memory Usage**: Stable with < 4KB growth over time
+- **Process Safety**: Zero-tolerance for multiple OpenVPN processes
 
 ## License
 
