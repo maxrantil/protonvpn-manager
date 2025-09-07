@@ -5,6 +5,17 @@
 set -euo pipefail
 
 # Configuration
+SCRIPT_DIR="$(dirname "$(realpath "$0")")"
+VPN_DIR="$(dirname "$SCRIPT_DIR")"
+
+# Init systems in detection priority order
+INIT_SYSTEMS=(
+    "openrc"
+    "systemd"
+    "runit"
+    "s6"
+    "manual"
+)
 
 # Service command mappings
 declare -A INIT_COMMANDS=(
@@ -26,7 +37,12 @@ declare -A INIT_COMMANDS=(
     ["s6_disable"]="s6-rc-bundle-update"
 )
 
-# DNS resolver detection order (defined inline in detect_dns_manager)
+# DNS resolver detection order
+DNS_MANAGERS=(
+    "systemd-resolved"
+    "openresolv"
+    "manual"
+)
 
 # Backup locations
 DNS_BACKUP_DIR="/tmp/vpn_service_backups"
@@ -35,57 +51,6 @@ DNS_BACKUP_FILE="$DNS_BACKUP_DIR/resolv.conf.backup"
 
 # State tracking
 SERVICE_STATE_FILE="/tmp/vpn_service_state"
-
-# Input validation functions
-validate_service_name() {
-    local service="$1"
-    if [[ ! "$service" =~ ^[a-zA-Z0-9_.-]+$ ]]; then
-        echo "Invalid service name: contains unsafe characters" >&2
-        return 1
-    fi
-    if [[ ${#service} -gt 64 ]]; then
-        echo "Service name too long (max 64 characters)" >&2
-        return 1
-    fi
-    return 0
-}
-
-validate_timeout() {
-    local timeout="$1"
-    if [[ ! "$timeout" =~ ^[0-9]+$ ]] || [[ $timeout -lt 1 ]] || [[ $timeout -gt 300 ]]; then
-        echo "Invalid timeout: must be 1-300 seconds" >&2
-        return 1
-    fi
-    return 0
-}
-
-validate_init_system() {
-    local init_system="$1"
-    case "$init_system" in
-        "openrc"|"systemd"|"runit"|"s6"|"manual"|"") return 0 ;;
-        *) echo "Invalid init system: $init_system" >&2; return 1 ;;
-    esac
-}
-
-validate_backup_file() {
-    local file_path="$1"
-    local canonicalized
-    canonicalized=$(realpath -m "$file_path" 2>/dev/null)
-
-    # Ensure path is within allowed backup directory
-    if [[ ! "$canonicalized" =~ ^/tmp/vpn_service_backups/ ]]; then
-        echo "Invalid backup path: must be within /tmp/vpn_service_backups/" >&2
-        return 1
-    fi
-
-    # Check for path traversal attempts
-    if [[ "$file_path" == *".."* ]]; then
-        echo "Path traversal attempt detected" >&2
-        return 1
-    fi
-
-    return 0
-}
 
 # Detect init system
 detect_init_system() {
@@ -229,19 +194,6 @@ service_operation() {
     local timeout="${4:-30}"
     local dry_run="${5:-false}"
 
-    # Validate inputs for security
-    if ! validate_service_name "$service"; then
-        return 1
-    fi
-
-    if ! validate_timeout "$timeout"; then
-        return 1
-    fi
-
-    if ! validate_init_system "$init_system"; then
-        return 1
-    fi
-
     if [[ -z "$init_system" ]]; then
         init_system=$(detect_init_system)
     fi
@@ -322,11 +274,6 @@ service_operation() {
 
 # DNS management functions
 backup_dns() {
-    # Validate backup file path for security
-    if ! validate_backup_file "$DNS_BACKUP_FILE"; then
-        return 1
-    fi
-
     mkdir -p "$DNS_BACKUP_DIR"
 
     if [[ -f /etc/resolv.conf ]]; then
@@ -340,18 +287,7 @@ backup_dns() {
 }
 
 restore_dns() {
-    # Validate backup file path for security
-    if ! validate_backup_file "$DNS_BACKUP_FILE"; then
-        return 1
-    fi
-
     if [[ -f "$DNS_BACKUP_FILE" ]]; then
-        # Validate backup file content before restoring
-        if ! grep -q "nameserver" "$DNS_BACKUP_FILE"; then
-            echo "Invalid DNS backup file: no nameservers found" >&2
-            return 1
-        fi
-
         sudo cp "$DNS_BACKUP_FILE" /etc/resolv.conf
         echo "DNS configuration restored from backup"
         return 0
@@ -406,11 +342,6 @@ resolve_dns_conflicts() {
 
 # Routing management functions
 backup_routes() {
-    # Validate backup file path for security
-    if ! validate_backup_file "$ROUTES_BACKUP_FILE"; then
-        return 1
-    fi
-
     mkdir -p "$DNS_BACKUP_DIR"
 
     if ip route save > "$ROUTES_BACKUP_FILE" 2>/dev/null; then
@@ -423,18 +354,7 @@ backup_routes() {
 }
 
 restore_routes() {
-    # Validate backup file path for security
-    if ! validate_backup_file "$ROUTES_BACKUP_FILE"; then
-        return 1
-    fi
-
     if [[ -f "$ROUTES_BACKUP_FILE" ]]; then
-        # Basic validation of backup file content
-        if [[ ! -s "$ROUTES_BACKUP_FILE" ]]; then
-            echo "Invalid routing backup file: empty or corrupted" >&2
-            return 1
-        fi
-
         if sudo bash -c "ip route restore < '$ROUTES_BACKUP_FILE'" 2>/dev/null; then
             echo "Routing table restored from backup"
             return 0
@@ -536,7 +456,7 @@ list_nm_connections() {
 check_nm_vpn_conflicts() {
     if command -v nmcli >/dev/null 2>&1; then
         local vpn_connections
-        vpn_connections=$(nmcli connection show --active 2>/dev/null | grep -ic vpn)
+        vpn_connections=$(nmcli connection show --active 2>/dev/null | grep -c -i vpn)
 
         if [[ $vpn_connections -gt 0 ]]; then
             echo "NetworkManager VPN conflicts detected: $vpn_connections active VPN connections"

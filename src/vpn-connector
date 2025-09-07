@@ -107,8 +107,8 @@ cleanup_on_exit() {
 trap cleanup_on_exit EXIT
 
 list_profiles() {
-    local filter="$1"
-    local show_details="$2"
+    local filter="${1:-}"
+    local show_details="${2:-}"
 
     if [[ ! -d "$LOCATIONS_DIR" ]]; then
         echo -e "\033[1;31mError: Locations directory not found: $LOCATIONS_DIR\033[0m"
@@ -445,9 +445,8 @@ connect_openvpn_profile() {
     for attempt in $(seq 1 "$max_attempts"); do
         echo "  Attempt $attempt of $max_attempts"
 
-        # Connection attempt notification removed - using centralized system for result only
-
-        timeout 30 sudo openvpn \
+        # Start OpenVPN daemon without aggressive timeout
+        sudo openvpn \
             --config "$profile_path" \
             --auth-user-pass "$CREDENTIALS_FILE" \
             --daemon \
@@ -455,9 +454,23 @@ connect_openvpn_profile() {
             --log /tmp/openvpn.log \
             --verb 3
 
-        sleep 10
+        # Wait for connection to establish with better detection
+        local connection_established=0
+        echo "  Waiting for connection..."
+        for check in {1..8}; do
+            sleep 4
+            # Check status without health warnings interfering
+            local status_check
+            status_check=$("$VPN_DIR/vpn-manager" status 2>/dev/null | grep "VPN Status:" | grep -q "CONNECTED" && echo "connected" || echo "not_connected")
+            if [[ "$status_check" == "connected" ]]; then
+                connection_established=1
+                break
+            fi
+            echo -n "."
+        done
+        echo ""
 
-        if "$VPN_DIR/vpn-manager" status | grep -q "CONNECTED"; then
+        if [[ $connection_established -eq 1 ]]; then
             echo -e "\033[1;32m✓ Successfully connected to OpenVPN $profile_name\033[0m"
             log_message "Successfully connected to OpenVPN $profile_name on attempt $attempt"
 
@@ -469,6 +482,15 @@ connect_openvpn_profile() {
 
         echo -e "\033[1;33m  Connection attempt $attempt failed\033[0m"
         log_message "Connection attempt $attempt failed for OpenVPN $profile_name"
+
+        # Clean up failed processes after each attempt
+        local failed_processes
+        failed_processes=$(pgrep -f "openvpn.*--config" 2>/dev/null | wc -l)
+        if [[ $failed_processes -gt 1 ]]; then
+            echo -e "\033[1;33m  Cleaning up $((failed_processes - 1)) failed process(es)\033[0m"
+            # Kill all but the most recent process (keep the one that might succeed)
+            pgrep -f "openvpn.*--config" 2>/dev/null | head -n -1 | xargs -r sudo kill 2>/dev/null || true
+        fi
 
         if [[ $attempt -lt $max_attempts ]]; then
             echo "  Waiting before retry..."
