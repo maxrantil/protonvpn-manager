@@ -629,9 +629,9 @@ get_cached_best_profile() {
         # Convert profile name back to full path
         local profile_path
         if [[ -n "$country_filter" ]]; then
-            profile_path=$(find "$VPN_LOCATIONS" \( -name "*${best_profile_name}*.ovpn" -o -name "*${best_profile_name}*.conf" \) | head -n1)
+            profile_path=$(find "$LOCATIONS_DIR" \( -name "*${best_profile_name}*.ovpn" -o -name "*${best_profile_name}*.conf" \) | head -n1)
         else
-            profile_path=$(find "$VPN_LOCATIONS" \( -name "${best_profile_name}.ovpn" -o -name "${best_profile_name}.conf" \) | head -n1)
+            profile_path=$(find "$LOCATIONS_DIR" \( -name "${best_profile_name}.ovpn" -o -name "${best_profile_name}.conf" \) | head -n1)
         fi
 
         if [[ -f "$profile_path" ]]; then
@@ -641,7 +641,7 @@ get_cached_best_profile() {
         else
             echo -e "\033[1;33mCached profile path not found for: $best_profile_name\033[0m"
             # Fallback to any matching profile
-            profile_path=$(find "$VPN_LOCATIONS" -name "*${best_profile_name}*" | head -n1)
+            profile_path=$(find "$LOCATIONS_DIR" -name "*${best_profile_name}*" | head -n1)
             if [[ -f "$profile_path" ]]; then
                 echo -e "\033[1;32mUsing cached closest match: $(basename "$profile_path")\033[0m"
                 echo "$profile_path"
@@ -673,9 +673,9 @@ test_and_cache_performance() {
         # Convert profile name back to full path
         local profile_path
         if [[ -n "$country_filter" ]]; then
-            profile_path=$(find "$VPN_LOCATIONS" \( -name "*${best_profile_name}*.ovpn" -o -name "*${best_profile_name}*.conf" \) | head -n1)
+            profile_path=$(find "$LOCATIONS_DIR" \( -name "*${best_profile_name}*.ovpn" -o -name "*${best_profile_name}*.conf" \) | head -n1)
         else
-            profile_path=$(find "$VPN_LOCATIONS" \( -name "${best_profile_name}.ovpn" -o -name "${best_profile_name}.conf" \) | head -n1)
+            profile_path=$(find "$LOCATIONS_DIR" \( -name "${best_profile_name}.ovpn" -o -name "${best_profile_name}.conf" \) | head -n1)
         fi
 
         if [[ -f "$profile_path" ]]; then
@@ -686,7 +686,7 @@ test_and_cache_performance() {
         else
             echo -e "\033[1;33mProfile path not found for: $best_profile_name\033[0m"
             # Fallback to any matching profile
-            profile_path=$(find "$VPN_LOCATIONS" -name "*${best_profile_name}*" | head -n1)
+            profile_path=$(find "$LOCATIONS_DIR" -name "*${best_profile_name}*" | head -n1)
             if [[ -f "$profile_path" ]]; then
                 echo -e "\033[1;32mUsing closest match: $(basename "$profile_path")\033[0m"
                 echo "$profile_path"
