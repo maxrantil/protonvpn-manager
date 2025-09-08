@@ -4,9 +4,46 @@
 
 **BEFORE STARTING ANY WORK:**
 
-### ✅ GitHub Issues First (MANDATORY)
-- [ ] **ALWAYS create GitHub issue BEFORE starting work**
-- [ ] Issue describes problem, acceptance criteria, expected outcome
+### ✅ PRD/PDR Requirements Assessment (MANDATORY - NEW!)
+**🔴 STOP: Determine if PRD/PDR is required BEFORE creating GitHub issue**
+
+#### **MANDATORY PRD Required For:**
+- [ ] **New features or products** (any user-facing functionality)
+- [ ] **Significant UX changes** (CLI interface, error messages, user flows)
+- [ ] **Business requirement changes** (process modifications, policy changes)
+- [ ] **Major system integrations** (external services, APIs, protocols)
+
+#### **MANDATORY PDR Required For:**
+- [ ] **All approved PRDs** (no exceptions - PDR follows every approved PRD)
+- [ ] **Architecture modifications** (system design changes)
+- [ ] **Performance optimization projects** (speed, memory, resource improvements)
+- [ ] **Security enhancements** (authentication, encryption, hardening)
+
+#### **PRD/PDR Workflow:**
+```
+💡 Feature Request/Idea
+    ↓
+📋 PRD Creation → 🤖 UX/Accessibility Agent → 👥 Stakeholders → ✅ Doctor Hubert Approval
+    ↓
+🏗️ PDR Creation → 🤖 4 Agents (Arch/Sec/Perf/Quality) → 👨‍💻 Tech Review → ✅ Doctor Hubert Approval
+    ↓
+⚡ GitHub Issue Creation → Implementation → Testing → Deployment
+```
+
+**📁 Document Locations:**
+- PRDs: `docs/implementation/PRD-[name]-[YYYY-MM-DD].md`
+- PDRs: `docs/implementation/PDR-[name]-[YYYY-MM-DD].md`
+- Templates: `docs/templates/`
+
+**🌿 Branch Naming:**
+- `prd/[project-name]` for PRD development
+- `pdr/[project-name]` for PDR development
+- `feat/issue-[#]-[name]` for implementation (after PDR approval)
+
+### ✅ GitHub Issues (MANDATORY - After PRD/PDR if applicable)
+- [ ] **Create GitHub issue ONLY after PRD/PDR approval** (if required)
+- [ ] **Reference approved PRD/PDR documents** in issue description
+- [ ] Issue describes implementation tasks, not requirements (requirements in PRD)
 - [ ] Reference issue in branch name: `feat/issue-123-description`
 
 ### ✅ Feature Branches (MANDATORY)
@@ -131,6 +168,23 @@ Every feature must have:
 
 **🚨 MANDATORY AGENT AUTO-TRIGGERS 🚨**
 **Claude MUST automatically invoke agents based on these rules - NO EXCEPTIONS:**
+
+#### **Phase 0: PRD/PDR Document Validation (When Creating PRDs/PDRs)**
+
+**📋 PRD Agent Requirements (2 MANDATORY):**
+- **ux-accessibility-i18n-agent**: ALWAYS for all PRDs - validates user experience, accessibility compliance, internationalization readiness
+- **general-purpose-agent**: ALWAYS for all PRDs - validates requirement completeness, feasibility, and clarity
+
+**🏗️ PDR Agent Requirements (4 MANDATORY - ALL REQUIRED):**
+- **architecture-designer**: ALWAYS for all PDRs - validates system design, component architecture, technical approach (Score ≥4.0 required)
+- **security-validator**: ALWAYS for all PDRs - identifies vulnerabilities, validates security measures (Risk ≤MEDIUM required)
+- **performance-optimizer**: ALWAYS for all PDRs - assesses performance impact, identifies bottlenecks, validates optimization approach
+- **code-quality-analyzer**: ALWAYS for all PDRs - validates implementation quality, test coverage requirements (Score ≥4.0 required)
+
+**🔗 Cross-Agent Validation Requirements:**
+- Document any conflicts between agent recommendations
+- Resolve conflicts before seeking Doctor Hubert approval
+- All agents must approve before proceeding to implementation
 
 #### **Phase 1: MANDATORY Pre-Analysis (Always Required)**
 **Before ANY code changes, AUTOMATICALLY run:**
