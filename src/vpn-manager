@@ -7,6 +7,9 @@ VPN_PID_FILE="/var/run/openvpn.pid"
 VPN_LOG_FILE="/tmp/vpn_manager_$(id -u).log"
 LOCK_FILE="/tmp/vpn_manager.lock"
 
+# Source centralized error handling
+source "$VPN_DIR/vpn-error-handler"
+
 # Load VPN integration system
 if [[ -f "$VPN_DIR/vpn-integration" ]]; then
     source "$VPN_DIR/vpn-integration"
@@ -256,12 +259,12 @@ stop_vpn() {
                 sleep 2
             fi
         else
-            echo -e "\033[1;31mError: Unable to send termination signal to process $pid\033[0m"
+            process_error "$COMP_VPN_MANAGER" "terminate VPN process" "Unable to send termination signal to process $pid" "Check if process still exists or requires elevated permissions"
             return 1
         fi
 
         if is_vpn_running; then
-            echo -e "\033[1;31mError: Failed to stop VPN process\033[0m"
+            process_error "$COMP_VPN_MANAGER" "stop VPN process" "Process $pid refused to terminate gracefully" "Try 'vpn kill-all' or manual process termination"
             log_message "Failed to stop VPN process $pid"
             return 1
         else
