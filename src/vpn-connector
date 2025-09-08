@@ -10,6 +10,9 @@ PERFORMANCE_CACHE="/tmp/vpn_performance.cache"
 CONNECTION_LOG="/tmp/vpn_connect.log"
 LOCK_FILE="/tmp/vpn_connect.lock"
 
+# Source centralized error handling
+source "$VPN_DIR/vpn-error-handler"
+
 # Load VPN integration system
 if [[ -f "$VPN_DIR/vpn-integration" ]]; then
     source "$VPN_DIR/vpn-integration"
@@ -38,12 +41,12 @@ validate_wireguard_config() {
 
     # Check for required WireGuard config sections
     if ! grep -q "^\[Interface\]" "$config_path"; then
-        echo -e "\033[1;31mError: Missing [Interface] section in WireGuard config\033[0m"
+        config_error "$COMP_VPN_CONNECTOR" "WireGuard" "Missing [Interface] section" "Add [Interface] section with PrivateKey and Address"
         return 1
     fi
 
     if ! grep -q "^\[Peer\]" "$config_path"; then
-        echo -e "\033[1;31mError: Missing [Peer] section in WireGuard config\033[0m"
+        config_error "$COMP_VPN_CONNECTOR" "WireGuard" "Missing [Peer] section" "Add [Peer] section with PublicKey and Endpoint"
         return 1
     fi
 
@@ -54,7 +57,7 @@ check_internet() {
     if ping -c 1 -W 5 8.8.8.8 >/dev/null 2>&1; then
         return 0
     else
-        echo -e "\033[1;31mError: No internet connection detected\033[0m"
+        network_error "$COMP_VPN_CONNECTOR" "Cannot reach external servers for connectivity test"
         return 1
     fi
 }
@@ -72,8 +75,7 @@ check_dependencies() {
     command -v wg-quick >/dev/null || missing_deps+=("wireguard-tools")
 
     if [[ ${#missing_deps[@]} -gt 0 ]]; then
-        echo -e "\033[1;31mError: Missing dependencies: ${missing_deps[*]}\033[0m"
-        echo "Install with: sudo pacman -S ${missing_deps[*]}"
+        dependency_error "$COMP_VPN_CONNECTOR" "${missing_deps[*]}" "sudo pacman -S ${missing_deps[*]}"
         return 1
     fi
 
@@ -111,7 +113,7 @@ list_profiles() {
     local show_details="${2:-}"
 
     if [[ ! -d "$LOCATIONS_DIR" ]]; then
-        echo -e "\033[1;31mError: Locations directory not found: $LOCATIONS_DIR\033[0m"
+        file_not_found_error "$COMP_VPN_CONNECTOR" "$LOCATIONS_DIR" "Create the directory and add VPN configuration files (.ovpn or .conf)"
         return 1
     fi
 
@@ -364,7 +366,7 @@ connect_to_profile() {
     local max_attempts=3
 
     if [[ ! -f "$profile_path" ]]; then
-        echo -e "\033[1;31mError: Profile not found: $profile_path\033[0m"
+        file_not_found_error "$COMP_VPN_CONNECTOR" "$profile_path" "Check filename spelling and ensure file exists in locations directory"
         return 1
     fi
 
@@ -422,8 +424,7 @@ connect_openvpn_profile() {
     local max_attempts="$2"
 
     if [[ ! -f "$CREDENTIALS_FILE" ]]; then
-        echo -e "\033[1;31mError: Credentials file not found: $CREDENTIALS_FILE\033[0m"
-        echo "Create it with your VPN username and password (one per line)"
+        file_not_found_error "$COMP_VPN_CONNECTOR" "$CREDENTIALS_FILE" "Create file with: echo -e 'username\\npassword' > $CREDENTIALS_FILE"
         return 1
     fi
 
