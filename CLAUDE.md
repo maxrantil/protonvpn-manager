@@ -127,29 +127,150 @@ Every feature must have:
 
 ## Agent-Driven Development (MANDATORY)
 
-### Agent Selection Matrix
-**When starting ANY task, determine required agents:**
+### **CRITICAL: AUTOMATIC AGENT USAGE RULES**
 
-| Task Type | Primary Agent | Secondary Agents | Trigger Words |
-|-----------|---------------|------------------|---------------|
-| New features | architecture-designer | code-quality-analyzer, security-validator | "implement", "build", "create" |
-| Bug fixes | code-quality-analyzer | security-validator, performance-optimizer | "fix", "bug", "error" |
-| Performance issues | performance-optimizer | architecture-designer | "slow", "optimize", "bottleneck" |
-| Security concerns | security-validator | code-quality-analyzer | "auth", "security", "vulnerability" |
-| UI/Frontend | ux-accessibility-i18n-agent | architecture-designer | "UI", "frontend", "accessibility" |
-| Deployment | devops-deployment-agent | security-validator | "deploy", "CI/CD", "infrastructure" |
+**🚨 MANDATORY AGENT AUTO-TRIGGERS 🚨**
+**Claude MUST automatically invoke agents based on these rules - NO EXCEPTIONS:**
 
-### Multi-Agent Workflow
-1. **Primary Agent Analysis** - Deep dive with main agent
-2. **Cross-Agent Validation** - Secondary agents review primary's recommendations
-3. **Conflict Resolution** - Address any contradictions between agent recommendations
-4. **Implementation Priority Matrix** - Rank all agent recommendations by impact/effort
-5. **Validation Loop** - Re-run agents after implementation to confirm fixes
+#### **Phase 1: MANDATORY Pre-Analysis (Always Required)**
+**Before ANY code changes, AUTOMATICALLY run:**
+- **architecture-designer**: For ALL tasks involving multiple files or system changes
+- **security-validator**: For ALL tasks involving credentials, processes, network, or file operations
+- **code-quality-analyzer**: For ALL code modifications, bug fixes, or new features
 
-### Agent Communication Protocol
+#### **Phase 2: CONTEXT-TRIGGERED AGENTS (Auto-Detect)**
+**Automatically trigger based on context detection:**
+
+| **Auto-Detect Triggers** | **MANDATORY Agents** | **Additional Context Triggers** |
+|--------------------------|---------------------|--------------------------------|
+| **ANY user-facing interface** (CLI, error messages, help text) | **ux-accessibility-i18n-agent** | screen output, user interaction, documentation |
+| **ANY performance keywords** (slow, optimize, timeout, cache) | **performance-optimizer** | timing, efficiency, resource usage |
+| **ANY deployment/infrastructure mentions** (install, deploy, CI/CD, automation) | **devops-deployment-agent** | system integration, service management |
+| **ANY security keywords** (auth, credential, permission, sudo, encrypt) | **security-validator** + **code-quality-analyzer** | data handling, process management |
+
+#### **Phase 3: MANDATORY Cross-Validation (Always Required)**
+**After implementing ANY solution, AUTOMATICALLY run ALL relevant agents for validation:**
+```bash
+# MANDATORY validation sequence - NO SKIPPING
+1. Primary implementation agent validates solution
+2. security-validator reviews for vulnerabilities introduced
+3. code-quality-analyzer checks for regressions/bugs
+4. performance-optimizer verifies no performance degradation
+5. Additional agents based on context (UX, DevOps)
+```
+
+### **AUTOMATIC AGENT SELECTION MATRIX (EXPANDED)**
+**🔴 RED = MANDATORY PRIMARY AGENT**
+**🟡 YELLOW = MANDATORY SECONDARY AGENTS**
+
+| **Task Type** | **Trigger Detection** | **Mandatory Primary** | **Mandatory Secondary** |
+|---------------|----------------------|----------------------|------------------------|
+| **New Features** | "implement", "add", "create", "build" | 🔴 architecture-designer | 🟡 security-validator, code-quality-analyzer, ux-accessibility-i18n-agent |
+| **Bug Fixes** | "fix", "bug", "error", "issue", "problem" | 🔴 code-quality-analyzer | 🟡 security-validator, performance-optimizer |
+| **Performance Tasks** | "slow", "optimize", "performance", "speed", "timeout" | 🔴 performance-optimizer | 🟡 architecture-designer, code-quality-analyzer |
+| **Security Tasks** | "security", "auth", "credential", "permission", "encrypt" | 🔴 security-validator | 🟡 code-quality-analyzer, architecture-designer |
+| **User Interface** | "CLI", "interface", "user", "error message", "help", "output" | 🔴 ux-accessibility-i18n-agent | 🟡 code-quality-analyzer |
+| **Infrastructure** | "deploy", "install", "CI/CD", "automation", "service" | 🔴 devops-deployment-agent | 🟡 security-validator, architecture-designer |
+| **Code Review** | ANY code implementation task | 🔴 code-quality-analyzer | 🟡 security-validator, performance-optimizer |
+
+### **MANDATORY Multi-Agent Workflow (NO EXCEPTIONS)**
+```bash
+# PHASE 1: Pre-Implementation Analysis (REQUIRED)
+Step 1: Auto-detect task type and context
+Step 2: Launch primary agent analysis
+Step 3: Launch ALL mandatory secondary agents in parallel
+Step 4: Synthesize recommendations before ANY code changes
+
+# PHASE 2: Implementation (REQUIRED)
+Step 5: Implement following agent recommendations
+Step 6: Run continuous agent validation during implementation
+
+# PHASE 3: Post-Implementation Validation (REQUIRED)
+Step 7: ALL agents validate final implementation
+Step 8: Cross-agent conflict resolution if needed
+Step 9: Document agent findings and resolutions
+```
+
+### **AGENT BYPASS PREVENTION**
+**❌ FORBIDDEN: These phrases trigger AUTOMATIC agent usage:**
+- "I think this is simple enough to skip agents"
+- "This doesn't need agent review"
+- "I can handle this without additional analysis"
+
+**✅ REQUIRED: Agent usage is MANDATORY for:**
+- ANY task involving >10 lines of code changes
+- ANY user-facing functionality (including error messages)
+- ANY security-related operations (file permissions, processes, network)
+- ANY system integration or deployment tasks
+- ANY performance-critical operations
+
+### **Agent Communication Protocol (Enhanced)**
 - **Agent Handoffs**: Always summarize findings when switching agents
 - **Conflict Documentation**: Record when agents disagree and resolution chosen
 - **Learning Loop**: Update agent selection based on outcome effectiveness
+
+### **ENFORCEMENT MECHANISMS**
+
+#### **Pre-Work Agent Analysis (MANDATORY)**
+**Claude MUST start EVERY response with agent analysis:**
+```markdown
+## AGENT USAGE ANALYSIS (MANDATORY)
+**Task Detected:** [Brief description]
+**Context Triggers:** [List detected keywords/patterns]
+**Required Primary Agent:** [Agent name + justification]
+**Required Secondary Agents:** [Agent names + justification]
+**Validation Agents:** [Post-implementation agents needed]
+
+**Agent Launch Plan:**
+1. [Primary agent] - [specific analysis needed]
+2. [Secondary agents] - [parallel analysis needed]
+3. [Validation agents] - [post-implementation validation]
+```
+
+#### **Agent Validation Checkpoints (MANDATORY)**
+**After ANY code implementation, Claude MUST provide:**
+```markdown
+## AGENT VALIDATION REPORT (MANDATORY)
+**Implementation Completed:** [Brief description]
+**Validation Agents Run:** [List of agents used for validation]
+**Security Review:** ✅ PASSED / ❌ ISSUES FOUND / ⚠️ NEEDS ATTENTION
+**Performance Review:** ✅ PASSED / ❌ REGRESSION DETECTED / ⚠️ NEEDS OPTIMIZATION
+**Code Quality Review:** ✅ PASSED / ❌ ISSUES FOUND / ⚠️ NEEDS IMPROVEMENT
+**UX Review:** ✅ PASSED / ❌ ACCESSIBILITY ISSUES / ⚠️ IMPROVEMENT NEEDED / N/A
+**DevOps Review:** ✅ PASSED / ❌ DEPLOYMENT ISSUES / ⚠️ NEEDS ENHANCEMENT / N/A
+
+**Cross-Agent Conflicts:** [None] / [List conflicts and resolutions]
+**Remaining Action Items:** [List any follow-up tasks identified by agents]
+```
+
+#### **Mandatory Agent Usage Examples**
+**Example 1 - Simple Bug Fix:**
+```bash
+User: "Fix the connection timeout issue"
+Claude MUST auto-detect: "fix", "timeout" → PRIMARY: code-quality-analyzer + performance-optimizer
+Claude MUST auto-launch: security-validator (secondary), architecture-designer (if multi-file)
+```
+
+**Example 2 - User Interface Change:**
+```bash
+User: "Improve error messages"
+Claude MUST auto-detect: "error message", "improve" → PRIMARY: ux-accessibility-i18n-agent
+Claude MUST auto-launch: code-quality-analyzer (secondary), security-validator (if credential-related)
+```
+
+**Example 3 - Any Code Implementation:**
+```bash
+User: "Add feature X"
+Claude MUST auto-detect: "add" → PRIMARY: architecture-designer
+Claude MUST auto-launch: ALL secondary agents (security, code-quality, UX if user-facing)
+Claude MUST validate: ALL agents post-implementation
+```
+
+### **Agent Usage Accountability**
+**Doctor Hubert Enforcement Flags:**
+- **"AGENT-AUDIT"**: Doctor Hubert can request full agent usage audit for any response
+- **"MANDATORY-AGENTS"**: Triggers immediate agent analysis if Claude missed it
+- **"CROSS-VALIDATE"**: Forces Claude to run all validation agents on current state
 
 ### Agent Integration Commands
 ```bash
