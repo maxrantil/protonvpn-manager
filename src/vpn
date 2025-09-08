@@ -8,6 +8,9 @@ VPN_MANAGER="$VPN_DIR/vpn-manager"
 VPN_CONNECTOR="$VPN_DIR/vpn-connector"
 LOCATIONS_DIR="$PROJECT_ROOT/locations"
 
+# Source centralized error handling
+source "$VPN_DIR/vpn-error-handler"
+
 show_banner() {
     echo -e "\033[1;36m╔════════════════════════════════════════╗\033[0m"
     echo -e "\033[1;36m║             VPN Manager v2.0           ║\033[0m"
@@ -62,8 +65,7 @@ case "$1" in
                     echo -e "\033[1;31m⚠️  CRITICAL: Multiple OpenVPN processes detected!\033[0m"
                     echo -e "\033[1;33m   Performing automatic cleanup to prevent system issues...\033[0m"
                     if ! "$VPN_MANAGER" cleanup; then
-                        echo -e "\033[1;31mError: Failed to cleanup VPN processes. Cannot proceed.\033[0m"
-                        echo -e "\033[1;33mTry running 'vpn cleanup' manually or 'vpn emergency-reset'\033[0m"
+                        critical_process_error "$COMP_VPN_MAIN" "unknown" "System stability at risk - manual intervention required"
                         exit 1
                     fi
                     echo -e "\033[1;32m✓ Cleanup completed. Proceeding with connection...\033[0m"
@@ -71,7 +73,7 @@ case "$1" in
             fi
             "$VPN_CONNECTOR" connect "$2"
         else
-            echo -e "\033[1;31mError: VPN connector not found or not executable\033[0m"
+            file_not_found_error "$COMP_VPN_MAIN" "$VPN_CONNECTOR" "Check installation and file permissions"
             exit 1
         fi
         ;;
@@ -79,7 +81,7 @@ case "$1" in
         if [[ -x "$VPN_MANAGER" ]]; then
             "$VPN_MANAGER" stop
         else
-            echo -e "\033[1;31mError: VPN manager not found or not executable\033[0m"
+            file_not_found_error "$COMP_VPN_MAIN" "$VPN_MANAGER" "Check installation and file permissions"
             exit 1
         fi
         ;;
@@ -89,7 +91,7 @@ case "$1" in
             sleep 2
             "$VPN_CONNECTOR" connect "$2"
         else
-            echo -e "\033[1;31mError: VPN manager not found or not executable\033[0m"
+            file_not_found_error "$COMP_VPN_MAIN" "$VPN_MANAGER" "Check installation and file permissions"
             exit 1
         fi
         ;;
@@ -97,7 +99,7 @@ case "$1" in
         if [[ -x "$VPN_MANAGER" ]]; then
             "$VPN_MANAGER" status
         else
-            echo -e "\033[1;31mError: VPN manager not found or not executable\033[0m"
+            file_not_found_error "$COMP_VPN_MAIN" "$VPN_MANAGER" "Check installation and file permissions"
             exit 1
         fi
         ;;
@@ -105,7 +107,7 @@ case "$1" in
         if [[ -x "$VPN_CONNECTOR" ]]; then
             "$VPN_CONNECTOR" best
         else
-            echo -e "\033[1;31mError: VPN connector not found or not executable\033[0m"
+            file_not_found_error "$COMP_VPN_MAIN" "$VPN_CONNECTOR" "Check installation and file permissions"
             exit 1
         fi
         ;;
@@ -113,7 +115,7 @@ case "$1" in
         if [[ -x "$VPN_CONNECTOR" ]]; then
             "$VPN_CONNECTOR" fast "$2"
         else
-            echo -e "\033[1;31mError: VPN connector not found or not executable\033[0m"
+            file_not_found_error "$COMP_VPN_MAIN" "$VPN_CONNECTOR" "Check installation and file permissions"
             exit 1
         fi
         ;;
@@ -121,7 +123,7 @@ case "$1" in
         if [[ -x "$VPN_CONNECTOR" ]]; then
             "$VPN_CONNECTOR" secure
         else
-            echo -e "\033[1;31mError: VPN connector not found or not executable\033[0m"
+            file_not_found_error "$COMP_VPN_MAIN" "$VPN_CONNECTOR" "Check installation and file permissions"
             exit 1
         fi
         ;;
@@ -129,7 +131,7 @@ case "$1" in
         if [[ -x "$VPN_CONNECTOR" ]]; then
             "$VPN_CONNECTOR" custom "$2"
         else
-            echo -e "\033[1;31mError: VPN connector not found or not executable\033[0m"
+            file_not_found_error "$COMP_VPN_MAIN" "$VPN_CONNECTOR" "Check installation and file permissions"
             exit 1
         fi
         ;;
@@ -138,7 +140,7 @@ case "$1" in
             echo -e "\033[1;33mAvailable VPN Profiles:\033[0m"
             find "$LOCATIONS_DIR" \( -name "*.ovpn" -o -name "*.conf" \) 2>/dev/null | sed 's|.*/||; s|\.ovpn$||; s|\.conf$||' | sort
         else
-            echo -e "\033[1;31mError: Locations directory not found\033[0m"
+            file_not_found_error "$COMP_VPN_MAIN" "$LOCATIONS_DIR" "Create locations directory and add VPN profile files"
             exit 1
         fi
         ;;
@@ -146,7 +148,7 @@ case "$1" in
         if [[ -x "$VPN_MANAGER" ]]; then
             "$VPN_MANAGER" kill-all
         else
-            echo -e "\033[1;31mError: VPN manager not found or not executable\033[0m"
+            file_not_found_error "$COMP_VPN_MAIN" "$VPN_MANAGER" "Check installation and file permissions"
             exit 1
         fi
         ;;
@@ -154,7 +156,7 @@ case "$1" in
         if [[ -x "$VPN_MANAGER" ]]; then
             "$VPN_MANAGER" cleanup
         else
-            echo -e "\033[1;31mError: VPN manager not found or not executable\033[0m"
+            file_not_found_error "$COMP_VPN_MAIN" "$VPN_MANAGER" "Check installation and file permissions"
             exit 1
         fi
         ;;
@@ -162,7 +164,7 @@ case "$1" in
         if [[ -x "$VPN_MANAGER" ]]; then
             "$VPN_MANAGER" emergency-reset
         else
-            echo -e "\033[1;31mError: VPN manager not found or not executable\033[0m"
+            file_not_found_error "$COMP_VPN_MAIN" "$VPN_MANAGER" "Check installation and file permissions"
             exit 1
         fi
         ;;
@@ -170,7 +172,7 @@ case "$1" in
         if [[ -x "$VPN_MANAGER" ]]; then
             "$VPN_MANAGER" health
         else
-            echo -e "\033[1;31mError: VPN manager not found or not executable\033[0m"
+            file_not_found_error "$COMP_VPN_MAIN" "$VPN_MANAGER" "Check installation and file permissions"
             exit 1
         fi
         ;;
@@ -178,7 +180,7 @@ case "$1" in
         if [[ -x "$VPN_CONNECTOR" ]]; then
             "$VPN_CONNECTOR" test
         else
-            echo -e "\033[1;31mError: VPN connector not found or not executable\033[0m"
+            file_not_found_error "$COMP_VPN_MAIN" "$VPN_CONNECTOR" "Check installation and file permissions"
             exit 1
         fi
         ;;
@@ -197,8 +199,7 @@ case "$1" in
         show_help
         ;;
     *)
-        echo -e "\033[1;31mError: Unknown command '$1'\033[0m"
-        echo "Run 'vpn help' for usage information"
+        vpn_error "$ERROR_HIGH" "$COMP_VPN_MAIN" "INVALID_COMMAND" "Unknown command '$1'" "" "Run 'vpn help' for usage information"
         exit 1
         ;;
 esac
