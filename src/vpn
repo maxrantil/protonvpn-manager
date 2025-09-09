@@ -97,7 +97,26 @@ case "$1" in
         ;;
     "status"|"s")
         if [[ -x "$VPN_MANAGER" ]]; then
-            "$VPN_MANAGER" status
+            # Enhanced status dashboard with accessibility support
+            case "$2" in
+                "--accessible")
+                    "$VPN_MANAGER" status-accessible
+                    ;;
+                "--enhanced")
+                    "$VPN_MANAGER" status-enhanced
+                    ;;
+                "--dashboard")
+                    "$VPN_MANAGER" status-dashboard
+                    ;;
+                "--format="*)
+                    format="${2#--format=}"
+                    "$VPN_MANAGER" status-format "$format"
+                    ;;
+                *)
+                    # Default enhanced format with WCAG compliance
+                    "$VPN_MANAGER" status-wcag
+                    ;;
+            esac
         else
             file_not_found_error "$COMP_VPN_MAIN" "$VPN_MANAGER" "Check installation and file permissions"
             exit 1
