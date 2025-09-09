@@ -30,10 +30,16 @@
 ⚡ GitHub Issue Creation → Implementation → Testing → Deployment
 ```
 
-**📁 Document Locations:**
+**📁 CRITICAL: Document Locations (NEVER deviate):**
 - PRDs: `docs/implementation/PRD-[name]-[YYYY-MM-DD].md`
 - PDRs: `docs/implementation/PDR-[name]-[YYYY-MM-DD].md`
 - Templates: `docs/templates/`
+
+**Examples:**
+- ✅ Good: `docs/implementation/PDR-VPN-Dashboard-2025-01-08.md`
+- ❌ Bad: `docs/PDR-System-Improvements.md` (missing date/wrong location)
+
+**📍 MANDATORY: Both PRD and PDR must be in `docs/implementation/` with full date**
 
 **🌿 Branch Naming:**
 - `prd/[project-name]` for PRD development
@@ -75,6 +81,11 @@
 - [ ] **No production code without failing test first**
 
 ### ✅ Issue Closure (MANDATORY)
+- [ ] **BEFORE CLOSING ANY ISSUE - Verify completion:**
+  - [ ] All acceptance criteria met
+  - [ ] Implementation matches PRD/PDR requirements
+  - [ ] No "Phase X" work remaining
+  - [ ] Final validation completed
 - [ ] **Close GitHub issues after completion**
 - [ ] Verify auto-closure via `Fixes #123` in merge commit
 - [ ] Manual closure if auto-link failed with completion comment
@@ -226,6 +237,8 @@ Every feature must have:
 | **User Interface** | "CLI", "interface", "user", "error message", "help", "output" | 🔴 ux-accessibility-i18n-agent | 🟡 code-quality-analyzer |
 | **Infrastructure** | "deploy", "install", "CI/CD", "automation", "service" | 🔴 devops-deployment-agent | 🟡 security-validator, architecture-designer |
 | **Code Review** | ANY code implementation task | 🔴 code-quality-analyzer | 🟡 security-validator, performance-optimizer |
+| **Multi-Domain Analysis** | "assess", "analyze", "evaluate", "conflicting requirements" | 🔴 general-purpose-agent | 🟡 Relevant domain-specific agents |
+| **Initial Project Triage** | "understand codebase", "project assessment", "gap analysis" | 🔴 general-purpose-agent | 🟡 All relevant specialized agents |
 
 ### **MANDATORY Multi-Agent Workflow (NO EXCEPTIONS)**
 ```bash
