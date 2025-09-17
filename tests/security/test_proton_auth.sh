@@ -71,6 +71,8 @@ setup_auth_test_environment() {
     rm -f "$HOME/.cache/vpn/sessions/csrf-token"*
     rm -f "$HOME/.cache/vpn/rate-limit.log"
     rm -f "$HOME/.cache/vpn/rate-limit-state"
+    rm -f "$HOME/.cache/vpn/totp-used-codes"
+    rm -rf "$HOME/.cache/vpn/locks"
 
     # Mock test credentials
     export TEST_PROTON_USERNAME="testuser@example.com"
