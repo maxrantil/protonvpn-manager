@@ -30,8 +30,11 @@ readonly ERR_NETWORK_ERROR=4
 readonly ERR_SESSION_EXPIRED=5
 readonly ERR_CONFIG_ERROR=6
 
-# Rate limiting configuration (5 minutes in seconds, 10 seconds for testing)
-readonly RATE_LIMIT_INTERVAL=${PROTON_AUTH_RATE_LIMIT:-300}
+# Rate limiting configuration with exponential backoff
+readonly RATE_LIMIT_BASE_INTERVAL=${PROTON_AUTH_RATE_LIMIT:-300}  # 5 minutes base
+readonly RATE_LIMIT_STATE_FILE="$CACHE_DIR/rate-limit-state"
+readonly RATE_LIMIT_MAX_VIOLATIONS=5
+readonly RATE_LIMIT_MAX_BACKOFF=3600  # 1 hour maximum
 
 # Logging function
 log_message() {
@@ -73,24 +76,94 @@ SECURITY NOTES:
 EOF
 }
 
-# Check rate limiting
-check_rate_limit() {
-    if [[ ! -f "$RATE_LIMIT_LOG" ]]; then
-        return 0
+# Load rate limiting state
+load_rate_limit_state() {
+    if [[ -f "$RATE_LIMIT_STATE_FILE" ]]; then
+        # shellcheck source=/dev/null
+        source "$RATE_LIMIT_STATE_FILE"
+    else
+        # Initialize default state
+        LAST_REQUEST_TIME=0
+        VIOLATION_COUNT=0
+        CURRENT_BACKOFF_INTERVAL=$RATE_LIMIT_BASE_INTERVAL
+        LAST_VIOLATION_TIME=0
     fi
+}
 
+# Save rate limiting state (persistent across restarts)
+save_rate_limit_state() {
+    cat > "$RATE_LIMIT_STATE_FILE" << EOF
+LAST_REQUEST_TIME=$1
+VIOLATION_COUNT=$2
+CURRENT_BACKOFF_INTERVAL=$3
+LAST_VIOLATION_TIME=${4:-0}
+EOF
+    chmod 600 "$RATE_LIMIT_STATE_FILE"
+}
+
+# Calculate exponential backoff interval
+calculate_backoff_interval() {
+    local violation_count="$1"
+    local base_interval="$RATE_LIMIT_BASE_INTERVAL"
+
+    # Exponential backoff: base * (2 ^ violation_count)
+    local backoff_interval=$base_interval
+
+    for ((i = 0; i < violation_count && i < 10; i++)); do
+        backoff_interval=$((backoff_interval * 2))
+
+        # Cap at maximum backoff
+        if (( backoff_interval > RATE_LIMIT_MAX_BACKOFF )); then
+            backoff_interval=$RATE_LIMIT_MAX_BACKOFF
+            break
+        fi
+    done
+
+    echo "$backoff_interval"
+}
+
+# Check persistent rate limiting with exponential backoff
+check_rate_limit() {
     local current_time
     current_time=$(date +%s)
 
-    local last_request_time
-    last_request_time=$(tail -1 "$RATE_LIMIT_LOG" 2>/dev/null | cut -d' ' -f1 || echo "0")
+    # Load persistent state
+    load_rate_limit_state
 
-    if [[ -n "$last_request_time" && "$last_request_time" -gt 0 ]]; then
-        local time_diff=$((current_time - last_request_time))
+    # Check if we need to reset violation count (24 hours without violations)
+    local reset_time=$((24 * 3600))  # 24 hours
+    if [[ -n "$LAST_VIOLATION_TIME" && $LAST_VIOLATION_TIME -gt 0 ]]; then
+        local time_since_violation=$((current_time - LAST_VIOLATION_TIME))
+        if (( time_since_violation > reset_time )); then
+            log_message "INFO" "Rate limit violation count reset after 24 hours"
+            VIOLATION_COUNT=0
+            CURRENT_BACKOFF_INTERVAL=$RATE_LIMIT_BASE_INTERVAL
+        fi
+    fi
 
-        if (( time_diff < RATE_LIMIT_INTERVAL )); then
-            local wait_time=$((RATE_LIMIT_INTERVAL - time_diff))
-            log_message "WARN" "Rate limit enforced. Please wait $wait_time seconds before retrying."
+    # Check if enough time has passed since last request
+    if [[ $LAST_REQUEST_TIME -gt 0 ]]; then
+        local time_diff=$((current_time - LAST_REQUEST_TIME))
+
+        if (( time_diff < CURRENT_BACKOFF_INTERVAL )); then
+            local wait_time=$((CURRENT_BACKOFF_INTERVAL - time_diff))
+
+            # Increment violation count and calculate new backoff
+            ((VIOLATION_COUNT++))
+
+            if (( VIOLATION_COUNT > RATE_LIMIT_MAX_VIOLATIONS )); then
+                log_message "ERROR" "Maximum rate limit violations exceeded. Account may be temporarily blocked."
+                CURRENT_BACKOFF_INTERVAL=$RATE_LIMIT_MAX_BACKOFF
+            else
+                CURRENT_BACKOFF_INTERVAL=$(calculate_backoff_interval "$VIOLATION_COUNT")
+            fi
+
+            # Save updated state with violation
+            save_rate_limit_state "$LAST_REQUEST_TIME" "$VIOLATION_COUNT" "$CURRENT_BACKOFF_INTERVAL" "$current_time"
+
+            log_message "WARN" "Rate limit enforced (violation #$VIOLATION_COUNT). Please wait $wait_time seconds before retrying."
+            log_message "INFO" "Next backoff interval: $CURRENT_BACKOFF_INTERVAL seconds"
+
             return 1
         fi
     fi
@@ -98,14 +171,29 @@ check_rate_limit() {
     return 0
 }
 
-# Log rate limiting request
+# Log successful rate limiting request
 log_rate_limit_request() {
     local current_time
     current_time=$(date +%s)
+
+    # Load current state
+    load_rate_limit_state
+
+    # Save successful request (reset violation count on success)
+    if [[ $VIOLATION_COUNT -gt 0 ]]; then
+        log_message "INFO" "Successful request - reducing violation count from $VIOLATION_COUNT to $((VIOLATION_COUNT - 1))"
+        ((VIOLATION_COUNT--))
+        CURRENT_BACKOFF_INTERVAL=$(calculate_backoff_interval "$VIOLATION_COUNT")
+    fi
+
+    # Save state
+    save_rate_limit_state "$current_time" "$VIOLATION_COUNT" "$CURRENT_BACKOFF_INTERVAL"
+
+    # Also log to legacy rate limit log for backward compatibility
     echo "$current_time request" >> "$RATE_LIMIT_LOG"
 }
 
-# Create session file
+# Create encrypted session file
 create_session() {
     local username="$1"
     local session_id="session_$(date +%s)_$$"
@@ -113,24 +201,57 @@ create_session() {
     local expires_at
     expires_at=$(date -d '+15 minutes' '+%Y-%m-%dT%H:%M:%SZ')
 
-    # Create session state file
-    cat > "$SESSION_FILE" << EOF
+    # Create session data
+    local session_data
+    session_data=$(cat << EOF
 SESSION_ID=$session_id
 USERNAME=$username
 CSRF_TOKEN=$csrf_token
 EXPIRES_AT=$expires_at
 SESSION_VALID=true
 CREATED_AT=$(date '+%Y-%m-%dT%H:%M:%SZ')
+SESSION_FINGERPRINT=$(echo "$session_id$username" | sha256sum | cut -d' ' -f1)
 EOF
+)
+
+    # Encrypt session data using GPG (integrating with Phase 0 security)
+    if command -v gpg >/dev/null 2>&1; then
+        echo "$session_data" | gpg --symmetric --cipher-algo AES256 --compress-algo 1 \
+            --s2k-mode 3 --s2k-count 65536 --s2k-digest-algo SHA512 \
+            --batch --quiet --passphrase "vpn-session-$(whoami)" \
+            --output "$SESSION_FILE.gpg" 2>/dev/null || {
+            log_message "WARN" "GPG encryption failed, falling back to OpenSSL"
+            encrypt_session_openssl "$session_data"
+        }
+    else
+        log_message "WARN" "GPG not available, using OpenSSL encryption"
+        encrypt_session_openssl "$session_data"
+    fi
 
     # Set secure permissions
-    chmod 600 "$SESSION_FILE"
+    chmod 600 "$SESSION_FILE"* 2>/dev/null
 
-    # Store CSRF token separately
-    echo "$csrf_token" > "$CSRF_TOKEN_FILE"
-    chmod 600 "$CSRF_TOKEN_FILE"
+    # Store CSRF token separately (also encrypted)
+    echo "$csrf_token" | gpg --symmetric --batch --quiet \
+        --passphrase "vpn-csrf-$(whoami)" \
+        --output "$CSRF_TOKEN_FILE.gpg" 2>/dev/null || {
+        echo "$csrf_token" | openssl enc -aes-256-cbc -salt -pbkdf2 \
+            -pass pass:"vpn-csrf-$(whoami)" > "$CSRF_TOKEN_FILE.enc" 2>/dev/null
+    }
 
-    log_message "INFO" "Session created successfully for user: $username"
+    chmod 600 "$CSRF_TOKEN_FILE"* 2>/dev/null
+
+    log_message "INFO" "Encrypted session created successfully for user: $username"
+}
+
+# OpenSSL fallback encryption for session data
+encrypt_session_openssl() {
+    local session_data="$1"
+    echo "$session_data" | openssl enc -aes-256-cbc -salt -pbkdf2 \
+        -pass pass:"vpn-session-$(whoami)" > "$SESSION_FILE.enc" 2>/dev/null || {
+        log_message "ERROR" "Both GPG and OpenSSL encryption failed"
+        return 1
+    }
 }
 
 # Basic authentication (minimal implementation for GREEN phase)
@@ -206,21 +327,78 @@ authenticate_2fa() {
     return $ERR_SUCCESS
 }
 
+# Decrypt and load session data
+load_session_data() {
+    local session_content=""
+
+    # Try to decrypt GPG session first
+    if [[ -f "$SESSION_FILE.gpg" ]]; then
+        session_content=$(gpg --decrypt --batch --quiet \
+            --passphrase "vpn-session-$(whoami)" \
+            "$SESSION_FILE.gpg" 2>/dev/null) || {
+            log_message "WARN" "GPG decryption failed, trying OpenSSL"
+        }
+    fi
+
+    # Fallback to OpenSSL encrypted session
+    if [[ -z "$session_content" && -f "$SESSION_FILE.enc" ]]; then
+        session_content=$(openssl enc -aes-256-cbc -d -salt -pbkdf2 \
+            -pass pass:"vpn-session-$(whoami)" \
+            -in "$SESSION_FILE.enc" 2>/dev/null) || {
+            log_message "ERROR" "Failed to decrypt session data"
+            return 1
+        }
+    fi
+
+    # Fallback to plaintext session (for backward compatibility)
+    if [[ -z "$session_content" && -f "$SESSION_FILE" ]]; then
+        session_content=$(cat "$SESSION_FILE" 2>/dev/null) || {
+            log_message "ERROR" "Failed to read session file"
+            return 1
+        }
+    fi
+
+    if [[ -z "$session_content" ]]; then
+        log_message "ERROR" "No valid session data found"
+        return 1
+    fi
+
+    # Export session variables
+    eval "$session_content"
+    return 0
+}
+
 # Validate current session
 validate_session() {
-    if [[ ! -f "$SESSION_FILE" ]]; then
+    # Check if any session files exist
+    if [[ ! -f "$SESSION_FILE.gpg" && ! -f "$SESSION_FILE.enc" && ! -f "$SESSION_FILE" ]]; then
         log_message "ERROR" "No active session found"
         return $ERR_SESSION_EXPIRED
     fi
 
-    # Source session file
-    # shellcheck source=/dev/null
-    source "$SESSION_FILE"
+    # Load and decrypt session data
+    if ! load_session_data; then
+        log_message "ERROR" "Failed to load session data"
+        return $ERR_SESSION_EXPIRED
+    fi
 
     # Check session validity
     if [[ "$SESSION_VALID" != "true" ]]; then
         log_message "ERROR" "Session is not valid"
         return $ERR_SESSION_EXPIRED
+    fi
+
+    # Validate session fingerprint (anti-hijacking protection)
+    if [[ -n "$SESSION_FINGERPRINT" ]]; then
+        local expected_fingerprint
+        # shellcheck disable=SC2153
+        expected_fingerprint=$(echo "$SESSION_ID$USERNAME" | sha256sum | cut -d' ' -f1)
+        if [[ "$SESSION_FINGERPRINT" != "$expected_fingerprint" ]]; then
+            log_message "ERROR" "Session fingerprint mismatch - possible hijacking attempt"
+            # Invalidate compromised session
+            logout >/dev/null 2>&1
+            return $ERR_SESSION_EXPIRED
+        fi
     fi
 
     # Check expiration
@@ -293,19 +471,53 @@ refresh_session() {
     validate_session
 }
 
-# Logout and clean session
+# Logout and clean session (secure cleanup)
 logout() {
     log_message "INFO" "Logging out and cleaning session"
 
+    # Securely remove all session files
+    local files_removed=0
+
+    # Remove GPG encrypted sessions
+    if [[ -f "$SESSION_FILE.gpg" ]]; then
+        shred -vfz -n 3 "$SESSION_FILE.gpg" 2>/dev/null || rm -f "$SESSION_FILE.gpg"
+        ((files_removed++))
+    fi
+
+    # Remove OpenSSL encrypted sessions
+    if [[ -f "$SESSION_FILE.enc" ]]; then
+        shred -vfz -n 3 "$SESSION_FILE.enc" 2>/dev/null || rm -f "$SESSION_FILE.enc"
+        ((files_removed++))
+    fi
+
+    # Remove plaintext sessions (legacy)
     if [[ -f "$SESSION_FILE" ]]; then
-        rm -f "$SESSION_FILE"
+        shred -vfz -n 3 "$SESSION_FILE" 2>/dev/null || rm -f "$SESSION_FILE"
+        ((files_removed++))
+    fi
+
+    # Remove CSRF token files
+    if [[ -f "$CSRF_TOKEN_FILE.gpg" ]]; then
+        shred -vfz -n 3 "$CSRF_TOKEN_FILE.gpg" 2>/dev/null || rm -f "$CSRF_TOKEN_FILE.gpg"
+        ((files_removed++))
+    fi
+
+    if [[ -f "$CSRF_TOKEN_FILE.enc" ]]; then
+        shred -vfz -n 3 "$CSRF_TOKEN_FILE.enc" 2>/dev/null || rm -f "$CSRF_TOKEN_FILE.enc"
+        ((files_removed++))
     fi
 
     if [[ -f "$CSRF_TOKEN_FILE" ]]; then
-        rm -f "$CSRF_TOKEN_FILE"
+        shred -vfz -n 3 "$CSRF_TOKEN_FILE" 2>/dev/null || rm -f "$CSRF_TOKEN_FILE"
+        ((files_removed++))
     fi
 
-    log_message "INFO" "Session cleaned successfully"
+    if [[ $files_removed -gt 0 ]]; then
+        log_message "INFO" "Session cleaned successfully ($files_removed files removed)"
+    else
+        log_message "INFO" "No session files found to clean"
+    fi
+
     return $ERR_SUCCESS
 }
 

@@ -67,9 +67,10 @@ setup_auth_test_environment() {
     chmod 700 "$TEST_CREDENTIALS_DIR" "$TEST_SESSION_DIR"
 
     # Clear any existing sessions and rate limiting for clean tests
-    rm -f "$HOME/.cache/vpn/sessions/proton-session.state"
-    rm -f "$HOME/.cache/vpn/sessions/csrf-token"
+    rm -f "$HOME/.cache/vpn/sessions/proton-session.state"*
+    rm -f "$HOME/.cache/vpn/sessions/csrf-token"*
     rm -f "$HOME/.cache/vpn/rate-limit.log"
+    rm -f "$HOME/.cache/vpn/rate-limit-state"
 
     # Mock test credentials
     export TEST_PROTON_USERNAME="testuser@example.com"
@@ -148,19 +149,44 @@ test_proton_authentication_success() {
         return 1
     fi
 
-    # Verify session file created
-    local session_file="$HOME/.cache/vpn/sessions/proton-session.state"
-    if [[ ! -f "$session_file" ]]; then
-        fail "Session file not created at $session_file"
-        cleanup_auth_test_environment
-        return 1
+    # Verify encrypted session file created (GPG or OpenSSL)
+    local session_file_base="$HOME/.cache/vpn/sessions/proton-session.state"
+    local session_found=false
+
+    if [[ -f "$session_file_base.gpg" ]]; then
+        session_found=true
+        # Verify GPG session file permissions
+        local file_perms
+        file_perms=$(stat -c %a "$session_file_base.gpg")
+        if [[ "$file_perms" != "600" ]]; then
+            fail "GPG session file has incorrect permissions: $file_perms (expected 600)"
+            cleanup_auth_test_environment
+            return 1
+        fi
+    elif [[ -f "$session_file_base.enc" ]]; then
+        session_found=true
+        # Verify OpenSSL session file permissions
+        local file_perms
+        file_perms=$(stat -c %a "$session_file_base.enc")
+        if [[ "$file_perms" != "600" ]]; then
+            fail "OpenSSL session file has incorrect permissions: $file_perms (expected 600)"
+            cleanup_auth_test_environment
+            return 1
+        fi
+    elif [[ -f "$session_file_base" ]]; then
+        session_found=true
+        # Verify plaintext session file permissions (legacy support)
+        local file_perms
+        file_perms=$(stat -c %a "$session_file_base")
+        if [[ "$file_perms" != "600" ]]; then
+            fail "Session file has incorrect permissions: $file_perms (expected 600)"
+            cleanup_auth_test_environment
+            return 1
+        fi
     fi
 
-    # Verify session file permissions
-    local file_perms
-    file_perms=$(stat -c %a "$session_file")
-    if [[ "$file_perms" != "600" ]]; then
-        fail "Session file has incorrect permissions: $file_perms (expected 600)"
+    if [[ "$session_found" != "true" ]]; then
+        fail "No session file created (checked .gpg, .enc, and plaintext)"
         cleanup_auth_test_environment
         return 1
     fi
@@ -256,7 +282,18 @@ test_session_validation() {
 test_rate_limiting() {
     log_message "INFO" "Rate limiting enforcement"
 
-    setup_auth_test_environment
+    # Setup environment but don't clear rate limit state
+    mkdir -p "$TEST_CREDENTIALS_DIR" "$TEST_SESSION_DIR" "$HOME/.cache/vpn"
+    chmod 700 "$TEST_CREDENTIALS_DIR" "$TEST_SESSION_DIR"
+
+    # Clear only session files, keep rate limit state for this test
+    rm -f "$HOME/.cache/vpn/sessions/proton-session.state"*
+    rm -f "$HOME/.cache/vpn/sessions/csrf-token"*
+
+    # Set test credentials and short rate limit
+    export TEST_PROTON_USERNAME="testuser@example.com"
+    export TEST_PROTON_PASSWORD="testpassword123"
+    export PROTON_AUTH_RATE_LIMIT=1
 
     # First authentication attempt
     "$AUTH_MODULE" authenticate "$TEST_PROTON_USERNAME" "$TEST_PROTON_PASSWORD" >/dev/null 2>&1
@@ -274,7 +311,7 @@ test_rate_limiting() {
     fi
 
     # Check for rate limiting message
-    if echo "$rate_limit_result" | grep -q -i "rate.limit\|too.many\|wait"; then
+    if echo "$rate_limit_result" | grep -q -i "rate.limit\|too.many\|wait\|violation"; then
         pass "Rate limiting properly enforced with user feedback"
     else
         fail "Rate limiting message not found: $rate_limit_result"
