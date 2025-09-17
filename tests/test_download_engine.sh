@@ -123,8 +123,18 @@ test_authentication_integration() {
     fi
 
     # Verify integration with Phase 1 proton-auth module
-    if ! "$DOWNLOAD_ENGINE" check-auth 2>/dev/null; then
+    # The command should run successfully (even if no session exists)
+    local auth_output
+    auth_output=$("$DOWNLOAD_ENGINE" check-auth 2>&1)
+    if [[ $? -ne 0 && $? -ne 1 ]]; then
         log "FAIL" "Download engine cannot integrate with proton-auth"
+        cleanup_test_environment
+        return 1
+    fi
+
+    # Should return meaningful authentication status
+    if ! echo "$auth_output" | grep -qi "authentication"; then
+        log "FAIL" "Download engine doesn't provide authentication status"
         cleanup_test_environment
         return 1
     fi
