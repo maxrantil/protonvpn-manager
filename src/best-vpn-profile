@@ -4,10 +4,25 @@
 
 set -euo pipefail
 
-# Configuration
-VPN_DIR="$(dirname "$(realpath "$0")")"
-readonly VPN_LOCATIONS="/home/user/workspace/claude-code/vpn/locations"
-readonly CACHE_FILE="/tmp/vpn_performance.cache"
+# Security: Source secure configuration system (NO hardcoded paths)
+readonly SECURE_CONFIG_MANAGER="/usr/local/bin/secure-config-manager"
+
+if [[ -f "$SECURE_CONFIG_MANAGER" ]]; then
+    # shellcheck source=secure-config-manager
+    source "$SECURE_CONFIG_MANAGER"
+    load_secure_config || {
+        echo "ERROR: Failed to load secure configuration" >&2
+        exit 1
+    }
+    readonly VPN_LOCATIONS="${VPN_VAR_DIR:-/var/lib/protonvpn}/locations"
+    readonly CACHE_FILE="${VPN_VAR_DIR:-/var/lib/protonvpn}/cache/performance.cache"
+else
+    # Fallback for development/testing (detect current directory)
+    VPN_DIR="$(dirname "$(realpath "$0")")"
+    readonly VPN_LOCATIONS="$(dirname "$VPN_DIR")/locations"
+    readonly CACHE_FILE="/tmp/vpn_performance.cache"
+    echo "WARNING: Using development mode - secure configuration not found" >&2
+fi
 
 # Load VPN integration system
 if [[ -f "$VPN_DIR/vpn-integration" ]]; then
