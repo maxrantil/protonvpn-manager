@@ -1,0 +1,14 @@
+#!/bin/sh
+# ABOUTME: ProtonVPN Config Updater logging service - Runit log management
+
+# Log configuration
+LOG_DIR="/var/log/protonvpn"
+LOG_FILE="$LOG_DIR/updater.log"
+MAX_SIZE=10485760  # 10MB
+NUM_FILES=5        # Keep 5 rotated files
+
+# Ensure log directory exists
+[ ! -d "$LOG_DIR" ] && mkdir -p "$LOG_DIR"
+
+# Use svlogd for log rotation and management
+exec svlogd -tt -s $MAX_SIZE -n $NUM_FILES "$LOG_DIR"
