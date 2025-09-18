@@ -167,6 +167,14 @@ test_downloads_page_scraping() {
         return 1
     fi
 
+    # Test real scraping graceful fallback (without valid session)
+    local real_output
+    if ! real_output=$("$DOWNLOAD_ENGINE" list-available 2>&1) && ! echo "$real_output" | grep -qi "session\|auth"; then
+        log "FAIL" "Real scraping doesn't handle authentication properly"
+        cleanup_test_environment
+        return 1
+    fi
+
     log "PASS" "Downloads page scraping working"
     cleanup_test_environment
     return 0
@@ -197,6 +205,21 @@ test_config_downloading() {
     config_count=$(find "$PROJECT_ROOT/locations/.test-downloads/dk" -name "*.ovpn" | wc -l)
     if [[ $config_count -eq 0 ]]; then
         log "FAIL" "No config files downloaded"
+        cleanup_test_environment
+        return 1
+    fi
+
+    # Test real mode graceful fallback (with timeout to prevent hanging)
+    # Clear rate limit for this test
+    rm -f "$PROJECT_ROOT/locations/.download-metadata/rate-limit.lock" 2>/dev/null || true
+
+    # Real mode should either work or provide meaningful output (with timeout)
+    local real_download_output
+    real_download_output=$(timeout 5s "$DOWNLOAD_ENGINE" download-country dk 2>&1 || true)
+
+    # Should show it's attempting real downloads or provide meaningful feedback
+    if ! echo "$real_download_output" | grep -qi "getting.*configs\|downloading\|session\|auth\|no.*configs"; then
+        log "FAIL" "Real download mode doesn't show proper status messages"
         cleanup_test_environment
         return 1
     fi
