@@ -48,6 +48,7 @@ show_help() {
     echo "  update              - Update VPN profiles"
     echo "  download-configs    - Auto-download ProtonVPN configs"
     echo "  validate-configs    - Validate OpenVPN config files"
+    echo "  service             - Manage background updater service"
     echo "  help                - Show this help message"
     echo
     echo -e "\033[1;33mExamples:\033[0m"
@@ -287,6 +288,36 @@ case "$1" in
         else
             echo "Error: Config validator not found at $CONFIG_VALIDATOR"
             echo "Please ensure Phase 2 implementation is complete."
+            exit 1
+        fi
+        ;;
+    "service")
+        SERVICE_MANAGER="$VPN_DIR/proton-service"
+        if [[ -x "$SERVICE_MANAGER" ]]; then
+            case "${2:-help}" in
+                "help"|"h")
+                    "$SERVICE_MANAGER" help
+                    ;;
+                "start"|"stop"|"restart"|"status"|"logs"|"install"|"uninstall"|"update-now")
+                    "$SERVICE_MANAGER" "$2" "${@:3}"
+                    ;;
+                "config")
+                    if [[ $# -lt 4 ]]; then
+                        echo "Usage: vpn service config --interval 3600"
+                        echo "       vpn service config --notify on"
+                        exit 1
+                    fi
+                    "$SERVICE_MANAGER" config "$3" "$4"
+                    ;;
+                *)
+                    echo "Error: Unknown service command '$2'"
+                    echo "Use 'vpn service help' for usage information"
+                    exit 1
+                    ;;
+            esac
+        else
+            echo "Error: Service manager not found at $SERVICE_MANAGER"
+            echo "Please ensure Phase 4 implementation is complete."
             exit 1
         fi
         ;;
