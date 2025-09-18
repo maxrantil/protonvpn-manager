@@ -232,8 +232,17 @@ case "$1" in
                     if [[ -n "$3" ]]; then
                         "$DOWNLOAD_ENGINE" download-country "$3" "${@:4}"
                     else
-                        echo "Usage: vpn download-configs country <CC> [--test-mode]"
-                        echo "Example: vpn download-configs country dk"
+                        echo "Usage: vpn download-configs country <CC> [options]"
+                        echo "Options:"
+                        echo "  --test-mode              Use test mode (no real downloads)"
+                        echo "  --protocol=udp|tcp       Choose protocol (default: udp)"
+                        echo "  --config-type=TYPE       Choose type (country|standard|secure-core)"
+                        echo ""
+                        echo "Examples:"
+                        echo "  vpn download-configs country dk"
+                        echo "  vpn download-configs country dk --test-mode"
+                        echo "  vpn download-configs country dk --protocol=tcp"
+                        echo "  vpn download-configs country dk --config-type=secure-core"
                     fi
                     ;;
                 "all")
