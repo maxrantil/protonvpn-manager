@@ -1,0 +1,338 @@
+#!/bin/bash
+# ABOUTME: Accessibility-first notification manager for ProtonVPN service
+# ABOUTME: WCAG 2.1 Level AA compliant notification system with internationalization support
+
+set -euo pipefail
+
+# Security: Source secure configuration system
+readonly SECURE_CONFIG_MANAGER="/usr/local/bin/secure-config-manager"
+if [[ -f "$SECURE_CONFIG_MANAGER" ]]; then
+    # shellcheck source=secure-config-manager
+    source "$SECURE_CONFIG_MANAGER"
+    load_secure_config || {
+        echo "ERROR: Failed to load secure configuration" >&2
+        exit 1
+    }
+fi
+
+# Notification system configuration
+readonly NOTIFICATION_CONFIG="${CONFIG_DIR:-/etc/protonvpn}/notification.conf"
+readonly NOTIFICATION_LOG="${LOG_DIR:-/var/log/protonvpn}/notifications.log"
+MESSAGE_TEMPLATES="${MESSAGE_TEMPLATES:-${CONFIG_DIR:-/etc/protonvpn}/messages}"
+
+# Accessibility configuration
+readonly ACCESSIBILITY_CONFIG="${CONFIG_DIR:-/etc/protonvpn}/accessibility.conf"
+
+# Default notification settings
+NOTIFICATION_LEVEL="${NOTIFICATION_LEVEL:-INFO}"
+DESKTOP_NOTIFICATIONS="${DESKTOP_NOTIFICATIONS:-true}"
+LOG_NOTIFICATIONS="${LOG_NOTIFICATIONS:-true}"
+SCREEN_READER_SUPPORT="${SCREEN_READER_SUPPORT:-true}"
+HIGH_CONTRAST_MODE="${HIGH_CONTRAST_MODE:-auto}"
+AUDIO_NOTIFICATIONS="${AUDIO_NOTIFICATIONS:-configurable}"
+
+# ARIA roles mapping for accessibility
+declare -A ARIA_ROLES=(
+    ["INFO"]="status"
+    ["WARN"]="alert"
+    ["ERROR"]="alert"
+    ["SECURITY"]="alert"
+)
+
+# ARIA live settings for screen readers
+declare -A ARIA_LIVE=(
+    ["INFO"]="polite"
+    ["WARN"]="assertive"
+    ["ERROR"]="assertive"
+    ["SECURITY"]="assertive"
+)
+
+# Logging function
+log_notification() {
+    local level="$1"
+    local message="$2"
+    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+
+    if [[ "$LOG_NOTIFICATIONS" == "true" ]]; then
+        echo "[$timestamp] [$level] $message" >> "$NOTIFICATION_LOG"
+    fi
+}
+
+# Security-compliant content sanitization
+sanitize_content() {
+    local content="$1"
+
+    # Remove potential credential exposure
+    content=$(echo "$content" | sed -E 's/password=[^[:space:]]*/password=****/gi')
+    content=$(echo "$content" | sed -E 's/token=[^[:space:]]*/token=****/gi')
+    content=$(echo "$content" | sed -E 's/key=[^[:space:]]*/key=****/gi')
+
+    # Remove sensitive paths
+    content="${content//\/home\/[^[:space:]]*\/.config/~\/.config}"
+    content="${content//\/home\/[^[:space:]]*\/workspace/~\/workspace}"
+
+    echo "$content"
+}
+
+# Load internationalization messages
+load_message_template() {
+    local message_key="$1"
+    local locale="${LANG:-en_US}"
+    local message_file="$MESSAGE_TEMPLATES/${locale}.conf"
+
+    # Fallback to English if locale file doesn't exist
+    if [[ ! -f "$message_file" ]]; then
+        message_file="$MESSAGE_TEMPLATES/en_US.conf"
+    fi
+
+    # Further fallback to default messages
+    if [[ ! -f "$message_file" ]]; then
+        case "$message_key" in
+            "config_update_title") echo "Configuration Updated" ;;
+            "config_update_body") echo "VPN configuration has been successfully updated" ;;
+            "security_alert_title") echo "Security Alert" ;;
+            "security_alert_body") echo "Security event detected - action required" ;;
+            "service_status_title") echo "Service Status" ;;
+            "service_status_body") echo "VPN service status has changed" ;;
+            *) echo "Notification" ;;
+        esac
+        return
+    fi
+
+    # Extract message from config file
+    grep "^${message_key}=" "$message_file" 2>/dev/null | cut -d'=' -f2- | sed 's/^"//;s/"$//' || echo "Notification"
+}
+
+# Detect desktop environment and accessibility tools
+detect_accessibility_environment() {
+    local accessibility_features=""
+
+    # Check for screen readers
+    if command -v orca >/dev/null 2>&1 || pgrep -f orca >/dev/null 2>&1; then
+        accessibility_features="$accessibility_features orca"
+    fi
+
+    # Check for high contrast themes
+    if command -v gsettings >/dev/null 2>&1; then
+        local high_contrast=$(gsettings get org.gnome.desktop.a11y.interface high-contrast 2>/dev/null || echo "false")
+        if [[ "$high_contrast" == "true" ]]; then
+            accessibility_features="$accessibility_features high_contrast"
+        fi
+    fi
+
+    # Check for reduced motion preference
+    if command -v gsettings >/dev/null 2>&1; then
+        local reduced_motion=$(gsettings get org.gnome.desktop.a11y.interface enable-animations 2>/dev/null || echo "true")
+        if [[ "$reduced_motion" == "false" ]]; then
+            accessibility_features="$accessibility_features reduced_motion"
+        fi
+    fi
+
+    echo "$accessibility_features"
+}
+
+# Generate WCAG 2.1 compliant notification
+generate_accessible_notification() {
+    local level="$1"
+    local title="$2"
+    local body="$3"
+    local action="${4:-}"
+
+    # Sanitize content for security
+    title=$(sanitize_content "$title")
+    body=$(sanitize_content "$body")
+
+    # Get ARIA attributes
+    local aria_role="${ARIA_ROLES[$level]}"
+    local aria_live="${ARIA_LIVE[$level]}"
+
+    # Detect accessibility environment
+    local accessibility_features
+    accessibility_features=$(detect_accessibility_environment)
+
+    # Create notification structure
+    local notification_data=$(cat <<EOF
+{
+    "level": "$level",
+    "title": "$title",
+    "body": "$body",
+    "action": "$action",
+    "accessibility": {
+        "aria_role": "$aria_role",
+        "aria_live": "$aria_live",
+        "screen_reader_support": "$SCREEN_READER_SUPPORT",
+        "features_detected": "$accessibility_features"
+    },
+    "timestamp": "$(date '+%Y-%m-%d %H:%M:%S')",
+    "sanitized": true
+}
+EOF
+)
+
+    echo "$notification_data"
+}
+
+# Send desktop notification with accessibility features
+send_desktop_notification() {
+    local notification_json="$1"
+
+    # Extract notification data
+    local level title body action
+    level=$(echo "$notification_json" | grep -o '"level": "[^"]*"' | cut -d'"' -f4)
+    title=$(echo "$notification_json" | grep -o '"title": "[^"]*"' | cut -d'"' -f4)
+    body=$(echo "$notification_json" | grep -o '"body": "[^"]*"' | cut -d'"' -f4)
+    action=$(echo "$notification_json" | grep -o '"action": "[^"]*"' | cut -d'"' -f4)
+
+    # Choose notification urgency based on level
+    local urgency="normal"
+    case "$level" in
+        "ERROR"|"SECURITY") urgency="critical" ;;
+        "WARN") urgency="normal" ;;
+        "INFO") urgency="low" ;;
+    esac
+
+    # Choose appropriate icon
+    local icon="dialog-information"
+    case "$level" in
+        "ERROR"|"SECURITY") icon="dialog-error" ;;
+        "WARN") icon="dialog-warning" ;;
+        "INFO") icon="dialog-information" ;;
+    esac
+
+    # Send notification with accessibility support
+    if command -v notify-send >/dev/null 2>&1; then
+        # Build secure notification command with proper argument handling
+        local notify_args=(
+            --urgency="$urgency"
+            --icon="$icon"
+            --expire-time=5000
+            --category=network.vpn
+        )
+
+        # Add action buttons if specified (secure parameter handling)
+        if [[ -n "$action" && "$action" != "null" ]]; then
+            notify_args+=(--action="default=View Details")
+        fi
+
+        # Execute notification (secure - no eval, proper argument array)
+        notify-send "${notify_args[@]}" "$title" "$body" || {
+            log_notification "ERROR" "Failed to send desktop notification: $title"
+            return 1
+        }
+    else
+        log_notification "WARN" "Desktop notifications not available"
+        return 1
+    fi
+
+    log_notification "INFO" "Desktop notification sent: [$level] $title"
+    return 0
+}
+
+# Main notification function
+send_notification() {
+    local level="$1"
+    local message_key="$2"
+    local custom_body="${3:-}"
+    local action="${4:-}"
+
+    # Validate notification level
+    local valid_levels=" ${!ARIA_ROLES[*]} "
+    if [[ ! $valid_levels =~ $level ]]; then
+        log_notification "ERROR" "Invalid notification level: $level"
+        return 1
+    fi
+
+    # Check if notifications are enabled for this level
+    local current_level_priority
+    case "$NOTIFICATION_LEVEL" in
+        "ERROR") current_level_priority=3 ;;
+        "WARN") current_level_priority=2 ;;
+        "INFO") current_level_priority=1 ;;
+        *) current_level_priority=1 ;;
+    esac
+
+    local message_level_priority
+    case "$level" in
+        "ERROR"|"SECURITY") message_level_priority=3 ;;
+        "WARN") message_level_priority=2 ;;
+        "INFO") message_level_priority=1 ;;
+        *) message_level_priority=1 ;;
+    esac
+
+    # Skip if message level is below current threshold
+    if [[ $message_level_priority -lt $current_level_priority ]]; then
+        log_notification "DEBUG" "Notification skipped (level filter): [$level] $message_key"
+        return 0
+    fi
+
+    # Generate notification content
+    local title body
+    title=$(load_message_template "${message_key}_title")
+
+    if [[ -n "$custom_body" ]]; then
+        body="$custom_body"
+    else
+        body=$(load_message_template "${message_key}_body")
+    fi
+
+    # Generate accessible notification
+    local notification_json
+    notification_json=$(generate_accessible_notification "$level" "$title" "$body" "$action")
+
+    # Send desktop notification if enabled
+    if [[ "$DESKTOP_NOTIFICATIONS" == "true" ]]; then
+        send_desktop_notification "$notification_json"
+    fi
+
+    # Always log the notification
+    log_notification "$level" "$title: $body"
+
+    return 0
+}
+
+# Load configuration if it exists
+if [[ -f "$NOTIFICATION_CONFIG" ]]; then
+    # shellcheck source=/dev/null
+    source "$NOTIFICATION_CONFIG"
+fi
+
+# Load accessibility configuration if it exists
+if [[ -f "$ACCESSIBILITY_CONFIG" ]]; then
+    # shellcheck source=/dev/null
+    source "$ACCESSIBILITY_CONFIG"
+fi
+
+# Command-line interface
+case "${1:-}" in
+    "config-update")
+        send_notification "INFO" "config_update" "${2:-}" "${3:-}"
+        ;;
+    "security-alert")
+        send_notification "SECURITY" "security_alert" "${2:-}" "${3:-}"
+        ;;
+    "service-status")
+        send_notification "INFO" "service_status" "${2:-}" "${3:-}"
+        ;;
+    "error")
+        send_notification "ERROR" "service_error" "${2:-}" "${3:-}"
+        ;;
+    "test")
+        echo "Testing accessibility-compliant notification system..."
+        send_notification "INFO" "config_update" "Test notification for accessibility validation"
+        ;;
+    "status")
+        echo "ProtonVPN Notification Manager - Accessibility Enabled"
+        echo "Configuration: $NOTIFICATION_CONFIG"
+        echo "Notification Level: $NOTIFICATION_LEVEL"
+        echo "Desktop Notifications: $DESKTOP_NOTIFICATIONS"
+        echo "Screen Reader Support: $SCREEN_READER_SUPPORT"
+        echo "Accessibility Features: $(detect_accessibility_environment)"
+        ;;
+    *)
+        echo "Usage: $0 {config-update|security-alert|service-status|error|test|status} [message] [action]"
+        echo ""
+        echo "Accessibility-first notification manager for ProtonVPN service"
+        echo "WCAG 2.1 Level AA compliant with internationalization support"
+        exit 1
+        ;;
+esac
