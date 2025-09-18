@@ -28,6 +28,38 @@ readonly VPN_RUN_DIR="${VPN_RUN_DIR:-/run/protonvpn}"
 readonly PID_FILE="$VPN_RUN_DIR/updater.pid"
 
 # Service configuration (from secure config)
+
+# Notification integration
+readonly NOTIFICATION_MANAGER="${VPN_BIN_DIR}/notification-manager"
+
+# Notification functions for daemon integration
+notify_config_update() {
+    local message="${1:-Config update completed}"
+    if [[ -x "$NOTIFICATION_MANAGER" ]]; then
+        "$NOTIFICATION_MANAGER" config-update "$message" 2>/dev/null || true
+    fi
+}
+
+notify_security_alert() {
+    local message="${1:-Security event detected}"
+    if [[ -x "$NOTIFICATION_MANAGER" ]]; then
+        "$NOTIFICATION_MANAGER" security-alert "$message" 2>/dev/null || true
+    fi
+}
+
+notify_service_status() {
+    local message="${1:-Service status changed}"
+    if [[ -x "$NOTIFICATION_MANAGER" ]]; then
+        "$NOTIFICATION_MANAGER" service-status "$message" 2>/dev/null || true
+    fi
+}
+
+notify_error() {
+    local message="${1:-Service error occurred}"
+    if [[ -x "$NOTIFICATION_MANAGER" ]]; then
+        "$NOTIFICATION_MANAGER" error "$message" 2>/dev/null || true
+    fi
+}
 readonly UPDATE_TIMEOUT="${UPDATE_TIMEOUT:-60}"
 readonly SERVICE_USER="${SERVICE_USER:-protonvpn}"
 readonly SERVICE_GROUP="${SERVICE_GROUP:-protonvpn}"
