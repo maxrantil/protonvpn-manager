@@ -69,11 +69,25 @@ log_dashboard_access() {
     fi
 }
 
-# Get VPN service status (enhanced with database integration)
+# Get VPN service status (enhanced with caching and database integration)
 get_service_status() {
     local service_status="unknown"
     local uptime="0"
     local last_check_time
+    local status_cache="/dev/shm/protonvpn_status_cache"
+    local status_cache_age=15  # Cache service status for 15 seconds
+
+    # Check cache first for performance optimization
+    if [[ -f "$status_cache" ]]; then
+        local cache_timestamp file_age
+        cache_timestamp=$(stat -c %Y "$status_cache" 2>/dev/null || echo "0")
+        file_age=$(($(date +%s) - cache_timestamp))
+
+        if [[ "$file_age" -lt "$status_cache_age" ]]; then
+            # Use cached status
+            cat "$status_cache" 2>/dev/null && return
+        fi
+    fi
 
     # Check VPN service status with multiple methods (REFACTOR: more robust)
     if systemctl is-active protonvpn-updater.service >/dev/null 2>&1; then
@@ -104,15 +118,19 @@ get_service_status() {
         uptime="${days}d ${hours}h ${minutes}m"
     fi
 
-    # Store metrics in database if available (REFACTOR: database integration)
-    if [[ -x "$SECURE_DB_MANAGER" ]]; then
+    # Store metrics in database if available (REFACTOR: performance optimized - conditional)
+    if [[ -x "$SECURE_DB_MANAGER" && "${DASHBOARD_DB_LOGGING:-false}" == "true" ]]; then
         last_check_time=$(date '+%Y-%m-%d %H:%M:%S')
         # Store service status for historical tracking (suppress all output)
         echo "INSERT OR REPLACE INTO service_status (timestamp, component, status, uptime_seconds) VALUES ('$last_check_time', 'vpn-service', '$service_status', $(($(date +%s) - $(awk '{print int($1)}' /proc/uptime))));" | \
         "$SECURE_DB_MANAGER" execute >/dev/null 2>&1 || true
     fi
 
-    echo "$service_status,$uptime"
+    # Cache the result for performance optimization
+    local result="$service_status,$uptime"
+    echo "$result" > "$status_cache" 2>/dev/null || true
+
+    echo "$result"
 }
 
 # Get performance metrics (enhanced with caching and database integration)
@@ -121,7 +139,7 @@ get_performance_metrics() {
     local memory_usage="18MB"     # Default based on current baseline
     local cpu_usage="2.1%"        # Default based on current baseline
     local cache_file="/dev/shm/protonvpn_metrics_cache"
-    local cache_age=30  # Cache for 30 seconds (REFACTOR: performance optimization)
+    local cache_age=60  # Cache for 60 seconds (REFACTOR: performance optimization - extended cache)
 
     # Check cache first for performance optimization
     if [[ -f "$cache_file" ]]; then
@@ -174,8 +192,8 @@ get_performance_metrics() {
     # Cache the result for performance optimization
     echo "$result" > "$cache_file" 2>/dev/null || true
 
-    # Store in database for historical tracking (REFACTOR: database integration)
-    if [[ -x "$SECURE_DB_MANAGER" ]]; then
+    # Store in database for historical tracking (REFACTOR: performance optimized - conditional)
+    if [[ -x "$SECURE_DB_MANAGER" && "${DASHBOARD_DB_LOGGING:-false}" == "true" ]]; then
         local timestamp
         timestamp=$(date '+%Y-%m-%d %H:%M:%S')
         echo "INSERT INTO realtime_metrics (timestamp, metric_type, metric_value, metric_unit) VALUES ('$timestamp', 'memory_usage', '${memory_usage%MB}', 'MB'), ('$timestamp', 'cpu_usage', '${cpu_usage%\%}', 'percent'), ('$timestamp', 'connection_time', '${connection_time%ms}', 'ms');" | \
