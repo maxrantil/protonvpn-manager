@@ -36,29 +36,69 @@ readonly NOTIFICATION_MANAGER="${VPN_BIN_DIR}/notification-manager"
 notify_config_update() {
     local message="${1:-Config update completed}"
     if [[ -x "$NOTIFICATION_MANAGER" ]]; then
-        "$NOTIFICATION_MANAGER" config-update "$message" 2>/dev/null || true
+        # Send notification with timeout handling
+        timeout 5 "$NOTIFICATION_MANAGER" config-update "$message" 2>/dev/null || {
+            log_secure "WARN" "Notification timeout or failure for config-update"
+            true
+        }
     fi
 }
 
 notify_security_alert() {
     local message="${1:-Security event detected}"
     if [[ -x "$NOTIFICATION_MANAGER" ]]; then
-        "$NOTIFICATION_MANAGER" security-alert "$message" 2>/dev/null || true
+        # Send notification with timeout handling
+        timeout 5 "$NOTIFICATION_MANAGER" security-alert "$message" 2>/dev/null || {
+            log_secure "WARN" "Notification timeout or failure for security-alert"
+            true
+        }
+    fi
+}
+
+notify_auth_warning() {
+    local message="${1:-Authentication warning}"
+    if [[ -x "$NOTIFICATION_MANAGER" ]]; then
+        # Send notification with timeout handling
+        timeout 5 "$NOTIFICATION_MANAGER" auth-warning "$message" 2>/dev/null || {
+            log_secure "WARN" "Notification timeout or failure for auth-warning"
+            true
+        }
     fi
 }
 
 notify_service_status() {
     local message="${1:-Service status changed}"
     if [[ -x "$NOTIFICATION_MANAGER" ]]; then
-        "$NOTIFICATION_MANAGER" service-status "$message" 2>/dev/null || true
+        # Send notification with timeout handling
+        timeout 5 "$NOTIFICATION_MANAGER" service-status "$message" 2>/dev/null || {
+            log_secure "WARN" "Notification timeout or failure for service-status"
+            true
+        }
     fi
 }
 
 notify_error() {
     local message="${1:-Service error occurred}"
     if [[ -x "$NOTIFICATION_MANAGER" ]]; then
-        "$NOTIFICATION_MANAGER" error "$message" 2>/dev/null || true
+        # Send notification with timeout handling
+        timeout 5 "$NOTIFICATION_MANAGER" error "$message" 2>/dev/null || {
+            log_secure "WARN" "Notification timeout or failure for error"
+            true
+        }
     fi
+}
+
+# Generic notification wrapper functions for compatibility
+send_notification() {
+    notify_service_status "$@"
+}
+
+notify_event() {
+    notify_service_status "$@"
+}
+
+trigger_notification() {
+    notify_service_status "$@"
 }
 readonly UPDATE_TIMEOUT="${UPDATE_TIMEOUT:-60}"
 readonly SERVICE_USER="${SERVICE_USER:-protonvpn}"
@@ -81,6 +121,7 @@ fi
 if [[ -d "/home/mqx/workspace/claude-code/vpn" ]]; then
     echo "WARNING: Legacy development path detected but will be ignored for security" >&2
     # Log security event
+    notify_security_alert "Legacy development path detected and ignored for security"
     if [[ "$AUDIT_LOGGING" == "true" ]]; then
         logger -p user.warn -t protonvpn-updater "Legacy development path detected and ignored"
     fi
@@ -120,8 +161,9 @@ store_pid() {
     # Store PID
     echo $$ > "$PID_FILE"
 
-    # Set secure permissions
-    chmod 644 "$PID_FILE"
+    # Set secure permissions (600 instead of 644 for security)
+    chmod 600 "$PID_FILE"
+    chown "$VPN_USER:$VPN_GROUP" "$PID_FILE" 2>/dev/null || true
 
     # Validate PID file was created correctly
     if [[ ! -f "$PID_FILE" ]] || [[ ! -s "$PID_FILE" ]]; then
@@ -135,6 +177,7 @@ store_pid() {
 # Enhanced cleanup function with audit logging
 cleanup() {
     log_secure "INFO" "ProtonVPN Config Updater daemon stopping (PID: $$)"
+    notify_service_status "ProtonVPN Config Updater daemon stopping"
 
     # Remove PID file
     if [[ -f "$PID_FILE" ]]; then
@@ -224,6 +267,7 @@ run_update_check() {
             local end_time=$(date +%s)
             local duration=$((end_time - start_time))
             log_secure "INFO" "Config update check completed successfully (duration: ${duration}s)"
+            notify_config_update "Configuration update completed successfully"
 
             # Security audit log
             if [[ "$AUDIT_LOGGING" == "true" ]]; then
@@ -236,6 +280,7 @@ run_update_check() {
             local end_time=$(date +%s)
             local duration=$((end_time - start_time))
             log_secure "ERROR" "Config update check failed (exit code: $update_result, duration: ${duration}s)"
+            notify_error "Configuration update check failed"
 
             # Security audit log for failures
             if [[ "$AUDIT_LOGGING" == "true" ]]; then
@@ -246,6 +291,7 @@ run_update_check() {
         fi
     else
         log_secure "INFO" "No authentication available, skipping update check"
+        notify_auth_warning "Authentication unavailable - skipping update check"
 
         # Log authentication unavailability for monitoring
         if [[ "$AUDIT_LOGGING" == "true" ]]; then
@@ -279,6 +325,7 @@ check_resource_usage() {
 # Main execution with comprehensive security validations
 main() {
     log_secure "INFO" "ProtonVPN Config Updater daemon starting (PID: $$, User: $(id -un))"
+    notify_service_status "ProtonVPN Config Updater daemon starting"
 
     # Verify we're in a secure execution environment
     if [[ ! -f "$SECURE_CONFIG_MANAGER" ]]; then

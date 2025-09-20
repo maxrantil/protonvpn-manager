@@ -1,0 +1,20 @@
+#!/bin/sh
+# ABOUTME: ProtonVPN notification manager log management - runit log service
+# ABOUTME: Handles log rotation and management for the notification service
+
+set -e
+
+# Log configuration
+LOG_DIR="/var/log/protonvpn"
+LOG_FILE="$LOG_DIR/notification"
+SERVICE_USER="protonvpn"
+SERVICE_GROUP="protonvpn"
+
+# Ensure log directory exists with correct permissions
+[ -d "$LOG_DIR" ] || mkdir -p "$LOG_DIR"
+chown "$SERVICE_USER:$SERVICE_GROUP" "$LOG_DIR" 2>/dev/null || true
+chmod 750 "$LOG_DIR" 2>/dev/null || true
+
+# Use svlogd for log management with rotation
+exec chpst -u "$SERVICE_USER:$SERVICE_GROUP" \
+     svlogd -tt "$LOG_FILE"

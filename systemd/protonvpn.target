@@ -1,0 +1,8 @@
+[Unit]
+Description=ProtonVPN Management System
+Documentation=man:protonvpn(8)
+Wants=protonvpn-daemon.service protonvpn-health-monitor.service protonvpn-api-server.service protonvpn-notification.service
+After=protonvpn-daemon.service
+
+[Install]
+WantedBy=multi-user.target

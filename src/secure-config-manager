@@ -37,17 +37,38 @@ load_secure_config() {
         local perms=$(stat -c "%a" "$CONFIG_FILE")
         local owner=$(stat -c "%U:%G" "$CONFIG_FILE")
 
-        if [[ "$perms" != "640" ]] || [[ "$owner" != "root:$SERVICE_GROUP" ]]; then
-            log_config "ERROR" "Configuration file has insecure permissions: $perms $owner"
+        if [[ "$perms" != "640" && "$perms" != "600" ]] || [[ "$owner" != "root:$SERVICE_GROUP" ]]; then
+            log_config "ERROR" "Configuration file has insecure permissions: $perms $owner (expected: 640 or 600 with root:$SERVICE_GROUP)"
+            return 1
+        fi
+
+        # Validate configuration file path (prevent path traversal)
+        local config_realpath
+        config_realpath=$(realpath "$CONFIG_FILE" 2>/dev/null)
+
+        if [[ -z "$config_realpath" ]]; then
+            log_config "ERROR" "Unable to resolve configuration file path: $CONFIG_FILE"
+            return 1
+        fi
+
+        # Ensure the resolved path is still within expected directory
+        if [[ "$config_realpath" != "$CONFIG_FILE" ]]; then
+            log_config "ERROR" "Configuration file contains symbolic links or path traversal: $CONFIG_FILE -> $config_realpath"
+            return 1
+        fi
+
+        # Additional check: ensure config file is in expected directory
+        if [[ ! "$config_realpath" =~ ^/etc/protonvpn/ ]] && [[ ! "$config_realpath" =~ ^/tmp/ ]]; then
+            log_config "ERROR" "Configuration file outside allowed directories: $config_realpath"
             return 1
         fi
 
         # Source configuration with error handling
         # shellcheck source=/dev/null
         if source "$CONFIG_FILE" 2>/dev/null; then
-            log_config "INFO" "Configuration loaded successfully"
+            log_config "INFO" "Configuration loaded successfully from: $config_realpath"
         else
-            log_config "ERROR" "Failed to load configuration file"
+            log_config "ERROR" "Failed to load configuration file: $CONFIG_FILE"
             return 1
         fi
     else
