@@ -1,0 +1,41 @@
+#!/bin/sh
+# ABOUTME: ProtonVPN Health Monitor Service - runit service script
+# ABOUTME: Proactive health monitoring with runit supervision and auto-recovery
+
+set -e
+
+# Service configuration
+SERVICE_USER="protonvpn"
+SERVICE_GROUP="protonvpn"
+HEALTH_MONITOR="/usr/local/bin/health-monitor"
+CONFIG_FILE="/etc/protonvpn/health-monitor.conf"
+
+# Check if service user exists
+if ! getent passwd "$SERVICE_USER" >/dev/null 2>&1; then
+    echo "ERROR: Service user '$SERVICE_USER' does not exist"
+    exit 1
+fi
+
+# Check if health monitor exists
+if [ ! -x "$HEALTH_MONITOR" ]; then
+    echo "ERROR: Health monitor not found or not executable: $HEALTH_MONITOR"
+    exit 1
+fi
+
+# Set up environment
+export VPN_LOG_DIR="/var/log/protonvpn"
+export VPN_RUN_DIR="/run/protonvpn"
+export VPN_CONFIG_DIR="/etc/protonvpn"
+
+# Ensure directories exist
+[ -d "$VPN_LOG_DIR" ] || mkdir -p "$VPN_LOG_DIR"
+[ -d "$VPN_RUN_DIR" ] || mkdir -p "$VPN_RUN_DIR"
+chown "$SERVICE_USER:$SERVICE_GROUP" "$VPN_LOG_DIR" "$VPN_RUN_DIR" 2>/dev/null || true
+
+# Log service start
+echo "$(date '+%Y-%m-%d %H:%M:%S') [INFO] Starting ProtonVPN health monitor under runit supervision"
+
+# Execute health monitor as service user
+exec chpst -u "$SERVICE_USER:$SERVICE_GROUP" \
+     -e /etc/protonvpn \
+     "$HEALTH_MONITOR" --daemon --config "$CONFIG_FILE" 2>&1
