@@ -61,6 +61,7 @@ log_notification() {
 # Security-compliant content sanitization
 sanitize_content() {
     local content="$1"
+    local max_length="${2:-200}"  # Default max length of 200 characters
 
     # Remove potential credential exposure
     content=$(echo "$content" | sed -E 's/password=[^[:space:]]*/password=****/gi')
@@ -70,6 +71,11 @@ sanitize_content() {
     # Remove sensitive paths
     content="${content//\/home\/[^[:space:]]*\/.config/~\/.config}"
     content="${content//\/home\/[^[:space:]]*\/workspace/~\/workspace}"
+
+    # Truncate long messages with ellipsis
+    if [[ ${#content} -gt $max_length ]]; then
+        content="${content:0:$((max_length - 3))}..."
+    fi
 
     echo "$content"
 }
@@ -150,6 +156,16 @@ generate_accessible_notification() {
     local accessibility_features
     accessibility_features=$(detect_accessibility_environment)
 
+    # Add security classification
+    local security_classification=""
+    case "$level" in
+        "SECURITY") security_classification="Security Alert" ;;
+        "ERROR") security_classification="System Error" ;;
+        "WARN") security_classification="Warning" ;;
+        "INFO") security_classification="Information" ;;
+        *) security_classification="General" ;;
+    esac
+
     # Create notification structure
     local notification_data=$(cat <<EOF
 {
@@ -157,6 +173,7 @@ generate_accessible_notification() {
     "title": "$title",
     "body": "$body",
     "action": "$action",
+    "classification": "$security_classification",
     "accessibility": {
         "aria_role": "$aria_role",
         "aria_live": "$aria_live",
@@ -207,12 +224,36 @@ send_desktop_notification() {
             --icon="$icon"
             --expire-time=5000
             --category=network.vpn
+            --app-name="ProtonVPN"
         )
+
+        # Add sound notifications for critical alerts
+        if [[ "$level" =~ ^(ERROR|SECURITY)$ && "$AUDIO_NOTIFICATIONS" == "true" ]]; then
+            notify_args+=(--hint=string:sound-name:dialog-error)
+        fi
+
+        # Add notification grouping
+        case "$level" in
+            "SECURITY") notify_args+=(--hint=string:category:security) ;;
+            "ERROR") notify_args+=(--hint=string:category:system.error) ;;
+            "WARN") notify_args+=(--hint=string:category:system.warning) ;;
+            *) notify_args+=(--hint=string:category:system.info) ;;
+        esac
+
+        # Add persistence for critical notifications
+        if [[ "$level" =~ ^(ERROR|SECURITY)$ ]]; then
+            notify_args+=(--hint=boolean:resident:true)
+        fi
 
         # Add action buttons if specified (secure parameter handling)
         if [[ -n "$action" && "$action" != "null" ]]; then
             notify_args+=(--action="default=View Details")
+            notify_args+=(--action="dismiss=Dismiss")
         fi
+
+        # Add daemon source identification
+        local source_info="ProtonVPN Daemon"
+        notify_args+=(--hint=string:x-canonical-private-synchronous:"$source_info")
 
         # Execute notification (secure - no eval, proper argument array)
         notify-send "${notify_args[@]}" "$title" "$body" || {
@@ -315,6 +356,9 @@ case "${1:-}" in
         ;;
     "error")
         send_notification "ERROR" "service_error" "${2:-}" "${3:-}"
+        ;;
+    "auth-warning")
+        send_notification "WARN" "auth_warning" "${2:-}" "${3:-}"
         ;;
     "test")
         echo "Testing accessibility-compliant notification system..."

@@ -1,0 +1,43 @@
+#!/bin/sh
+# ABOUTME: ProtonVPN Configuration Updater Daemon - runit service script
+# ABOUTME: Production-ready daemon with secure configuration system and runit supervision
+
+set -e
+
+# Service configuration
+SERVICE_USER="protonvpn"
+SERVICE_GROUP="protonvpn"
+SERVICE_HOME="/usr/local/lib/protonvpn"
+
+# Check if service user exists
+if ! getent passwd "$SERVICE_USER" >/dev/null 2>&1; then
+    echo "ERROR: Service user '$SERVICE_USER' does not exist"
+    exit 1
+fi
+
+# Check if daemon script exists
+DAEMON_SCRIPT="/usr/local/bin/protonvpn-updater-daemon-secure.sh"
+if [ ! -x "$DAEMON_SCRIPT" ]; then
+    echo "ERROR: Daemon script not found or not executable: $DAEMON_SCRIPT"
+    exit 1
+fi
+
+# Set up environment
+export VPN_ROOT="/usr/local/lib/protonvpn"
+export VPN_BIN_DIR="/usr/local/bin"
+export VPN_LOG_DIR="/var/log/protonvpn"
+export VPN_RUN_DIR="/run/protonvpn"
+export VPN_CONFIG_DIR="/etc/protonvpn"
+
+# Ensure directories exist with correct permissions
+[ -d "$VPN_LOG_DIR" ] || mkdir -p "$VPN_LOG_DIR"
+[ -d "$VPN_RUN_DIR" ] || mkdir -p "$VPN_RUN_DIR"
+chown "$SERVICE_USER:$SERVICE_GROUP" "$VPN_LOG_DIR" "$VPN_RUN_DIR" 2>/dev/null || true
+
+# Log service start
+echo "$(date '+%Y-%m-%d %H:%M:%S') [INFO] Starting ProtonVPN daemon under runit supervision"
+
+# Execute daemon as service user (runit handles supervision)
+exec chpst -u "$SERVICE_USER:$SERVICE_GROUP" \
+     -e /etc/protonvpn \
+     "$DAEMON_SCRIPT" 2>&1
