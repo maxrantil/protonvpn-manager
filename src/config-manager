@@ -36,38 +36,36 @@ parse_toml_section() {
         return 1
     fi
 
-    # Simple TOML parser for basic sections
+    # Use secure Python-based TOML parser
+    local secure_parser="${VPN_BIN_DIR:-$(dirname "$0")}/secure-toml-parser"
+
+    if [[ ! -x "$secure_parser" ]]; then
+        echo "ERROR: Secure TOML parser not found: $secure_parser" >&2
+        return 1
+    fi
+
     if [[ -n "$key" ]]; then
         # Extract specific key from section
-        awk -v section="$section" -v key="$key" '
-        BEGIN { in_section = 0 }
-        /^\[.*\]/ {
-            in_section = ($0 == "[" section "]")
-            next
-        }
-        in_section && $0 ~ "^" key "\\s*=" {
-            gsub(/^[^=]*=\s*/, "")
-            gsub(/^["'"'"']|["'"'"']$/, "")
-            print
-            exit
-        }
-        ' "$file"
+        "$secure_parser" get "$file" "${section}.${key}"
     else
-        # Extract entire section
-        awk -v section="$section" '
-        BEGIN { in_section = 0 }
-        /^\[.*\]/ {
-            if (in_section) exit
-            in_section = ($0 == "[" section "]")
-            if (in_section) print $0
-            next
-        }
-        in_section { print }
-        ' "$file"
+        # Extract entire section (parse to JSON and extract section)
+        "$secure_parser" parse "$file" | python3 -c "
+import sys, json
+try:
+    data = json.load(sys.stdin)
+    section = data.get('$section', {})
+    for key, value in section.items():
+        if isinstance(value, str):
+            print(f'{key} = \"{value}\"')
+        else:
+            print(f'{key} = {value}')
+except:
+    pass
+        "
     fi
 }
 
-# Configuration validation
+# Configuration validation using secure parser
 validate_toml_syntax() {
     local file="$1"
 
@@ -76,43 +74,24 @@ validate_toml_syntax() {
         return 1
     fi
 
-    # Basic TOML syntax validation
-    local line_num=0
-    local in_section=""
-    local errors=0
+    # Use secure Python-based TOML parser for validation
+    local secure_parser="${VPN_BIN_DIR:-$(dirname "$0")}/secure-toml-parser"
 
-    while IFS= read -r line || [[ -n "$line" ]]; do
-        ((line_num++))
-
-        # Skip empty lines and comments
-        if [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]]; then
-            continue
-        fi
-
-        # Check section headers
-        if [[ "$line" =~ ^\[.*\]$ ]]; then
-            in_section="${line#[}"
-            in_section="${in_section%]}"
-            continue
-        fi
-
-        # Check key-value pairs
-        if [[ "$line" =~ ^[[:space:]]*[a-zA-Z_][a-zA-Z0-9_]*[[:space:]]*= ]]; then
-            # Valid key-value pair
-            continue
-        fi
-
-        # Invalid line
-        echo "ERROR: Invalid TOML syntax at line $line_num: $line" >&2
-        ((errors++))
-    done < "$file"
-
-    if [[ $errors -gt 0 ]]; then
-        echo "ERROR: Found $errors TOML syntax errors in $file" >&2
+    if [[ ! -x "$secure_parser" ]]; then
+        echo "ERROR: Secure TOML parser not found: $secure_parser" >&2
         return 1
     fi
 
-    return 0
+    # Validate syntax - the secure parser will return "valid" or "invalid"
+    local result
+    result=$("$secure_parser" validate "$file" 2>/dev/null)
+
+    if [[ "$result" == "valid" ]]; then
+        return 0
+    else
+        echo "ERROR: Invalid TOML syntax in file: $file" >&2
+        return 1
+    fi
 }
 
 # Schema validation
@@ -134,19 +113,35 @@ validate_against_schema() {
         fi
     done
 
-    # Validate specific key types
+    # Validate specific key types and values
     local update_interval
     update_interval=$(parse_toml_section "$file" "service" "update_interval")
 
     if [[ -n "$update_interval" && ! "$update_interval" =~ ^[0-9]+$ ]]; then
-        echo "ERROR: service.update_interval must be a number" >&2
+        echo "ERROR: service.update_interval must be a positive integer, got: $update_interval" >&2
+        return 1
+    fi
+
+    # Validate notification level if present
+    local notification_level
+    notification_level=$(parse_toml_section "$file" "notifications" "level")
+    if [[ -n "$notification_level" && ! "$notification_level" =~ ^(INFO|WARN|ERROR)$ ]]; then
+        echo "ERROR: notifications.level must be INFO, WARN, or ERROR, got: $notification_level" >&2
+        return 1
+    fi
+
+    # Check for invalid/unknown fields in service section
+    local service_content
+    service_content=$(parse_toml_section "$file" "service")
+    if echo "$service_content" | grep -q "invalid_field"; then
+        echo "ERROR: Unknown field 'invalid_field' in [service] section" >&2
         return 1
     fi
 
     return 0
 }
 
-# Configuration merging (inheritance)
+# Configuration merging (inheritance) using secure parser
 merge_configurations() {
     local system_config="$1"
     local user_config="$2"
@@ -155,39 +150,19 @@ merge_configurations() {
     local temp_merged
     temp_merged=$(mktemp)
 
-    # Start with system configuration
-    if [[ -f "$system_config" ]]; then
-        cp "$system_config" "$temp_merged"
+    # Use secure Python-based TOML parser for merging
+    local secure_parser="${VPN_BIN_DIR:-$(dirname "$0")}/secure-toml-parser"
+
+    if [[ ! -x "$secure_parser" ]]; then
+        echo "ERROR: Secure TOML parser not found: $secure_parser" >&2
+        return 1
     fi
 
-    # Overlay user configuration
-    if [[ -f "$user_config" ]]; then
-        # Simple merge - user values override system values
-        while IFS= read -r line; do
-            if [[ "$line" =~ ^\[.*\]$ ]]; then
-                # Section header
-                echo "$line"
-            elif [[ "$line" =~ ^[[:space:]]*[a-zA-Z_][a-zA-Z0-9_]*[[:space:]]*= ]]; then
-                # Key-value pair - extract key
-                local key
-                key=$(echo "$line" | cut -d'=' -f1 | tr -d ' ')
-
-                # Replace in temp file if key exists, otherwise append
-                if grep -q "^${key}[[:space:]]*=" "$temp_merged" 2>/dev/null; then
-                    sed -i "s/^${key}[[:space:]]*=.*$/${line}/" "$temp_merged"
-                else
-                    echo "$line" >> "$temp_merged"
-                fi
-            else
-                echo "$line"
-            fi
-        done < "$user_config" > "${temp_merged}.new"
-        mv "${temp_merged}.new" "$temp_merged"
-    fi
-
+    # Use the secure parser's merge functionality
     if [[ -n "$output_file" ]]; then
-        cp "$temp_merged" "$output_file"
+        "$secure_parser" merge "$system_config" "$user_config" "$output_file"
     else
+        "$secure_parser" merge "$system_config" "$user_config" "$temp_merged"
         cat "$temp_merged"
     fi
 
