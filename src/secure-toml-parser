@@ -1,0 +1,147 @@
+#!/usr/bin/env python3
+# ABOUTME: Secure TOML parser for ProtonVPN configuration management
+# ABOUTME: Uses Python's built-in tomllib for safe parsing without custom regex vulnerabilities
+
+import sys
+import tomllib
+import json
+from pathlib import Path
+
+def parse_toml_file(file_path):
+    """Parse TOML file and return as JSON for bash consumption"""
+    try:
+        with open(file_path, 'rb') as f:
+            data = tomllib.load(f)
+        return json.dumps(data, indent=2)
+    except FileNotFoundError:
+        print(f"ERROR: File not found: {file_path}", file=sys.stderr)
+        return None
+    except tomllib.TOMLDecodeError as e:
+        print(f"ERROR: Invalid TOML syntax: {e}", file=sys.stderr)
+        return None
+    except Exception as e:
+        print(f"ERROR: Failed to parse TOML: {e}", file=sys.stderr)
+        return None
+
+def get_toml_value(file_path, key_path):
+    """Extract specific value from TOML file using dot notation"""
+    try:
+        with open(file_path, 'rb') as f:
+            data = tomllib.load(f)
+
+        # Navigate through the key path (e.g., "service.update_interval")
+        keys = key_path.split('.')
+        current = data
+
+        for key in keys:
+            if isinstance(current, dict) and key in current:
+                current = current[key]
+            else:
+                return None
+
+        return str(current)
+    except Exception:
+        return None
+
+def validate_toml_syntax(file_path):
+    """Validate TOML syntax without executing any code"""
+    try:
+        with open(file_path, 'rb') as f:
+            tomllib.load(f)
+        return True
+    except tomllib.TOMLDecodeError:
+        return False
+    except Exception:
+        return False
+
+def merge_toml_files(system_file, user_file, output_file=None):
+    """Merge two TOML files, with user values overriding system values"""
+    try:
+        # Load system config
+        system_data = {}
+        if Path(system_file).exists():
+            with open(system_file, 'rb') as f:
+                system_data = tomllib.load(f)
+
+        # Load user config
+        user_data = {}
+        if Path(user_file).exists():
+            with open(user_file, 'rb') as f:
+                user_data = tomllib.load(f)
+
+        # Merge configs (user overrides system)
+        merged_data = system_data.copy()
+        for section, values in user_data.items():
+            if section in merged_data and isinstance(merged_data[section], dict) and isinstance(values, dict):
+                merged_data[section].update(values)
+            else:
+                merged_data[section] = values
+
+        # Convert back to TOML format for output
+        result = ""
+        for section, values in merged_data.items():
+            result += f"[{section}]\n"
+            if isinstance(values, dict):
+                for key, value in values.items():
+                    if isinstance(value, str):
+                        result += f'{key} = "{value}"\n'
+                    else:
+                        result += f'{key} = {value}\n'
+            result += "\n"
+
+        if output_file:
+            with open(output_file, 'w') as f:
+                f.write(result)
+
+        return result
+    except Exception as e:
+        print(f"ERROR: Merge failed: {e}", file=sys.stderr)
+        return None
+
+def main():
+    if len(sys.argv) < 2:
+        print("Usage: secure-toml-parser <command> [args...]")
+        print("Commands:")
+        print("  parse <file>                    - Parse TOML file to JSON")
+        print("  get <file> <key_path>          - Get specific value")
+        print("  validate <file>                - Validate TOML syntax")
+        print("  merge <system> <user> [output] - Merge TOML files")
+        sys.exit(1)
+
+    command = sys.argv[1]
+
+    if command == "parse" and len(sys.argv) >= 3:
+        result = parse_toml_file(sys.argv[2])
+        if result:
+            print(result)
+        else:
+            sys.exit(1)
+
+    elif command == "get" and len(sys.argv) >= 4:
+        result = get_toml_value(sys.argv[2], sys.argv[3])
+        if result is not None:
+            print(result)
+        else:
+            sys.exit(1)
+
+    elif command == "validate" and len(sys.argv) >= 3:
+        if validate_toml_syntax(sys.argv[2]):
+            print("valid")
+        else:
+            print("invalid")
+            sys.exit(1)
+
+    elif command == "merge" and len(sys.argv) >= 4:
+        output_file = sys.argv[4] if len(sys.argv) >= 5 else None
+        result = merge_toml_files(sys.argv[2], sys.argv[3], output_file)
+        if result and not output_file:
+            print(result)
+        elif not result:
+            sys.exit(1)
+
+    else:
+        print("ERROR: Invalid command or arguments", file=sys.stderr)
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()
