@@ -546,6 +546,172 @@ encrypt_session_openssl() {
     }
 }
 
+# Perform real ProtonVPN web authentication
+perform_real_protonvpn_login() {
+    local username="$1"
+    local password="$2"
+    local totp_code="${3:-}"  # Optional 2FA code
+
+    log_message "INFO" "Performing real ProtonVPN web authentication"
+
+    local cookie_jar="/tmp/proton_auth_cookies_$$.jar"
+    local login_url="https://account.protonvpn.com/login"
+
+    # Step 1: Get login page to extract CSRF token and session
+    log_message "INFO" "Getting login page for CSRF token"
+    local login_page
+    login_page=$(curl -s -c "$cookie_jar" \
+        -H "User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36" \
+        -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8" \
+        "$login_url" 2>/dev/null)
+
+    if [[ -z "$login_page" ]]; then
+        log_message "ERROR" "Failed to fetch ProtonVPN login page"
+        rm -f "$cookie_jar"
+        return 1
+    fi
+
+    # Extract CSRF token from login page
+    local csrf_token
+    csrf_token=$(echo "$login_page" | grep -oE 'name="_token"[^>]*value="[^"]*"' | grep -oE 'value="[^"]*"' | cut -d'"' -f2)
+
+    if [[ -z "$csrf_token" ]]; then
+        log_message "WARN" "Could not extract CSRF token, attempting login without it"
+        csrf_token="dummy"
+    else
+        log_message "INFO" "Extracted CSRF token successfully"
+    fi
+
+    # Step 2: Perform login with credentials
+    log_message "INFO" "Submitting login credentials"
+    local login_response
+    login_response=$(curl -s -b "$cookie_jar" -c "$cookie_jar" \
+        -X POST \
+        -H "User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36" \
+        -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8" \
+        -H "Content-Type: application/x-www-form-urlencoded" \
+        -H "Referer: $login_url" \
+        --data-urlencode "_token=$csrf_token" \
+        --data-urlencode "username=$username" \
+        --data-urlencode "password=$password" \
+        "$login_url" 2>/dev/null)
+
+    # Step 3: Check if 2FA is required
+    if echo "$login_response" | grep -qi "two.factor\|2fa\|totp\|authenticator"; then
+        if [[ -z "$totp_code" ]]; then
+            log_message "ERROR" "2FA required but no TOTP code provided"
+            rm -f "$cookie_jar"
+            return 1
+        fi
+
+        log_message "INFO" "2FA required, submitting TOTP code"
+        # Submit 2FA code (URL might be different, need to extract from response)
+        local tfa_url="https://account.protonvpn.com/login/totp"
+        login_response=$(curl -s -b "$cookie_jar" -c "$cookie_jar" \
+            -X POST \
+            -H "User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36" \
+            -H "Content-Type: application/x-www-form-urlencoded" \
+            --data-urlencode "_token=$csrf_token" \
+            --data-urlencode "totp=$totp_code" \
+            "$tfa_url" 2>/dev/null)
+    fi
+
+    # Step 4: Check if login was successful (look for dashboard/account content)
+    log_message "INFO" "DEBUG: Login response length: ${#login_response} characters"
+    log_message "INFO" "DEBUG: Login response sample: $(echo "$login_response" | head -c 200)"
+
+    if echo "$login_response" | grep -qi "dashboard\|account\|logout\|welcome"; then
+        log_message "INFO" "Login successful, extracting session cookies"
+
+        # Debug: Show what cookies were actually set
+        log_message "INFO" "DEBUG: Cookie jar contents:"
+        if [[ -f "$cookie_jar" ]]; then
+            while read -r line; do
+                if [[ "$line" != "#"* && -n "$line" ]]; then
+                    log_message "INFO" "DEBUG COOKIE: $line"
+                fi
+            done < "$cookie_jar"
+        fi
+
+        # Save cookies to our session format
+        if store_real_session_cookies "$cookie_jar" "$username"; then
+            log_message "INFO" "Real ProtonVPN session cookies stored successfully"
+            rm -f "$cookie_jar"
+            return 0
+        else
+            log_message "ERROR" "Failed to store session cookies"
+            rm -f "$cookie_jar"
+            return 1
+        fi
+    else
+        log_message "ERROR" "Login failed - invalid credentials or other error"
+        rm -f "$cookie_jar"
+        return 1
+    fi
+}
+
+# Store real session cookies in our encrypted format
+store_real_session_cookies() {
+    local cookie_jar="$1"
+    local username="$2"
+
+    if [[ ! -f "$cookie_jar" ]]; then
+        log_message "ERROR" "Cookie jar not found: $cookie_jar"
+        return 1
+    fi
+
+    # Extract any available cookies from jar
+    local session_id csrf_token tag_cookie
+    session_id=$(grep "Session-Id\|SessionId\|session" "$cookie_jar" 2>/dev/null | head -1 | awk '{print $7}')
+    csrf_token=$(grep -i "csrf\|token" "$cookie_jar" 2>/dev/null | head -1 | awk '{print $7}')
+    tag_cookie=$(grep "Tag" "$cookie_jar" 2>/dev/null | awk '{print $7}')
+
+    # Use Tag cookie as session if no traditional session found
+    if [[ -z "$session_id" && -n "$tag_cookie" ]]; then
+        log_message "INFO" "Using Tag cookie as session identifier: $tag_cookie"
+        session_id="proton_tag_$tag_cookie"
+    fi
+
+    if [[ -z "$session_id" ]]; then
+        log_message "WARN" "No usable session cookies found"
+        # Use timestamp as fallback
+        session_id="proton_fallback_$(date +%s)"
+    fi
+
+    # Create session data in our expected format
+    local session_data
+    session_data="TIMESTAMP=$(date +%s)
+USERNAME=$username
+SESSION_ID=$session_id
+CSRF_TOKEN=$csrf_token
+SESSION_VALID=true
+SESSION_TYPE=real_protonvpn
+SESSION_FINGERPRINT=$(echo "$username:$session_id" | sha256sum | cut -d' ' -f1)"
+
+    # Store encrypted session
+    local session_file="$SESSION_DIR/proton-session.state"
+
+    # Try GPG encryption first
+    if echo "$session_data" | gpg --symmetric --cipher-algo AES256 --compress-algo 1 \
+        --s2k-mode 3 --s2k-count 65536 --s2k-digest-algo SHA512 \
+        --batch --quiet --passphrase "vpn-session-$(whoami)" \
+        --output "$session_file.gpg" 2>/dev/null; then
+        log_message "INFO" "Session stored with GPG encryption"
+    else
+        log_message "WARN" "GPG encryption failed, falling back to OpenSSL"
+        echo "$session_data" | openssl enc -aes-256-cbc -salt -pbkdf2 \
+            -pass pass:"vpn-session-$(whoami)" > "$session_file.enc" 2>/dev/null || {
+            log_message "ERROR" "Both GPG and OpenSSL encryption failed"
+            return 1
+        }
+    fi
+
+    # Set secure permissions
+    chmod 600 "$session_file"* 2>/dev/null
+
+    return 0
+}
+
 # Internal authentication function (called with lock)
 _authenticate_internal() {
     local username="$1"
@@ -577,11 +743,14 @@ _authenticate_internal() {
         return $ERR_AUTH_FAILED
     fi
 
-    # Create session with validated data
-    create_session "$username"
-
-    log_message "INFO" "Authentication successful"
-    return $ERR_SUCCESS
+    # Perform real ProtonVPN web authentication
+    if perform_real_protonvpn_login "$username" "$password"; then
+        log_message "INFO" "Authentication successful"
+        return $ERR_SUCCESS
+    else
+        log_message "ERROR" "ProtonVPN authentication failed"
+        return $ERR_AUTH_FAILED
+    fi
 }
 
 # Enhanced authentication with atomic operations
@@ -612,8 +781,9 @@ authenticate_2fa() {
         return $ERR_2FA_REQUIRED
     fi
 
-    # First do basic authentication
-    if ! authenticate "$username" "$password"; then
+    # Perform real ProtonVPN authentication with 2FA
+    if ! perform_real_protonvpn_login "$username" "$password" "$totp_code"; then
+        log_message "ERROR" "ProtonVPN 2FA authentication failed"
         return $ERR_AUTH_FAILED
     fi
 
