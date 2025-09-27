@@ -22,6 +22,28 @@ log_message() {
     }
 }
 
+get_cached_external_ip() {
+    local cache_file="/tmp/vpn_external_ip_cache"
+    local cache_age=30  # Cache for 30 seconds
+
+    # Use cache if it exists and is recent
+    if [[ -f "$cache_file" ]]; then
+        local cache_timestamp file_age
+        cache_timestamp=$(stat -c %Y "$cache_file" 2>/dev/null || echo "0")
+        file_age=$(($(date +%s) - cache_timestamp))
+
+        if [[ "$file_age" -lt "$cache_age" ]]; then
+            cat "$cache_file" 2>/dev/null && return
+        fi
+    fi
+
+    # Fetch fresh IP and cache it
+    local external_ip
+    external_ip=$(curl -s --max-time 5 https://ipinfo.io/ip 2>/dev/null || echo "Unable to determine")
+    echo "$external_ip" > "$cache_file" 2>/dev/null || true
+    echo "$external_ip"
+}
+
 # Basic credential validation for TDD GREEN phase
 validate_credentials() {
     local credentials_file="$1"
@@ -177,7 +199,7 @@ show_status() {
         fi
 
         echo -n "  External IP: "
-        external_ip=$(curl -s --max-time 5 https://ipinfo.io/ip 2>/dev/null || echo "Unable to determine")
+        external_ip=$(get_cached_external_ip)
         echo "$external_ip"
 
         local uptime
@@ -191,7 +213,7 @@ show_status() {
         echo -e "\033[1;31m✗ VPN Status: DISCONNECTED\033[0m"
 
         echo -n "  External IP: "
-        external_ip=$(curl -s --max-time 5 https://ipinfo.io/ip 2>/dev/null || echo "Unable to determine")
+        external_ip=$(get_cached_external_ip)
         echo "$external_ip"
 
         if [[ -f "$VPN_PID_FILE" ]]; then
@@ -569,7 +591,7 @@ show_status_wcag() {
         local pid interface external_ip vpn_ip gateway uptime
         pid=$(get_vpn_pid)
         interface=$(get_vpn_interface)
-        external_ip=$(curl -s --max-time 3 https://ipinfo.io/ip 2>/dev/null || echo "unknown")
+        external_ip=$(get_cached_external_ip)
 
         echo "  Process ID: $pid"
         if [[ -n "$interface" ]]; then
@@ -585,7 +607,7 @@ show_status_wcag() {
         [[ -n "$uptime" ]] && echo "  Connection Duration: $uptime"
     else
         echo -e "\033[1;31mCONNECTION STATUS: DISCONNECTED\033[0m"
-        external_ip=$(curl -s --max-time 3 https://ipinfo.io/ip 2>/dev/null || echo "unknown")
+        external_ip=$(get_cached_external_ip)
         echo "  External IP: $external_ip"
     fi
 
@@ -611,7 +633,7 @@ show_status_accessible() {
         local pid interface external_ip vpn_ip uptime
         pid=$(get_vpn_pid)
         interface=$(get_vpn_interface)
-        external_ip=$(curl -s --max-time 3 https://ipinfo.io/ip 2>/dev/null || echo "unknown")
+        external_ip=$(get_cached_external_ip)
 
         echo "  Process ID: $pid"
         [[ -n "$interface" ]] && echo "  Network Interface: $interface"
@@ -627,7 +649,7 @@ show_status_accessible() {
         [[ -n "$uptime" ]] && echo "  Connection Duration: $uptime"
     else
         echo "  Status: Disconnected"
-        external_ip=$(curl -s --max-time 3 https://ipinfo.io/ip 2>/dev/null || echo "unknown")
+        external_ip=$(get_cached_external_ip)
         echo "  External IP Address: $external_ip"
     fi
 
@@ -659,7 +681,7 @@ show_status_enhanced() {
         local pid interface external_ip vpn_ip gateway uptime
         pid=$(get_vpn_pid)
         interface=$(get_vpn_interface)
-        external_ip=$(curl -s --max-time 3 https://ipinfo.io/ip 2>/dev/null || echo "unknown")
+        external_ip=$(get_cached_external_ip)
 
         echo "  Process ID: $pid"
         uptime=$(ps -o etime= -p "$pid" 2>/dev/null | tr -d ' ')
@@ -676,7 +698,7 @@ show_status_enhanced() {
         echo "  Server Location: Sweden (se-65.protonvpn.net)"
     else
         echo -e "\033[1;31mCONNECTION STATUS: DISCONNECTED\033[0m"
-        external_ip=$(curl -s --max-time 3 https://ipinfo.io/ip 2>/dev/null || echo "unknown")
+        external_ip=$(get_cached_external_ip)
         echo "  External IP: $external_ip"
     fi
 
@@ -704,7 +726,7 @@ show_status_enhanced() {
 show_status_json() {
     local timestamp external_ip
     timestamp=$(date +%s)
-    external_ip=$(curl -s --max-time 3 https://ipinfo.io/ip 2>/dev/null || echo "unknown")
+    external_ip=$(get_cached_external_ip)
 
     echo "{"
     echo "  \"timestamp\": $timestamp,"
@@ -763,7 +785,7 @@ show_status_json() {
 show_status_csv() {
     local timestamp external_ip
     timestamp=$(date +%s)
-    external_ip=$(curl -s --max-time 3 https://ipinfo.io/ip 2>/dev/null || echo "unknown")
+    external_ip=$(get_cached_external_ip)
 
     echo "timestamp,connection_status,process_id,interface,duration,vpn_ip,gateway,external_ip,server_location,latency_ms,download_mbps,upload_mbps,stability_percent,dns_working,routing_ok,vpn_processes"
 
