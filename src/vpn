@@ -47,7 +47,6 @@ show_help() {
     echo "  setup               - Initial VPN setup and configuration"
     echo "  update              - Update VPN profiles"
     echo "  download-configs    - Auto-download ProtonVPN configs"
-    echo "  validate-configs    - Validate OpenVPN config files"
     echo "  service             - Manage background updater service"
     echo "  help                - Show this help message"
     echo
@@ -255,38 +254,6 @@ case "$1" in
             esac
         else
             echo "Error: Download engine not found at $DOWNLOAD_ENGINE"
-            echo "Please ensure Phase 2 implementation is complete."
-            exit 1
-        fi
-        ;;
-    "validate-configs")
-        CONFIG_VALIDATOR="$VPN_DIR/config-validator"
-        if [[ -x "$CONFIG_VALIDATOR" ]]; then
-            case "${2:-help}" in
-                "help"|"h")
-                    "$CONFIG_VALIDATOR" help
-                    ;;
-                "file")
-                    if [[ -n "$3" ]]; then
-                        "$CONFIG_VALIDATOR" validate-file "$3"
-                    else
-                        echo "Usage: vpn validate-configs file <path>"
-                        echo "Example: vpn validate-configs file locations/dk-134.protonvpn.udp.ovpn"
-                    fi
-                    ;;
-                "dir"|"directory")
-                    dir="${3:-$LOCATIONS_DIR}"
-                    "$CONFIG_VALIDATOR" validate-dir "$dir"
-                    ;;
-                "integrity")
-                    "$CONFIG_VALIDATOR" check-integrity "${3:-$LOCATIONS_DIR}"
-                    ;;
-                *)
-                    "$CONFIG_VALIDATOR" "$2" "${@:3}"
-                    ;;
-            esac
-        else
-            echo "Error: Config validator not found at $CONFIG_VALIDATOR"
             echo "Please ensure Phase 2 implementation is complete."
             exit 1
         fi
