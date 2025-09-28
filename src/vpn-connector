@@ -13,10 +13,13 @@ LOCK_FILE="/tmp/vpn_connect.lock"
 # Source centralized error handling
 source "$VPN_DIR/vpn-error-handler"
 
-# Load VPN integration system
-if [[ -f "$VPN_DIR/vpn-integration" ]]; then
-    source "$VPN_DIR/vpn-integration"
-fi
+# Simple notification function for basic feedback
+notify_event() {
+    local event_type="$1"
+    local arg1="${2:-}"
+    local arg2="${3:-}"
+    echo "[INFO] $event_type: $arg1 $arg2" >&2
+}
 
 log_message() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "$CONNECTION_LOG"
