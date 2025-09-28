@@ -1,373 +1,129 @@
-# VPN Management System
+# Simple VPN Manager
 
-A comprehensive VPN management suite with intelligent server selection, performance testing, and automated connection handling for Artix/Arch Linux systems.
+A focused, lightweight VPN management tool for Artix/Arch Linux systems. **Does one thing and does it right.**
 
-## Status
-- **Current Phase**: Ready for Phase 4.2.3 (Status Dashboard & Health Monitoring) 🎯
-- **Progress**: Core system 95% complete - Production ready with enterprise security
-- **Last Updated**: September 19, 2025
-- **Latest Achievement**: Security hardening + TOML configuration + Notification system ✅
-- **Ready to Start**: Phase 4.2.3 implementation (1-2 days estimated)
-- **Security Status**: 17/17 security tests passing - Enterprise grade 🛡️
+## Philosophy
 
-> **📊 Quick Status Check:** `docs/PROJECT_STATUS_CURRENT.md` - Complete project overview
-> **🚀 Next Session:** Ready to implement status dashboard and health monitoring
+This project follows the Unix philosophy: **"Do one thing and do it right."** It connects you to VPN servers quickly, reliably, and safely. Nothing more, nothing less.
 
-## 🛡️ Security Hardening Complete
+## What It Does
 
-### **CRITICAL SECURITY ACHIEVEMENT**
-All 3 critical vulnerabilities have been resolved with enterprise-grade security:
-
-- ✅ **Hardcoded Development Paths** - Replaced with FHS-compliant secure configuration
-- ✅ **Unencrypted Database Storage** - Implemented GPG encryption and access controls
-- ✅ **Root Service Privileges** - Dedicated service user with 20+ systemd security features
-
-**Security Level:** 🟢 **Enterprise-Grade** (upgraded from 🔴 Critical)
-**Compliance:** SOC 2, GDPR audit ready
-
-## Project Structure
-
-This repository contains documentation and implementation planning for the VPN management system:
-
-```
-vpn-management/
-├── README.md                           # This file
-├── CLAUDE.md                          # Development guidelines and workflow
-├── docs/                              # All project documentation
-│   ├── implementation/                # Implementation plans and phase docs
-│   │   ├── VPN_PORTING_IMPLEMENTATION_PLAN.md
-│   │   ├── SECURITY_HARDENING_COMPLETE.md     # 🆕 Security documentation
-│   │   ├── SESSION_HANDOVER_NEXT_STEPS.md     # 🆕 Next session guide
-│   │   ├── PHASE_4_1_COMPLETE.md
-│   │   ├── PHASE_3_COMPLETE.md
-│   │   └── [other phase documentation]
-│   └── templates/                     # GitHub issue templates and guides
-├── config/                            # Configuration files
-│   └── .pre-commit-config.yaml       # Quality gates and pre-commit hooks
-├── src/                               # Source code
-│   ├── notification-manager           # 🆕 WCAG 2.1 compliant notification system
-│   ├── config-manager                 # 🆕 Advanced TOML configuration management
-│   ├── secure-config-manager          # 🆕 FHS-compliant configuration system
-│   ├── secure-database-manager        # 🆕 Encrypted database management
-│   ├── protonvpn-updater-daemon-secure.sh  # 🆕 Security-hardened daemon
-│   └── [existing VPN components]
-├── service/                           # Service integration files
-│   ├── systemd/                       # Systemd service with security hardening
-│   └── runit/                         # Runit service integration
-├── install-secure.sh                  # 🆕 Security-first installation script
-└── tests/                             # Comprehensive testing framework
-    ├── security/                      # 🆕 Security test suite
-    │   └── test_security_hardening.sh # 17 comprehensive security tests
-    ├── run_tests.sh                   # Test runner with reporting
-    └── [existing test suites]
-```
+- **Intelligent Server Selection**: Automatically finds the best performing VPN server
+- **Safe Process Management**: Prevents multiple OpenVPN processes, handles cleanup properly
+- **Performance Testing**: Tests server latency and speed for optimal connections
+- **Clear Status Information**: Shows connection state, external IP, and performance metrics
+- **Configuration Management**: Validates and fixes OpenVPN configuration files
 
 ## Quick Start
 
-### Prerequisites
-- Artix Linux or Arch Linux system
-- Required packages:
-  ```bash
-  sudo pacman -S openvpn curl bc libnotify iproute2 git sqlite gnupg
-  ```
-- ProtonVPN account with OpenVPN configuration files
-
-### 🔒 Secure Installation (Recommended)
-
-**Enterprise-grade secure installation:**
 ```bash
-git clone https://github.com/maxrantil/protonvpn-manager.git
-cd protonvpn-manager
-sudo ./install-secure.sh
-```
-
-The secure installer will:
-- Create dedicated `protonvpn` service user with no shell access
-- Set up FHS-compliant directory structure with proper permissions
-- Install service binaries with security hardening
-- Configure systemd/runit services with maximum security features
-- Set up encrypted database storage and backup system
-- Validate security configuration with comprehensive checks
-
-### Service Management (Security-Hardened)
-
-```bash
-# Start background service
-sudo systemctl start protonvpn-updater    # systemd
-sudo sv up protonvpn-updater              # runit
-
-# Check service status
-./usr/local/bin/proton-service status
-
-# Verify security configuration
-./usr/local/bin/secure-config-manager status
-./usr/local/bin/secure-database-manager status
-
-# Run security validation
-./tests/security/test_security_hardening.sh
-```
-
-### Legacy Installation (Development Only)
-
-**One-command installation (development/testing):**
-```bash
-git clone https://github.com/maxrantil/protonvpn-manager.git
-cd protonvpn-manager
-./install.sh
-```
-
-## Development Status
-
-### ✅ Completed Phases
-
-**Phase 1-3: Core VPN System** (Completed: September 2-18, 2025)
-- Foundation & Environment Setup, Core Scripts, Connection Management
-- Performance Testing Engine, Advanced Features, System Integration
-- Configuration & Utilities, Testing & Validation, Documentation & Packaging
-
-**Phase 4.1: Background Service Foundation** (Completed: September 18, 2025)
-- Dual service support (runit for Artix, systemd for Arch)
-- Universal service manager with automated config updates
-- Proper logging integration and service lifecycle management
-
-**🛡️ Security Hardening Phase** (Completed: September 18, 2025)
-- **Critical vulnerability resolution**: 3/3 fixed
-- **Enterprise security features**: 20+ systemd hardening features
-- **Database encryption**: GPG encryption with secure storage
-- **FHS compliance**: Production-ready directory structure
-- **Security validation**: 17/17 tests passing
-
-### ✅ Recently Completed
-**Issue #40: Phase 4.2 Background Service Enhancement** - IN PROGRESS
-- **Phase 4.1**: Background Service Foundation ✅
-- **Phase 4.2.1**: WCAG 2.1 Notification System ✅
-- **Phase 4.2.2**: TOML Configuration Management ✅
-
-**Completed Features:**
-- **Security Foundation**: ✅ Enterprise-grade hardening (17/17 tests passing)
-- **Notification System**: ✅ WCAG 2.1 compliant with screen reader support
-- **Configuration Management**: ✅ TOML parsing, validation, inheritance, audit logging
-
-### 🚧 Current Phase
-**Phase 4.2.3: Status Dashboard & Health Monitoring** (Ready to start)
-- **Status Dashboard**: Enhanced service status with update history
-- **Health Monitoring**: Proactive monitoring with automatic recovery
-- **Real-time Integration**: JSON output and external system integration
-- **Performance Optimization**: Cross-platform testing and deployment automation
-
-### 📋 Future Phases
-- **Phase 5**: Security Audit & Deployment - Final security review and production deployment
-- **Phase 6**: User Experience Enhancements - Better CLI interface, progress indicators, documentation
-- **Phase 10**: WireGuard Protocol Optimization (Deferred - OpenVPN stable)
-
-## Usage
-
-### Basic Commands
-
-```bash
-# Show help and available commands
-./src/vpn help
-
-# Connect to VPN (automatic best server)
+# Connect to best server automatically
 ./src/vpn best
 
 # Connect to specific country (e.g., Sweden)
 ./src/vpn connect se
 
-# Fast switching with cache
-./src/vpn fast
-
-# Check VPN status
+# Check current status
 ./src/vpn status
 
-# Disconnect from VPN
+# Disconnect
 ./src/vpn disconnect
 
-# Connect to secure core servers
-./src/vpn secure
-
-# Use custom OpenVPN profile
-./src/vpn custom /path/to/profile.ovpn
-
-# Download ProtonVPN configs (Phase 3 feature)
-./src/vpn download-configs country se                    # Download Sweden configs
-./src/vpn download-configs country dk --protocol=tcp     # Download Denmark TCP configs
-./src/vpn download-configs country nl --test-mode        # Test mode (no auth needed)
-./src/vpn download-configs status                        # Show download status
-
-# Validate OpenVPN configs
-./src/vpn validate-configs dir locations/se              # Validate Sweden configs
-./src/vpn validate-configs file locations/se-65.protonvpn.udp.ovpn  # Single file
-
-# Service management (Phase 4.1 + Security Hardening)
-./usr/local/bin/proton-service start                     # Start background service
-./usr/local/bin/proton-service status                    # Show detailed status
-./usr/local/bin/proton-service logs                      # View service logs
+# Show all available commands
+./src/vpn help
 ```
 
-### System Integration
+## Installation
 
-- **Desktop Notifications**: Automatic notifications for connection events
-- **Status Bar Integration**: Works with dwmblocks and other status bars
-- **Service Management**: Integrates with systemd/runit services with security hardening
-- **Logging**: Comprehensive logging with security event tracking
-- **Database**: Encrypted SQLite database for history and metrics
+### Prerequisites
+- Artix Linux or Arch Linux
+- OpenVPN installed (`sudo pacman -S openvpn`)
+- ProtonVPN account with OpenVPN configuration files
 
-## Security Features
-
-### 🛡️ Enterprise Security (New)
-- **Service User Isolation**: Dedicated `protonvpn` user with `/bin/false` shell
-- **Systemd Hardening**: 20+ security features (NoNewPrivileges, ProtectSystem, etc.)
-- **Database Encryption**: GPG encryption with secure access controls
-- **FHS Compliance**: Standard Linux filesystem hierarchy
-- **Input Validation**: Comprehensive sanitization and validation
-- **Audit Logging**: Complete security event tracking
-- **Resource Limits**: Memory (25MB), CPU (5%), file handles (512)
-
-### Security Validation
+### Setup
 ```bash
-# Run comprehensive security tests
-./tests/security/test_security_hardening.sh
+git clone https://github.com/maxrantil/protonvpn-manager.git
+cd protonvpn-manager
+git checkout vpn-simple  # Use the simplified version
 
-# Expected output: 17/17 tests passing ✅
+# Place your OpenVPN configs in locations/ directory
+# Then start using:
+./src/vpn connect
 ```
 
-## Testing
+## Core Components (2,833 lines total)
 
-This project follows **strict Test-Driven Development (TDD)** practices:
+This simplified version contains only essential components:
 
-- **100+ comprehensive tests** across all system components
-- **Security test suite** with 17 comprehensive security validations
-- **Phase-specific test suites** with complete validation
-- **Performance benchmarking** with regression detection
-- **Edge case coverage** for robust error handling
-- **RED-GREEN-REFACTOR methodology** maintained throughout development
+- **`src/vpn`** - Main CLI interface (331 lines)
+- **`src/vpn-manager`** - Process management and safety (875 lines)
+- **`src/vpn-connector`** - Server selection logic (968 lines)
+- **`src/best-vpn-profile`** - Performance testing engine (104 lines)
+- **`src/vpn-error-handler`** - Error handling (275 lines)
+- **`src/fix-ovpn-configs`** - Configuration file validation (280 lines)
 
-### Run Tests
+## Available Commands
 
+### Connection Management
 ```bash
-# Run all tests
-./tests/run_tests.sh
-
-# Run security validation
-./tests/security/test_security_hardening.sh
-
-# Run Phase 4.1 service tests
-./tests/phase4_complete_validation_tests.sh
-
-# Run core VPN system tests
-./tests/phase8_complete_validation_tests.sh
+./src/vpn connect [country]    # Connect to VPN (optional country code)
+./src/vpn disconnect          # Disconnect from VPN
+./src/vpn reconnect          # Reconnect to current server
+./src/vpn status             # Show connection status
 ```
+
+### Server Selection
+```bash
+./src/vpn best               # Connect to best performing server
+./src/vpn fast [country]     # Quick connect using cached results
+./src/vpn list               # List available servers
+./src/vpn test               # Test current connection performance
+```
+
+### System Management
+```bash
+./src/vpn cleanup            # Clean up processes and routes
+./src/vpn kill               # Force kill VPN processes
+./src/vpn health             # Check system health
+```
+
+## What Was Removed
+
+In September 2025, this project was simplified from a complex enterprise system (13,124 lines) to this focused tool (2,833 lines). The following enterprise features were removed:
+
+- API servers and WebSocket endpoints
+- Enterprise security frameworks and audit logging
+- WCAG accessibility compliance systems
+- Complex configuration management (TOML parsing, inheritance)
+- Health monitoring dashboards and alerting
+- Background services and automated timers
+- Database encryption and backup systems
+- Notification management frameworks
+
+**These features are preserved** in the `src_archive/` directory and on the `master` branch if needed for reference.
 
 ## Development
 
-This project follows comprehensive development guidelines outlined in [CLAUDE.md](CLAUDE.md):
+This project prioritizes simplicity and reliability. See `CLAUDE.md` for development guidelines that prevent feature creep and maintain focus.
 
-- **Mandatory GitHub issues** before starting work
-- **Test-Driven Development** with RED-GREEN-REFACTOR cycles
-- **Agent-driven development** with specialized AI agents for quality assurance
-- **Security-first approach** with comprehensive hardening
-- **Pre-commit hooks** for quality assurance
-- **Implementation plan tracking** with phase completion
+### Core Principles
+1. **Simplicity First**: Prefer simple solutions over complex ones
+2. **Performance Over Features**: Fast, reliable connections matter most
+3. **No Feature Creep**: Resist adding "nice to have" features
+4. **Maintainability**: Keep code readable and debuggable
 
-### Next Session Guide
+## Branches
 
-For developers continuing this project, see the complete handover guide:
-- **[SESSION_HANDOVER_NEXT_STEPS.md](docs/implementation/SESSION_HANDOVER_NEXT_STEPS.md)**
-
-This document provides exact starting points, commands, and implementation priorities for Phase 4.2.
-
-### Workflow
-
-1. **Create GitHub issue** describing the work
-2. **Create feature branch** following naming conventions
-3. **Setup pre-commit hooks** (if not already done)
-4. **Follow TDD practices**: Write failing tests first
-5. **Use agent-driven development**: Launch specialized agents for quality assurance
-6. **Commit frequently** with atomic, logical changes
-7. **Update implementation plan** when phases complete
+- **`vpn-simple`**: Main development branch (current, simplified version)
+- **`master`**: Enterprise version (archived, 13K+ lines, preserved for reference)
 
 ## Contributing
 
-All contributions must follow our established workflow:
-
-1. **GitHub Issues First**: Always create an issue before starting work
-2. **TDD Compliance**: Include TDD checklist in every issue and follow RED-GREEN-REFACTOR
-3. **Security Validation**: All changes must pass security test suite
-4. **Agent Validation**: Use specialized agents for quality assurance
-5. **Pre-commit Quality**: All commits must pass comprehensive pre-commit hooks
-
-See [CLAUDE.md](CLAUDE.md) for complete development guidelines and [docs/templates/](docs/templates/) for issue templates.
-
-## System Architecture
-
-### Core Components
-
-- **`src/vpn`**: Main CLI interface with command routing
-- **`src/vpn-manager`**: Process management and connection lifecycle
-- **`src/vpn-connector`**: Server selection and connection logic
-- **`src/best-vpn-profile`**: Performance testing and server ranking
-- **`src/connect-vpn-bg`**: Background connection handling
-
-### Security Components (New)
-
-- **`src/secure-config-manager`**: FHS-compliant configuration system
-- **`src/secure-database-manager`**: Encrypted database management
-- **`src/protonvpn-updater-daemon-secure.sh`**: Security-hardened service daemon
-- **`install-secure.sh`**: Enterprise-grade installation with validation
-
-### Utilities
-
-- **`src/vpn-statusbar`**: Status bar integration (dwmblocks)
-- **`src/vpn-notify`**: Centralized notification system
-- **`src/vpn-service`**: System service integration (runit/systemd)
-- **`src/vpn-logger`**: Centralized logging with credential sanitization
-- **`src/fix-ovpn-files`**: Configuration repair and enhancement
-
-### Key Features
-
-- **Intelligent Server Selection**: Automatic best server detection
-- **Performance Caching**: Fast switching with cached performance data
-- **Multi-Protocol Support**: OpenVPN ready, WireGuard infrastructure in place
-- **System Integration**: Desktop notifications, status bar, service management
-- **Robust Error Handling**: Comprehensive edge case coverage
-- **Enterprise Security**: Hardened service with encryption and access controls
-
-### Performance
-
-- **Connection Speed**: < 2.0s (requirement: < 30s)
-- **Fast Switching**: < 2.0s (requirement: < 20s)
-- **Memory Usage**: Stable with < 4KB growth over time, 25MB service limit
-- **Process Safety**: Zero-tolerance for multiple OpenVPN processes
-- **Security Overhead**: < 5% performance impact from security features
+Contributions should align with the project's simplicity philosophy. New features must be:
+1. Essential for core VPN functionality
+2. Simple to implement and maintain
+3. Not duplicating existing functionality
 
 ## License
 
 This project is developed for educational and personal use on Artix/Arch Linux systems.
-
-## 🚀 Next Session Quick Start
-
-**For the next development session, start here:**
-
-```bash
-# 1. Navigate to project
-cd /home/user/workspace/claude-code/vpn
-
-# 2. Read current status (5 minutes)
-cat docs/PROJECT_STATUS_CURRENT.md
-
-# 3. Verify system status
-git status  # Should be on feat/issue-40-background-service
-./tests/security/test_security_hardening.sh  # Should pass 17/17
-
-# 4. Begin Phase 4.2.3 implementation
-echo "🎯 Ready to implement: Status Dashboard & Health Monitoring"
-```
-
-**📋 Implementation Order:**
-1. **Status Dashboard** → Real-time service status with JSON output
-2. **Health Monitoring** → Proactive monitoring with automatic recovery
-3. **Real-time Integration** → External system integration APIs
-4. **Performance Optimization** → Final tuning and documentation
-
-**📚 Complete Documentation:** `docs/PROJECT_STATUS_CURRENT.md` - Everything you need to know
