@@ -13,6 +13,7 @@ This project follows the Unix philosophy: **"Do one thing and do it right."** It
 - **Performance Testing**: Tests server latency and speed for optimal connections
 - **Clear Status Information**: Shows connection state, external IP, and performance metrics
 - **Configuration Management**: Validates and fixes OpenVPN configuration files
+- **Simple Logging**: Color-coded event logging for debugging and monitoring (October 2025)
 
 ## Quick Start
 
@@ -51,16 +52,16 @@ git checkout vpn-simple  # Use the simplified version
 ./src/vpn connect
 ```
 
-## Core Components (2,833 lines total)
+## Core Components (2,891 lines total)
 
 This simplified version contains only essential components:
 
-- **`src/vpn`** - Main CLI interface (331 lines)
-- **`src/vpn-manager`** - Process management and safety (875 lines)
-- **`src/vpn-connector`** - Server selection logic (968 lines)
+- **`src/vpn`** - Main CLI interface (307 lines)
+- **`src/vpn-manager`** - Process management and safety (949 lines)
+- **`src/vpn-connector`** - Server selection logic (977 lines)
 - **`src/best-vpn-profile`** - Performance testing engine (104 lines)
 - **`src/vpn-error-handler`** - Error handling (275 lines)
-- **`src/fix-ovpn-configs`** - Configuration file validation (280 lines)
+- **`src/fix-ovpn-configs`** - Configuration file validation (281 lines)
 
 ## Available Commands
 
@@ -85,11 +86,21 @@ This simplified version contains only essential components:
 ./src/vpn cleanup            # Clean up processes and routes
 ./src/vpn kill               # Force kill VPN processes
 ./src/vpn health             # Check system health
+./src/vpn logs [lines]       # View recent log entries (default: 50)
 ```
+
+## Recent Enhancements
+
+**October 2025 - Basic Logging System:**
+- Added simple event logging to help with debugging
+- View logs with: `./src/vpn logs [lines]`
+- Color-coded output (green=INFO, yellow=WARN, red=ERROR)
+- Automatic log rotation (keeps last 1000 lines)
+- Logs stored at: `/tmp/vpn_simple.log`
 
 ## What Was Removed
 
-In September 2025, this project was simplified from a complex enterprise system (13,124 lines) to this focused tool (2,833 lines). The following enterprise features were removed:
+In September 2025, this project was simplified from a complex enterprise system (13,124 lines) to this focused tool (~2,900 lines). The following enterprise features were removed:
 
 - API servers and WebSocket endpoints
 - Enterprise security frameworks and audit logging
