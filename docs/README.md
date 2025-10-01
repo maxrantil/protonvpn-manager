@@ -1,112 +1,150 @@
 # Documentation Index
 
-**Last Updated:** September 28, 2025
-**Project Status:** Simple VPN Manager (vpn-simple branch)
+**Last Updated:** October 1, 2025
+**Project Status:** Simplified VPN Manager (master branch)
 
-## 📚 **Core Documentation**
+---
 
-### **Getting Started**
-- **[`USER_GUIDE.md`](USER_GUIDE.md)** - Complete user guide with installation and usage
-- **[`DEPLOYMENT_GUIDE.md`](DEPLOYMENT_GUIDE.md)** - Simple installation and setup instructions
+## 📚 Quick Reference
 
-### **Understanding the System**
-- **[`ARCHITECTURE_OVERVIEW.md`](ARCHITECTURE_OVERVIEW.md)** - 6-component system architecture
-- **[`../README.md`](../README.md)** - Project overview and quick start
+For comprehensive documentation structure and index, see:
+### **→ [DOCUMENTATION_INDEX.md](DOCUMENTATION_INDEX.md)**
 
-### **Development**
-- **[`DEVELOPER_GUIDE.md`](DEVELOPER_GUIDE.md)** - Development guidelines and standards
-- **[`../CLAUDE.md`](../CLAUDE.md)** - Project philosophy and development workflow
+---
 
-## 🎯 **Quick Start**
+## 🎯 Quick Navigation
 
 ### **For Users**
-```bash
-# 1. Clone and setup
-git clone https://github.com/maxrantil/protonvpn-manager.git
-cd protonvpn-manager
-git checkout vpn-simple
-
-# 2. Read user guide
-cat docs/USER_GUIDE.md
-
-# 3. Start using
-./src/vpn help
-./src/vpn best
-```
+- **[USER_GUIDE.md](USER_GUIDE.md)** - Complete user guide with usage examples
+- **[DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md)** - Installation instructions ⚠️ (Update pending: Issue #61)
 
 ### **For Developers**
-```bash
-# 1. Read the philosophy
-cat CLAUDE.md
+- **[DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md)** - Development workflow and TDD guidelines
+- **[ARCHITECTURE_OVERVIEW.md](ARCHITECTURE_OVERVIEW.md)** - System design (6 components)
+- **[../CLAUDE.md](../CLAUDE.md)** - Project philosophy and guidelines (ESSENTIAL)
 
-# 2. Understand the architecture
-cat docs/ARCHITECTURE_OVERVIEW.md
+### **For Current Roadmap**
+- **[implementation/ROADMAP-2025-10.md](implementation/ROADMAP-2025-10.md)** - 4-week execution plan
+- **[implementation/ISSUES-CREATED.md](implementation/ISSUES-CREATED.md)** - GitHub issues #56-#77
+- **[implementation/BASELINE-SCORES.md](implementation/BASELINE-SCORES.md)** - Quality metrics
 
-# 3. Follow development guidelines
-cat docs/DEVELOPER_GUIDE.md
-```
+---
 
-## 📁 **Documentation Structure**
+## 💡 Project Philosophy
 
-```
-docs/
-├── README.md                   # This file - documentation index
-├── USER_GUIDE.md              # Complete user guide
-├── ARCHITECTURE_OVERVIEW.md    # System architecture (6 components)
-├── DEPLOYMENT_GUIDE.md         # Installation and setup
-├── DEVELOPER_GUIDE.md          # Development guidelines
-├── implementation/
-│   └── SIMPLIFICATION_HISTORY.md  # Why/how system was simplified
-├── templates/                  # GitHub templates for issues/PRs
-└── user/                      # Additional user documentation
-```
+**"Do one thing and do it right."** - Unix philosophy
 
-## 💡 **Project Philosophy**
-
-This is a **simple, focused VPN management tool** following the Unix philosophy:
-
-**"Do one thing and do it right."**
-
-### What It Does
+### What It Does ✅
 - Connects to VPN servers intelligently
 - Manages OpenVPN processes safely
 - Tests server performance for optimization
 - Provides clear status information
 
-### What It Does NOT Do
-- ❌ Complex APIs or web interfaces
-- ❌ Enterprise monitoring systems
-- ❌ Background services or daemons
-- ❌ Database management
-- ❌ Notification frameworks
+### What It Does NOT Do ❌
+- Complex APIs or web interfaces
+- Enterprise monitoring systems
+- Background services or daemons
+- Database management
 
-## 🚀 **Current Status**
+---
+
+## 🚀 Current Status
 
 ### System Overview
-- **6 core components** (~2,800 lines total)
-- **Simple dependencies** (OpenVPN + bash + curl)
-- **Fast performance** (< 2 second connections)
-- **Easy maintenance** (minimal complexity)
+- **6 core components** (~2,996 lines total)
+- **Quality Score:** 3.2/5.0 (baseline from Issue #53 analysis)
+- **Status:** NOT production-ready (22 issues to resolve)
+- **Target:** 4.5/5.0 within 4 weeks
 
 ### Branch Information
-- **`vpn-simple`**: Current development branch (simplified system)
-- **`master`**: Enterprise version (archived for reference)
-- **`src_archive/`**: Removed enterprise components (24 components)
+- **`master`**: Current development branch (simplified version)
+- **`src_archive/`**: Archived enterprise components (24 components, ~10,500 lines)
 
-## 📋 **Next Steps**
+### Active Work
+See **[../SESSION_HANDOVER.md](../SESSION_HANDOVER.md)** for current session status.
+
+---
+
+## 📁 Documentation Structure
+
+```
+docs/
+├── README.md                       # This file - quick navigation
+├── DOCUMENTATION_INDEX.md          # Complete documentation index (NEW)
+├── USER_GUIDE.md                   # User instructions
+├── ARCHITECTURE_OVERVIEW.md        # System architecture
+├── DEPLOYMENT_GUIDE.md             # Installation guide
+├── DEVELOPER_GUIDE.md              # Development workflow
+├── implementation/                 # Project tracking
+│   ├── AGENT-ANALYSIS-2025-10-01.md    # 8-agent analysis
+│   ├── ROADMAP-2025-10.md              # 4-week execution plan
+│   ├── BASELINE-SCORES.md              # Quality metrics
+│   ├── ISSUES-CREATED.md               # GitHub issues reference
+│   ├── SIMPLIFICATION_HISTORY.md       # Simplification context
+│   └── NEXT_SESSION_PLAN-2025-10-01.md # Completed task (archived)
+└── templates/                      # Issue/PR templates
+```
+
+---
+
+## 📋 Getting Started
 
 ### For New Users
-1. Read [`USER_GUIDE.md`](USER_GUIDE.md) for complete setup instructions
-2. Follow [`DEPLOYMENT_GUIDE.md`](DEPLOYMENT_GUIDE.md) for installation
-3. Use `./src/vpn help` to see available commands
+1. Read **[USER_GUIDE.md](USER_GUIDE.md)** for setup
+2. ⚠️ Wait for Issue #61 (installation process) before deploying
+3. Use `./src/vpn help` to see commands
 
 ### For Developers
-1. Read [`../CLAUDE.md`](../CLAUDE.md) for project philosophy
-2. Review [`DEVELOPER_GUIDE.md`](DEVELOPER_GUIDE.md) for coding standards
-3. Study [`ARCHITECTURE_OVERVIEW.md`](ARCHITECTURE_OVERVIEW.md) for system design
+1. **MUST READ:** [../CLAUDE.md](../CLAUDE.md) - Project guidelines
+2. Review [DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md) - Workflow
+3. Check [implementation/ROADMAP-2025-10.md](implementation/ROADMAP-2025-10.md) - Current priorities
+
+### For Contributors
+1. Start with Issue #56 (Remove dead code) from roadmap
+2. Follow TDD workflow (RED → GREEN → REFACTOR)
+3. Run agent validation before PR
+
+---
+
+## 🔍 Finding Specific Information
+
+| What You Need | Where to Look |
+|---------------|---------------|
+| Complete doc index | [DOCUMENTATION_INDEX.md](DOCUMENTATION_INDEX.md) |
+| How to use VPN | [USER_GUIDE.md](USER_GUIDE.md) |
+| How to develop | [DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md) |
+| System design | [ARCHITECTURE_OVERVIEW.md](ARCHITECTURE_OVERVIEW.md) |
+| Installation | [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) ⚠️ |
+| Current roadmap | [implementation/ROADMAP-2025-10.md](implementation/ROADMAP-2025-10.md) |
+| Quality scores | [implementation/BASELINE-SCORES.md](implementation/BASELINE-SCORES.md) |
+| Project rules | [../CLAUDE.md](../CLAUDE.md) |
+| Session status | [../SESSION_HANDOVER.md](../SESSION_HANDOVER.md) |
+
+---
+
+## ⚠️ Important Notes
+
+### Known Issues
+- **Documentation inaccuracies** (Issue #57): Some docs reference archived components
+- **Installation broken** (Issue #61): Current installers don't work for simplified version
+- **Testing docs missing** (Issue #74): README needs testing instructions
+
+### Do Not Use (Archived)
+- ~~`proton-auth`~~ - Archived in src_archive/
+- ~~`download-engine`~~ - Archived in src_archive/
+- ~~`config-validator`~~ - Archived in src_archive/
+
+### Actual Components (6 total)
+1. `src/vpn` - Main CLI
+2. `src/vpn-manager` - Process management
+3. `src/vpn-connector` - Connection logic
+4. `src/best-vpn-profile` - Performance testing
+5. `src/vpn-error-handler` - Error handling
+6. `src/fix-ovpn-configs` - Config validation
 
 ---
 
 **Simple VPN Manager** - Simple documentation for a simple tool.
-**Focus**: VPN connection management
-**Philosophy**: Unix simplicity and reliability
+
+For detailed documentation structure and comprehensive index:
+### **→ [DOCUMENTATION_INDEX.md](DOCUMENTATION_INDEX.md)**
