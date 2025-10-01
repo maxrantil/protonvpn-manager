@@ -67,11 +67,8 @@ detect_system() {
     # Detect init system
     if command -v systemctl >/dev/null 2>&1; then
         INIT_SYSTEM="systemd"
-    elif command -v sv >/dev/null 2>&1; then
-        INIT_SYSTEM="runit"
     else
-        print_error "Unsupported init system - requires systemd or runit"
-        exit 1
+        INIT_SYSTEM="none"
     fi
 
     print_info "Detected: $DISTRO with $INIT_SYSTEM"
@@ -156,7 +153,6 @@ install_service_binaries() {
     local binaries=(
         "download-engine" "proton-auth" "proton-service"
         "secure-database-manager" "secure-config-manager"
-        "protonvpn-updater-daemon-secure.sh"
         "vpn-notify" "vpn-logger" "vpn"
     )
 
@@ -173,12 +169,6 @@ install_service_binaries() {
             # Set secure ownership and permissions
             chown root:root "$target_file"
             chmod 755 "$target_file"
-
-            # Special handling for daemon script
-            if [[ "$binary" == "protonvpn-updater-daemon-secure.sh" ]]; then
-                # Create symlink with standard name
-                ln -sf "$target_file" "$BIN_DIR/protonvpn-updater-daemon.sh"
-            fi
 
             print_success "Installed: $binary"
             ((installed_count++))
@@ -237,119 +227,7 @@ install_secure_configuration() {
 }
 
 # Install service files based on init system
-install_service_files() {
-    log_install "INFO" "Installing $INIT_SYSTEM service files"
-    print_info "Setting up $INIT_SYSTEM service integration..."
-
-    case "$INIT_SYSTEM" in
-        "systemd")
-            install_systemd_service
-            ;;
-        "runit")
-            install_runit_service
-            ;;
-        *)
-            print_error "Unsupported init system: $INIT_SYSTEM"
-            return 1
-            ;;
-    esac
-
-    print_success "Service files installed for $INIT_SYSTEM"
-}
-
-# Install systemd service
-install_systemd_service() {
-    local service_file="/etc/systemd/system/protonvpn-updater.service"
-
-    cat > "$service_file" <<EOF
-[Unit]
-Description=ProtonVPN Config Updater (Security Hardened)
-Documentation=https://github.com/maxrantil/protonvpn-manager
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=simple
-User=$SERVICE_USER
-Group=$SERVICE_GROUP
-ExecStart=$BIN_DIR/protonvpn-updater-daemon.sh
-Restart=always
-RestartSec=30
-
-# Security settings - Maximum hardening
-NoNewPrivileges=yes
-ProtectSystem=strict
-ProtectHome=yes
-ReadWritePaths=$VAR_DIR $LOG_DIR $RUN_DIR
-PrivateTmp=yes
-ProtectKernelTunables=yes
-ProtectKernelModules=yes
-ProtectControlGroups=yes
-RestrictSUIDSGID=yes
-RestrictRealtime=yes
-RestrictNamespaces=yes
-LockPersonality=yes
-MemoryDenyWriteExecute=yes
-PrivateDevices=yes
-ProtectClock=yes
-ProtectHostname=yes
-RemoveIPC=yes
-
-# Network restrictions
-RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
-SystemCallFilter=@system-service
-SystemCallErrorNumber=EPERM
-
-# Resource limits
-LimitNOFILE=512
-MemoryLimit=25M
-CPUQuota=5%
-TasksMax=10
-
-# Logging
-StandardOutput=journal
-StandardError=journal
-SyslogIdentifier=protonvpn-updater
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-    chmod 644 "$service_file"
-    systemctl daemon-reload
-
-    print_success "Systemd service installed: $service_file"
-}
-
-# Install runit service
-install_runit_service() {
-    local runit_dir="/etc/runit/sv/protonvpn-updater"
-
-    # Create service directory
-    mkdir -p "$runit_dir/log"
-
-    # Create main service script
-    cat > "$runit_dir/run" <<EOF
-#!/bin/sh
-# ProtonVPN Config Updater - Runit service (Security Hardened)
-
-# Load secure configuration
-exec 2>&1
-exec chpst -u $SERVICE_USER:$SERVICE_GROUP \\
-    $BIN_DIR/protonvpn-updater-daemon.sh
-EOF
-
-    # Create log service script
-    cat > "$runit_dir/log/run" <<EOF
-#!/bin/sh
-exec svlogd -tt $LOG_DIR
-EOF
-
-    # Set permissions
-    chmod 755 "$runit_dir/run" "$runit_dir/log/run"
-
-    print_success "Runit service installed: $runit_dir"
-}
+# Service installation removed - simple VPN manager runs via direct script execution
 
 # Perform security validation
 validate_security() {
@@ -415,9 +293,7 @@ create_summary() {
     echo ""
     echo "Next Steps:"
     echo "1. Configure ProtonVPN credentials"
-    echo "2. Start service: systemctl start protonvpn-updater (systemd)"
-    echo "   OR: sv up protonvpn-updater (runit)"
-    echo "3. Check status: $BIN_DIR/proton-service status"
+    echo "2. Run VPN commands: vpn connect, vpn status, vpn disconnect"
     echo ""
     echo "Documentation: /usr/local/lib/protonvpn/README.md"
 }
@@ -451,7 +327,7 @@ main() {
     create_secure_directories
     install_service_binaries
     install_secure_configuration
-    install_service_files
+    # Service installation removed - simple VPN manager runs via direct script execution
 
     # Validation
     if validate_security; then
