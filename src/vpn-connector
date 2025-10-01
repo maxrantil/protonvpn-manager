@@ -442,6 +442,10 @@ connect_openvpn_profile() {
     echo -e "\033[1;33mConnecting to OpenVPN profile: $profile_name...\033[0m"
     log_message "Attempting OpenVPN connection to $profile_name"
 
+    # Source vpn-manager for logging function
+    source "$VPN_DIR/vpn-manager"
+    log_vpn_event "INFO" "Connection attempt started: $profile_name"
+
     # Clean state before connecting
     "$VPN_DIR/vpn-manager" cleanup >/dev/null 2>&1
     sleep 2
@@ -477,6 +481,7 @@ connect_openvpn_profile() {
         if [[ $connection_established -eq 1 ]]; then
             echo -e "\033[1;32m✓ Successfully connected to OpenVPN $profile_name\033[0m"
             log_message "Successfully connected to OpenVPN $profile_name on attempt $attempt"
+            log_vpn_event "INFO" "Connected successfully: $profile_name (attempt $attempt/$max_attempts)"
 
             notify_event "connection_established" "$profile_name"
             pkill -RTMIN+4 dwmblocks 2>/dev/null || true
@@ -504,6 +509,7 @@ connect_openvpn_profile() {
 
     echo -e "\033[1;31m✗ Failed to connect to OpenVPN $profile_name after $max_attempts attempts\033[0m"
     log_message "Failed to connect to OpenVPN $profile_name after $max_attempts attempts"
+    log_vpn_event "ERROR" "Connection failed: $profile_name (all $max_attempts attempts exhausted)"
     notify_event "connection_failed" "$profile_name"
 
     return 1
