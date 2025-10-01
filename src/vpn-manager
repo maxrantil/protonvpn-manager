@@ -25,6 +25,33 @@ log_message() {
     }
 }
 
+# Initialize log file with proper permissions
+# Creates log file with world-writable permissions for multi-user access
+# Verifies and repairs permissions on existing files
+# Returns: 0 on success, 1 on failure
+initialize_log_file() {
+    local log_file="/tmp/vpn_simple.log"
+    local required_perms="666"
+
+    # Create file if it doesn't exist
+    if [[ ! -f "$log_file" ]]; then
+        touch "$log_file" 2>/dev/null || return 1
+    fi
+
+    # Verify and set permissions (idempotent - repairs existing files)
+    local current_perms
+    current_perms=$(stat -c %a "$log_file" 2>/dev/null) || return 1
+
+    if [[ "$current_perms" != "$required_perms" ]]; then
+        chmod "$required_perms" "$log_file" 2>/dev/null || {
+            echo "[WARN] Cannot set log permissions to $required_perms (current: $current_perms)" >&2
+            return 0  # Continue with degraded permissions rather than failing
+        }
+    fi
+
+    return 0
+}
+
 # Enhanced logging function for VPN events
 # Usage: log_vpn_event "LEVEL" "message"
 # Levels: INFO, WARN, ERROR, DEBUG
@@ -33,6 +60,9 @@ log_vpn_event() {
     local message="$2"
     local log_file="/tmp/vpn_simple.log"
     local max_lines=1000
+
+    # Initialize log file if needed
+    initialize_log_file
 
     # Create log entry
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] [$level] $message" >> "$log_file" 2>/dev/null || {
