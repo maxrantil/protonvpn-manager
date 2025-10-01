@@ -13,6 +13,33 @@ LOCK_FILE="/tmp/vpn_connect.lock"
 # Source centralized error handling
 source "$VPN_DIR/vpn-error-handler"
 
+# Initialize log file with proper permissions
+# Creates log file with world-writable permissions for multi-user access
+# Verifies and repairs permissions on existing files
+# Returns: 0 on success, 1 on failure
+initialize_log_file() {
+    local log_file="/tmp/vpn_simple.log"
+    local required_perms="666"
+
+    # Create file if it doesn't exist
+    if [[ ! -f "$log_file" ]]; then
+        touch "$log_file" 2>/dev/null || return 1
+    fi
+
+    # Verify and set permissions (idempotent - repairs existing files)
+    local current_perms
+    current_perms=$(stat -c %a "$log_file" 2>/dev/null) || return 1
+
+    if [[ "$current_perms" != "$required_perms" ]]; then
+        chmod "$required_perms" "$log_file" 2>/dev/null || {
+            echo "[WARN] Cannot set log permissions to $required_perms (current: $current_perms)" >&2
+            return 0  # Continue with degraded permissions rather than failing
+        }
+    fi
+
+    return 0
+}
+
 # Simple notification function for basic feedback
 notify_event() {
     local event_type="$1"
@@ -467,6 +494,7 @@ connect_openvpn_profile() {
     log_message "Attempting OpenVPN connection to $profile_name"
 
     # Log to simple log file directly (avoid sourcing vpn-manager)
+    initialize_log_file
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] Connection attempt started: $profile_name" >> "/tmp/vpn_simple.log" 2>/dev/null || true
 
     # Clean state before connecting
@@ -504,6 +532,7 @@ connect_openvpn_profile() {
         if [[ $connection_established -eq 1 ]]; then
             echo -e "\033[1;32m✓ Successfully connected to OpenVPN $profile_name\033[0m"
             log_message "Successfully connected to OpenVPN $profile_name on attempt $attempt"
+            initialize_log_file
             echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] Connected successfully: $profile_name (attempt $attempt/$max_attempts)" >> "/tmp/vpn_simple.log" 2>/dev/null || true
 
             notify_event "connection_established" "$profile_name"
@@ -532,6 +561,7 @@ connect_openvpn_profile() {
 
     echo -e "\033[1;31m✗ Failed to connect to OpenVPN $profile_name after $max_attempts attempts\033[0m"
     log_message "Failed to connect to OpenVPN $profile_name after $max_attempts attempts"
+    initialize_log_file
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] [ERROR] Connection failed: $profile_name (all $max_attempts attempts exhausted)" >> "/tmp/vpn_simple.log" 2>/dev/null || true
     notify_event "connection_failed" "$profile_name"
 
