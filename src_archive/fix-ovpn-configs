@@ -174,8 +174,7 @@ check_files() {
     local files_needing_fix=0
     local files_already_fixed=0
 
-    # Use process substitution to avoid subshell and preserve variables
-    while IFS= read -r ovpn_file; do
+    find "$LOCATIONS_DIR" -name "*.ovpn" | while read -r ovpn_file; do
         if needs_fixing "$ovpn_file"; then
             echo -e "${YELLOW}NEEDS FIX:${NC} $(basename "$ovpn_file")"
             files_needing_fix=$((files_needing_fix + 1))
@@ -183,7 +182,7 @@ check_files() {
             echo -e "${GREEN}ALREADY OK:${NC} $(basename "$ovpn_file")"
             files_already_fixed=$((files_already_fixed + 1))
         fi
-    done < <(find "$LOCATIONS_DIR" -name "*.ovpn")
+    done
 
     echo
     echo -e "${BLUE}Check Summary:${NC}"

@@ -10,79 +10,16 @@ LOCK_FILE="/tmp/vpn_manager.lock"
 # Source centralized error handling
 source "$VPN_DIR/vpn-error-handler"
 
-# Simple notification function for basic feedback
-notify_event() {
-    local event_type="$1"
-    local arg1="${2:-}"
-    local arg2="${3:-}"
-    echo "[INFO] $event_type: $arg1 $arg2" >&2
-}
+# Load VPN integration system
+if [[ -f "$VPN_DIR/vpn-integration" ]]; then
+    source "$VPN_DIR/vpn-integration"
+fi
 
 log_message() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "$VPN_LOG_FILE" 2>/dev/null || {
         # Fallback if log file not writable
         echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >&2
     }
-}
-
-# Enhanced logging function for VPN events
-# Usage: log_vpn_event "LEVEL" "message"
-# Levels: INFO, WARN, ERROR, DEBUG
-log_vpn_event() {
-    local level="$1"
-    local message="$2"
-    local log_file="/tmp/vpn_simple.log"
-    local max_lines=1000
-
-    # Create log entry
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [$level] $message" >> "$log_file" 2>/dev/null || {
-        # Fallback to stderr if log file not writable
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')] [$level] $message" >&2
-        return 1
-    }
-
-    # Simple log rotation: keep last N lines
-    if [[ -f "$log_file" ]]; then
-        local line_count
-        line_count=$(wc -l < "$log_file" 2>/dev/null || echo 0)
-
-        if [[ $line_count -gt $max_lines ]]; then
-            # Keep last max_lines entries
-            if tail -n "$max_lines" "$log_file" > "${log_file}.tmp" 2>/dev/null; then
-                mv "${log_file}.tmp" "$log_file" 2>/dev/null || true
-            fi
-        fi
-    fi
-}
-
-# View recent log entries
-# Usage: view_logs [lines]
-view_logs() {
-    local num_lines="${1:-50}"
-    local log_file="/tmp/vpn_simple.log"
-
-    if [[ ! -f "$log_file" ]]; then
-        echo "No log file found at $log_file"
-        return 1
-    fi
-
-    echo -e "\033[1;36m╔════════════════════════════════════════╗\033[0m"
-    echo -e "\033[1;36m║         VPN Log Entries                ║\033[0m"
-    echo -e "\033[1;36m╚════════════════════════════════════════╝\033[0m"
-    echo
-
-    tail -n "$num_lines" "$log_file" | while IFS= read -r line; do
-        # Color code by log level
-        if [[ "$line" =~ \[ERROR\] ]]; then
-            echo -e "\033[1;31m$line\033[0m"  # Red for errors
-        elif [[ "$line" =~ \[WARN\] ]]; then
-            echo -e "\033[1;33m$line\033[0m"  # Yellow for warnings
-        elif [[ "$line" =~ \[INFO\] ]]; then
-            echo -e "\033[1;32m$line\033[0m"  # Green for info
-        else
-            echo "$line"  # Default for debug/other
-        fi
-    done
 }
 
 get_cached_external_ip() {
@@ -301,11 +238,9 @@ show_status() {
 stop_vpn() {
     echo -e "\033[1;33mStopping VPN connection...\033[0m"
     log_message "VPN stop requested"
-    log_vpn_event "INFO" "VPN disconnect requested by user"
 
     if ! is_vpn_running; then
         echo -e "\033[1;33mVPN is not currently running\033[0m"
-        log_vpn_event "INFO" "Disconnect called but VPN was not running"
         cleanup_files
         return 0
     fi
@@ -326,7 +261,6 @@ stop_vpn() {
         fi
 
         if [[ "$kill_success" == "true" ]]; then
-            log_vpn_event "INFO" "VPN process (PID: $pid) termination initiated"
             local count=0
             # Wait for process to terminate, using ps check for root processes
             while [[ $count -lt 10 ]]; do
@@ -341,7 +275,6 @@ stop_vpn() {
             # If still running, try KILL signal
             if ps -p "$pid" >/dev/null 2>&1; then
                 echo "Process still running, sending KILL signal"
-                log_vpn_event "WARN" "VPN process required KILL signal (PID: $pid)"
                 if ! kill -KILL "$pid" 2>/dev/null; then
                     sudo kill -KILL "$pid" 2>/dev/null || true
                 fi
@@ -355,12 +288,10 @@ stop_vpn() {
         if is_vpn_running; then
             process_error "$COMP_VPN_MANAGER" "stop VPN process" "Process $pid refused to terminate gracefully" "Try 'vpn kill-all' or manual process termination"
             log_message "Failed to stop VPN process $pid"
-            log_vpn_event "ERROR" "VPN process refused to terminate (PID: $pid)"
             return 1
         else
             echo -e "\033[1;32m✓ VPN process stopped successfully\033[0m"
             log_message "VPN process $pid stopped successfully"
-            log_vpn_event "INFO" "VPN disconnected successfully (PID: $pid)"
         fi
     fi
 
@@ -928,12 +859,9 @@ case "$1" in
             2) echo -e "\033[1;33m○ Process health: NO PROCESSES RUNNING\033[0m" ;;
         esac
         ;;
-    "logs"|"log"|"l")
-        view_logs "${2:-50}"
-        ;;
     *)
         echo "VPN Manager - Process Management"
-        echo "Usage: $0 {status|stop|kill-all|cleanup|emergency-reset|health|logs}"
+        echo "Usage: $0 {status|stop|kill-all|cleanup|emergency-reset|health}"
         echo ""
         echo "Commands:"
         echo "  status          - Show VPN connection status"
@@ -942,7 +870,6 @@ case "$1" in
         echo "  cleanup         - Cleanup VPN processes and routes (safe)"
         echo "  emergency-reset - Emergency network reset (restarts NetworkManager)"
         echo "  health          - Check OpenVPN process health"
-        echo "  logs [lines]    - View recent log entries (default: 50)"
         exit 1
         ;;
 esac

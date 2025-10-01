@@ -1,4 +1,53 @@
-# Development Guidelines
+# VPN Manager Development Guidelines
+
+## 🎯 PROJECT PURPOSE & PHILOSOPHY
+
+### **CORE MISSION**
+This is a **simple, focused VPN management tool** for Artix/Arch Linux that follows the Unix philosophy: **"Do one thing and do it right."**
+
+### **WHAT IT DOES**
+- Connects to VPN servers intelligently (performance-based selection)
+- Manages OpenVPN processes safely (no multiple processes, proper cleanup)
+- Provides clear status information (connection state, external IP, performance)
+- Tests server performance for optimal selection
+- Handles configuration file validation and fixing
+
+### **WHAT IT DOES NOT DO**
+❌ **Enterprise features** (APIs, WebSocket endpoints, audit logging)
+❌ **Complex security frameworks** (beyond basic input validation)
+❌ **Background services** (unless absolutely essential)
+❌ **WCAG compliance** (accessibility features)
+❌ **Configuration management systems** (complex TOML parsing, inheritance)
+❌ **Health monitoring dashboards** (beyond basic status)
+❌ **Database encryption** (simple file-based storage only)
+❌ **Notification management systems** (basic notifications only)
+
+### **ARCHITECTURAL PRINCIPLES**
+1. **Simplicity First**: Prefer simple solutions over clever ones
+2. **Core Components Only**: Currently 6 components (~2,800 lines total)
+3. **No Feature Creep**: Resist adding "nice to have" features
+4. **Performance Over Features**: Fast, reliable VPN connections matter most
+5. **Maintainability**: Code should be readable and debuggable
+
+### **DEVELOPMENT PHILOSOPHY**
+- **Option A (Default)**: Maintain simplicity - only fix bugs and critical security issues
+- **Option B (Selective)**: Add only essential missing pieces with careful consideration
+- **Never Option C**: Don't build enterprise features - they're archived for a reason
+
+### **FUTURE SESSION GUIDANCE**
+If a future Claude session suggests adding:
+- API servers, monitoring dashboards, or enterprise security
+- Complex configuration systems or background services
+- Accessibility frameworks or audit logging
+
+**STOP** and refer to this section. Those features were intentionally removed in September 2025 for over-engineering.
+
+### **BRANCH STRATEGY**
+- `vpn-simple`: Main development branch (simplified version)
+- `master`: Enterprise version (archived, preserved for reference)
+- `src_archive/`: All removed enterprise components (24 components, ~10,500 lines)
+
+---
 
 ## 🚨 QUICK START CHECKLIST
 
