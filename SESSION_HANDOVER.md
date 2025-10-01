@@ -54,7 +54,22 @@ Total lines: ~3,100 (added 163 lines for fix + tests)
 
 ## Next Available Issues
 
-**Issue #46** - Lock file race condition (TOCTOU vulnerability) ⭐ NEXT
+**Issue #53** - 8-agent comprehensive codebase analysis ⭐ RECOMMENDED NEXT
+- Priority: HIGH
+- Type: Maintenance / Code health check
+- Estimated: 2-3 hours
+- Description: Run all 8 specialized agents to validate simplified codebase
+- Purpose: Identify maintenance priorities after major simplification
+- Output: Consolidated report + new issues for findings
+
+**Issue #52** - Remove enterprise runit services
+- Priority: MEDIUM
+- Type: Cleanup
+- Estimated: 60-90 minutes
+- Description: Remove 4 unused runit services (sv/) from simplified codebase
+- Impact: ~300-400 lines removed, reduced complexity
+
+**Issue #46** - Lock file race condition (TOCTOU vulnerability)
 - Priority: MEDIUM
 - Type: Security bug fix
 - Estimated: 45 minutes
