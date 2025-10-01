@@ -25,6 +25,25 @@ log_message() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "$CONNECTION_LOG"
 }
 
+validate_credentials_permissions() {
+    if [[ ! -f "$CREDENTIALS_FILE" ]]; then
+        return 1
+    fi
+
+    local perms
+    perms=$(stat -c %a "$CREDENTIALS_FILE" 2>/dev/null)
+
+    if [[ "$perms" != "600" ]]; then
+        echo "ERROR: Insecure credentials file permissions: $perms" >&2
+        echo "  Credentials file: $CREDENTIALS_FILE" >&2
+        echo "  Current permissions: $perms (should be 600)" >&2
+        echo "  Fix with: chmod 600 $CREDENTIALS_FILE" >&2
+        return 1
+    fi
+
+    return 0
+}
+
 detect_protocol() {
     local profile_path="$1"
 
@@ -428,6 +447,11 @@ connect_openvpn_profile() {
 
     if [[ ! -f "$CREDENTIALS_FILE" ]]; then
         file_not_found_error "$COMP_VPN_CONNECTOR" "$CREDENTIALS_FILE" "Create file with: echo -e 'username\\npassword' > $CREDENTIALS_FILE"
+        return 1
+    fi
+
+    # Validate credentials file permissions before use
+    if ! validate_credentials_permissions; then
         return 1
     fi
 
