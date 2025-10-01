@@ -636,7 +636,20 @@ full_cleanup() {
     # Use hierarchical process cleanup
     if hierarchical_process_cleanup "false"; then
         echo "Cleaning up temporary files..."
-        rm -f /tmp/vpn_*.log /tmp/vpn_*.cache /tmp/vpn_*.lock 2>/dev/null || true
+        # Remove only connection-specific temp files (explicit list to avoid wildcards)
+        # Temporary files (removed on cleanup):
+        rm -f /tmp/vpn_connect.log 2>/dev/null || true         # Connection attempt log
+        rm -f /tmp/vpn_connect.lock 2>/dev/null || true        # Connection lock file
+        rm -f /tmp/vpn_manager_*.log 2>/dev/null || true       # Manager process logs
+        rm -f /tmp/vpn_external_ip_cache 2>/dev/null || true   # IP address cache
+        rm -f /tmp/vpn_performance.cache 2>/dev/null || true   # Performance test cache
+        # Preserved persistent files (NOT removed):
+        # - /tmp/vpn_service_state           (service configuration and state)
+        # - /tmp/vpn_last_state              (last connection state)
+        # - /tmp/vpn_statusbar_state         (status bar integration state)
+        # - /tmp/vpn_statusbar_last_signal   (status bar signal state)
+        # - /tmp/vpn_default_route.backup    (network route backup)
+        # - /tmp/vpn_simple.log              (primary application log file)
 
         cleanup_files
         cleanup_routes_light
