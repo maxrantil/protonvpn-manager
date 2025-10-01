@@ -42,6 +42,7 @@ show_help() {
     echo "  emergency-reset     - Emergency network reset (restarts NetworkManager)"
     echo "  health              - Check VPN process health"
     echo "  test                - Test VPN performance"
+    echo "  logs [lines]        - View recent log entries (default: 50 lines)"
     echo
     echo -e "\033[1;32mConfiguration:\033[0m"
     echo "  setup               - Initial VPN setup and configuration"
@@ -192,6 +193,14 @@ case "$1" in
     "health")
         if [[ -x "$VPN_MANAGER" ]]; then
             "$VPN_MANAGER" health
+        else
+            file_not_found_error "$COMP_VPN_MAIN" "$VPN_MANAGER" "Check installation and file permissions"
+            exit 1
+        fi
+        ;;
+    "logs"|"log")
+        if [[ -x "$VPN_MANAGER" ]]; then
+            "$VPN_MANAGER" logs "${2:-50}"
         else
             file_not_found_error "$COMP_VPN_MAIN" "$VPN_MANAGER" "Check installation and file permissions"
             exit 1
