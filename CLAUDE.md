@@ -61,6 +61,7 @@ If a future Claude session suggests adding:
 6. **Draft PR** (early visibility)
 7. **Agent Validation** (before marking ready)
 8. **Close Issue** (verify completion)
+9. **Session Handoff** (at natural stopping points - see Workflow Section 1)
 
 ---
 
@@ -136,6 +137,7 @@ Testing → PR Ready for Review → Merge → Deployment
 **5. Completion Phase:**
 
 - **Verify issue closure** after PR merge
+- **Complete session handoff** when work reaches natural stopping point (see Session Handoff below)
 
 ### Test-Driven Development (NON-NEGOTIABLE)
 
@@ -145,6 +147,32 @@ Testing → PR Ready for Review → Merge → Deployment
 4. **NEVER** write production code without failing test first
 
 **Required test types**: Unit, Integration, End-to-End (no exceptions without explicit authorization)
+
+### Session Handoff (After Issue Completion)
+
+**When to perform handoff:**
+- After completing one or more GitHub issues
+- At natural stopping points (end of phase, major feature complete)
+- Before switching focus areas or extended breaks
+
+**Handoff Checklist:**
+1. ✅ All issues closed, PRs merged, feature branches deleted
+2. ✅ Documentation updated (phase docs consolidated, README current)
+3. ✅ All tests passing, pre-commit hooks satisfied
+4. ✅ Clean working directory on `master` branch
+5. ✅ Temporary session files archived/removed from root
+6. ✅ SESSION_HANDOVER.md created/updated (see template)
+7. ✅ Generate 5-10 line startup prompt for next session
+
+**Template location:** `docs/templates/SESSION-HANDOFF-TEMPLATE.md`
+
+**Key handover document:** `SESSION_HANDOVER.md` (root directory)
+- Completed work summary (issues, PRs, docs)
+- Current project state (tests, branches, agent validations)
+- Next session priorities (immediate steps, roadmap)
+- Startup prompt (5-10 lines for next Claude session)
+
+**After handoff:** Commit SESSION_HANDOVER.md, verify clean state, suggest new session start
 
 ---
 
