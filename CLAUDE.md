@@ -43,9 +43,11 @@ If a future Claude session suggests adding:
 **STOP** and refer to this section. Those features were intentionally removed in September 2025 for over-engineering.
 
 ### **BRANCH STRATEGY**
-- `vpn-simple`: Main development branch (simplified version)
-- `master`: Enterprise version (archived, preserved for reference)
+- `master`: Main development branch (simplified version) - **DEFAULT BRANCH**
+- `enterprise-archive`: Enterprise version (archived, preserved for reference only)
 - `src_archive/`: All removed enterprise components (24 components, ~10,500 lines)
+
+**Note:** The simplified version (formerly `vpn-simple`) is now the main `master` branch. All development happens on `master`.
 
 ---
 
