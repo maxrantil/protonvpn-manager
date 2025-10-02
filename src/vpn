@@ -47,8 +47,6 @@ show_help() {
     echo -e "\033[1;32mConfiguration:\033[0m"
     echo "  setup               - Initial VPN setup and configuration"
     echo "  update              - Update VPN profiles"
-    echo "  download-configs    - Auto-download ProtonVPN configs"
-    echo "  service             - Manage background updater service"
     echo "  help                - Show this help message"
     echo
     echo -e "\033[1;33mExamples:\033[0m"
@@ -100,26 +98,7 @@ case "$1" in
         ;;
     "status"|"s")
         if [[ -x "$VPN_MANAGER" ]]; then
-            # Enhanced status dashboard with accessibility support
-            case "$2" in
-                "--accessible")
-                    "$VPN_MANAGER" status-accessible
-                    ;;
-                "--enhanced")
-                    "$VPN_MANAGER" status-enhanced
-                    ;;
-                "--dashboard")
-                    "$VPN_MANAGER" status-dashboard
-                    ;;
-                "--format="*)
-                    format="${2#--format=}"
-                    "$VPN_MANAGER" status-format "$format"
-                    ;;
-                *)
-                    # Default enhanced format with WCAG compliance
-                    "$VPN_MANAGER" status-wcag
-                    ;;
-            esac
+            "$VPN_MANAGER" status
         else
             file_not_found_error "$COMP_VPN_MAIN" "$VPN_MANAGER" "Check installation and file permissions"
             exit 1
@@ -224,78 +203,6 @@ case "$1" in
         echo -e "\033[1;33mVPN Profile Update\033[0m"
         echo "Download latest .ovpn files from your VPN provider"
         echo "Place them in: $LOCATIONS_DIR"
-        echo ""
-        echo "For automated downloads, use: vpn download-configs"
-        ;;
-    "download-configs")
-        DOWNLOAD_ENGINE="$VPN_DIR/download-engine"
-        if [[ -x "$DOWNLOAD_ENGINE" ]]; then
-            case "${2:-status}" in
-                "help"|"h")
-                    "$DOWNLOAD_ENGINE" help
-                    ;;
-                "status"|"s")
-                    "$DOWNLOAD_ENGINE" status
-                    ;;
-                "country")
-                    if [[ -n "$3" ]]; then
-                        "$DOWNLOAD_ENGINE" download-country "$3" "${@:4}"
-                    else
-                        echo "Usage: vpn download-configs country <CC> [options]"
-                        echo "Options:"
-                        echo "  --test-mode              Use test mode (no real downloads)"
-                        echo "  --protocol=udp|tcp       Choose protocol (default: udp)"
-                        echo "  --config-type=TYPE       Choose type (country|standard|secure-core)"
-                        echo ""
-                        echo "Examples:"
-                        echo "  vpn download-configs country dk"
-                        echo "  vpn download-configs country dk --test-mode"
-                        echo "  vpn download-configs country dk --protocol=tcp"
-                        echo "  vpn download-configs country dk --config-type=secure-core"
-                    fi
-                    ;;
-                "all")
-                    "$DOWNLOAD_ENGINE" download-all "${@:3}"
-                    ;;
-                *)
-                    "$DOWNLOAD_ENGINE" "$2" "${@:3}"
-                    ;;
-            esac
-        else
-            echo "Error: Download engine not found at $DOWNLOAD_ENGINE"
-            echo "Please ensure Phase 2 implementation is complete."
-            exit 1
-        fi
-        ;;
-    "service")
-        SERVICE_MANAGER="$VPN_DIR/proton-service"
-        if [[ -x "$SERVICE_MANAGER" ]]; then
-            case "${2:-help}" in
-                "help"|"h")
-                    "$SERVICE_MANAGER" help
-                    ;;
-                "start"|"stop"|"restart"|"status"|"logs"|"install"|"uninstall"|"update-now")
-                    "$SERVICE_MANAGER" "$2" "${@:3}"
-                    ;;
-                "config")
-                    if [[ $# -lt 4 ]]; then
-                        echo "Usage: vpn service config --interval 3600"
-                        echo "       vpn service config --notify on"
-                        exit 1
-                    fi
-                    "$SERVICE_MANAGER" config "$3" "$4"
-                    ;;
-                *)
-                    echo "Error: Unknown service command '$2'"
-                    echo "Use 'vpn service help' for usage information"
-                    exit 1
-                    ;;
-            esac
-        else
-            echo "Error: Service manager not found at $SERVICE_MANAGER"
-            echo "Please ensure Phase 4 implementation is complete."
-            exit 1
-        fi
         ;;
     "help"|"h"|"")
         show_help
