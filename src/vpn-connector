@@ -2,13 +2,36 @@
 # ABOUTME: VPN connection establishment and profile management for Artix/Arch Linux
 # ABOUTME: Handles server selection, connection attempts, and performance testing
 
-VPN_DIR="$(dirname "$(realpath "$0")")"
-PROJECT_ROOT="$(dirname "$VPN_DIR")"
-LOCATIONS_DIR="$PROJECT_ROOT/locations"
-CREDENTIALS_FILE="$PROJECT_ROOT/credentials.txt"
-PERFORMANCE_CACHE="/tmp/vpn_performance.cache"
-CONNECTION_LOG="/tmp/vpn_connect.log"
+# Configuration paths
+CONFIG_DIR="${VPN_CONFIG_DIR:-$HOME/.config/vpn}"
+LOCATIONS_DIR="$CONFIG_DIR/locations"
+CREDENTIALS_FILE="$CONFIG_DIR/vpn-credentials.txt"
+
+# Script locations
+if [[ -f "/usr/local/bin/vpn-error-handler" ]]; then
+    VPN_DIR="/usr/local/bin"
+else
+    VPN_DIR="$(dirname "$(realpath "$0")")"
+fi
+
+# Create secure log directory
+LOG_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/vpn"
+mkdir -p "$LOG_DIR" 2>/dev/null
+
+PERFORMANCE_CACHE="$LOG_DIR/vpn_performance.cache"
+CONNECTION_LOG="$LOG_DIR/vpn_connect.log"
 LOCK_FILE="/tmp/vpn_connect.lock"
+
+# Ensure log files have secure permissions
+for logfile in "$CONNECTION_LOG" "$PERFORMANCE_CACHE"; do
+    if [[ -L "$logfile" ]]; then
+        rm -f "$logfile"
+    fi
+    if [[ ! -f "$logfile" ]]; then
+        touch "$logfile"
+    fi
+    chmod 644 "$logfile"
+done
 
 # Source centralized error handling
 source "$VPN_DIR/vpn-error-handler"
@@ -431,6 +454,27 @@ connect_openvpn_profile() {
         return 1
     fi
 
+    # Security: Validate credentials file
+    if [[ -L "$CREDENTIALS_FILE" ]]; then
+        echo -e "\033[1;31mERROR: Credentials file is a symlink - security risk!\033[0m"
+        return 1
+    fi
+
+    # Check ownership
+    local file_owner
+    file_owner=$(stat -c "%U" "$CREDENTIALS_FILE" 2>/dev/null)
+    if [[ "$file_owner" != "$(whoami)" ]]; then
+        echo -e "\033[1;31mERROR: Credentials file not owned by current user!\033[0m"
+        return 1
+    fi
+
+    # Fix permissions if needed
+    local file_perms
+    file_perms=$(stat -c "%a" "$CREDENTIALS_FILE" 2>/dev/null)
+    if [[ "$file_perms" != "600" ]]; then
+        chmod 600 "$CREDENTIALS_FILE"
+    fi
+
     # Check for existing VPN processes (any protocol)
     if ! check_vpn_processes; then
         return 1
@@ -442,8 +486,8 @@ connect_openvpn_profile() {
     echo -e "\033[1;33mConnecting to OpenVPN profile: $profile_name...\033[0m"
     log_message "Attempting OpenVPN connection to $profile_name"
 
-    # Log to simple log file directly (avoid sourcing vpn-manager)
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] Connection attempt started: $profile_name" >> "/tmp/vpn_simple.log" 2>/dev/null || true
+    # Log to secure log file
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] Connection attempt started: $profile_name" >> "$CONNECTION_LOG" 2>/dev/null || true
 
     # Clean state before connecting
     "$VPN_DIR/vpn-manager" cleanup >/dev/null 2>&1
@@ -458,7 +502,7 @@ connect_openvpn_profile() {
             --auth-user-pass "$CREDENTIALS_FILE" \
             --daemon \
             --writepid /var/run/openvpn.pid \
-            --log /tmp/openvpn.log \
+            --log "$LOG_DIR/openvpn.log" \
             --verb 3
 
         # Wait for connection to establish with better detection
@@ -480,7 +524,7 @@ connect_openvpn_profile() {
         if [[ $connection_established -eq 1 ]]; then
             echo -e "\033[1;32m✓ Successfully connected to OpenVPN $profile_name\033[0m"
             log_message "Successfully connected to OpenVPN $profile_name on attempt $attempt"
-            echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] Connected successfully: $profile_name (attempt $attempt/$max_attempts)" >> "/tmp/vpn_simple.log" 2>/dev/null || true
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] Connected successfully: $profile_name (attempt $attempt/$max_attempts)" >> "$CONNECTION_LOG" 2>/dev/null || true
 
             notify_event "connection_established" "$profile_name"
             pkill -RTMIN+4 dwmblocks 2>/dev/null || true
@@ -508,7 +552,7 @@ connect_openvpn_profile() {
 
     echo -e "\033[1;31m✗ Failed to connect to OpenVPN $profile_name after $max_attempts attempts\033[0m"
     log_message "Failed to connect to OpenVPN $profile_name after $max_attempts attempts"
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [ERROR] Connection failed: $profile_name (all $max_attempts attempts exhausted)" >> "/tmp/vpn_simple.log" 2>/dev/null || true
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [ERROR] Connection failed: $profile_name (all $max_attempts attempts exhausted)" >> "$CONNECTION_LOG" 2>/dev/null || true
     notify_event "connection_failed" "$profile_name"
 
     return 1
