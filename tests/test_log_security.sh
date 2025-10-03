@@ -29,6 +29,7 @@ fi
 echo ""
 echo "=== Test 2: Log file permissions ==="
 # Source vpn-manager to trigger log creation
+# shellcheck disable=SC2030
 (
     export XDG_STATE_HOME="$TEST_DIR/.local/state"
     source ../src/vpn-manager 2>/dev/null || true
@@ -57,6 +58,7 @@ ln -s "$ATTACKER_FILE" "$LOG_FILE"
 echo "SENSITIVE" > "$ATTACKER_FILE"
 
 # Source again (should remove symlink)
+# shellcheck disable=SC2031
 (
     export XDG_STATE_HOME="$TEST_DIR/.local/state"
     source ../src/vpn-manager 2>/dev/null || true
