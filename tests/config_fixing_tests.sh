@@ -300,19 +300,32 @@ test_preserve_complete_config() {
 test_real_config_patterns() {
     log "Testing real config reliability patterns"
 
-    if [[ ! -d "$LOCATIONS_DIR" ]]; then
-        log "SKIP: No locations directory found for real config testing"
+    # Use the new config directory structure
+    local CONFIG_DIR="${VPN_CONFIG_DIR:-$HOME/.config/vpn}"
+    local REAL_LOCATIONS="$CONFIG_DIR/locations"
+
+    if [[ ! -d "$REAL_LOCATIONS" ]]; then
+        log "SKIP: No locations directory found at $REAL_LOCATIONS"
         return 0
     fi
 
     # Test known working configs (should show ALREADY OK)
     local working_configs=("se-65.protonvpn.udp.ovpn" "se-66.protonvpn.udp.ovpn")
+
+    # Check if any real configs exist
+    local config_count
+    config_count=$(find "$REAL_LOCATIONS" -name "*.ovpn" 2>/dev/null | wc -l)
+    if [[ "$config_count" -eq 0 ]]; then
+        log "SKIP: No .ovpn files found in $REAL_LOCATIONS"
+        return 0
+    fi
+
     local check_output
-    check_output=$("$FIX_TOOL" --check 2>/dev/null)
+    check_output=$(env LOCATIONS_DIR="$REAL_LOCATIONS" "$FIX_TOOL" --check 2>/dev/null)
 
     local all_detected=true
     for config in "${working_configs[@]}"; do
-        if [[ -f "$LOCATIONS_DIR/$config" ]]; then
+        if [[ -f "$REAL_LOCATIONS/$config" ]]; then
             # Remove color codes and check for ALREADY OK pattern
             if ! echo "$check_output" | sed 's/\x1b\[[0-9;]*m//g' | grep -q "ALREADY OK.*$config"; then
                 log "ERROR: Working config $config not detected as ALREADY OK"
@@ -322,7 +335,7 @@ test_real_config_patterns() {
     done
 
     # Test se-au-01 (known working but detected as NEEDS FIX - this is expected)
-    if [[ -f "$LOCATIONS_DIR/se-au-01.protonvpn.udp.ovpn" ]]; then
+    if [[ -f "$REAL_LOCATIONS/se-au-01.protonvpn.udp.ovpn" ]]; then
         if echo "$check_output" | grep -q "se-au-01.*NEEDS FIX"; then
             log "INFO: se-au-01 detected as NEEDS FIX (expected - works without stability settings)"
         fi

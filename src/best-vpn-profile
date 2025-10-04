@@ -1,32 +1,30 @@
 #!/bin/bash
-# ABOUTME: Server performance testing script for Phase 4.2
-# ABOUTME: Minimal implementation to pass TDD tests
+# ABOUTME: Server performance testing script - finds best VPN server
+# ABOUTME: Tests connection speed and selects optimal server
 
 set -euo pipefail
 
-# Security: Source secure configuration system (NO hardcoded paths)
-readonly SECURE_CONFIG_MANAGER="/usr/local/bin/secure-config-manager"
+# Configuration paths
+CONFIG_DIR="${VPN_CONFIG_DIR:-$HOME/.config/vpn}"
+LOG_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/vpn"
+mkdir -p "$LOG_DIR" 2>/dev/null
 
-if [[ -f "$SECURE_CONFIG_MANAGER" ]]; then
-    # shellcheck source=secure-config-manager
-    source "$SECURE_CONFIG_MANAGER"
-    load_secure_config || {
-        echo "ERROR: Failed to load secure configuration" >&2
-        exit 1
-    }
-    readonly VPN_LOCATIONS="${VPN_VAR_DIR:-/var/lib/protonvpn}/locations"
-    readonly CACHE_FILE="${VPN_VAR_DIR:-/var/lib/protonvpn}/cache/performance.cache"
-else
-    # Fallback for development/testing (detect current directory)
-    VPN_DIR="$(dirname "$(realpath "$0")")"
-    readonly VPN_LOCATIONS="$(dirname "$VPN_DIR")/locations"
-    readonly CACHE_FILE="/tmp/vpn_performance.cache"
-    echo "WARNING: Using development mode - secure configuration not found" >&2
+readonly VPN_LOCATIONS="$CONFIG_DIR/locations"
+readonly CACHE_FILE="$LOG_DIR/vpn_performance.cache"
+
+# Ensure cache file has secure permissions
+if [[ -L "$CACHE_FILE" ]]; then
+    rm -f "$CACHE_FILE"
+fi
+if [[ -f "$CACHE_FILE" ]]; then
+    chmod 644 "$CACHE_FILE"
 fi
 
-# Load VPN integration system
-if [[ -f "$VPN_DIR/vpn-integration" ]]; then
-    source "$VPN_DIR/vpn-integration"
+# Script locations
+if [[ -f "/usr/local/bin/vpn-error-handler" ]]; then
+    VPN_DIR="/usr/local/bin"
+else
+    VPN_DIR="$(dirname "$(realpath "$0")")"
 fi
 
 # Main command handler
