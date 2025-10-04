@@ -4,11 +4,9 @@
 
 set -euo pipefail
 
-# Configuration
-readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-readonly PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
-# Allow override for testing via environment variable
-readonly LOCATIONS_DIR="${LOCATIONS_DIR:-$PROJECT_ROOT/locations}"
+# Configuration paths
+CONFIG_DIR="${VPN_CONFIG_DIR:-$HOME/.config/vpn}"
+readonly LOCATIONS_DIR="${LOCATIONS_DIR:-$CONFIG_DIR/locations}"
 readonly BACKUP_DIR="${LOCATIONS_DIR}/backups"
 
 # Colors

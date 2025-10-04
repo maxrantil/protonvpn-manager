@@ -2,10 +2,33 @@
 # ABOUTME: VPN process and connection management script for Artix/Arch Linux
 # ABOUTME: Handles OpenVPN process lifecycle, status checking, and cleanup operations
 
-VPN_DIR="$(dirname "$(realpath "$0")")"
+# Script locations
+if [[ -f "/usr/local/bin/vpn-error-handler" ]]; then
+    VPN_DIR="/usr/local/bin"
+else
+    VPN_DIR="$(dirname "$(realpath "$0")")"
+fi
+
+# Create secure log directory
+LOG_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/vpn"
+mkdir -p "$LOG_DIR" 2>/dev/null
+
 VPN_PID_FILE="/var/run/openvpn.pid"
-VPN_LOG_FILE="/tmp/vpn_manager_$(id -u).log"
+VPN_LOG_FILE="$LOG_DIR/vpn_manager.log"
 LOCK_FILE="/tmp/vpn_manager.lock"
+
+# Security: Check for symlinks in log file path
+if [[ -L "$VPN_LOG_FILE" ]]; then
+    rm -f "$VPN_LOG_FILE"
+fi
+
+# Ensure log file has secure permissions
+if [[ ! -f "$VPN_LOG_FILE" ]]; then
+    touch "$VPN_LOG_FILE"
+    chmod 644 "$VPN_LOG_FILE"
+elif [[ "$(stat -c '%a' "$VPN_LOG_FILE" 2>/dev/null)" != "644" ]]; then
+    chmod 644 "$VPN_LOG_FILE"
+fi
 
 # Source centralized error handling
 source "$VPN_DIR/vpn-error-handler"
@@ -116,6 +139,28 @@ validate_credentials() {
         return 1
     fi
 
+    # Security: Check if file is a symlink (prevent symlink attacks)
+    if [[ -L "$credentials_file" ]]; then
+        log_message "ERROR: Credentials file is a symlink - security risk!"
+        return 1
+    fi
+
+    # Security: Check file ownership (must be owned by current user)
+    local file_owner
+    file_owner=$(stat -c "%U" "$credentials_file" 2>/dev/null)
+    if [[ "$file_owner" != "$(whoami)" ]]; then
+        log_message "ERROR: Credentials file not owned by current user!"
+        return 1
+    fi
+
+    # Security: Check file permissions (must be 600)
+    local file_perms
+    file_perms=$(stat -c "%a" "$credentials_file" 2>/dev/null)
+    if [[ "$file_perms" != "600" ]]; then
+        log_message "WARNING: Fixing insecure credentials file permissions"
+        chmod 600 "$credentials_file"
+    fi
+
     # Check for basic credential structure (username and password lines)
     local line_count
     line_count=$(wc -l < "$credentials_file" 2>/dev/null || echo 0)
@@ -131,7 +176,7 @@ validate_credentials() {
         return 1
     fi
 
-    log_message "Credential validation: basic credentials structure validated"
+    log_message "Credential validation: security checks passed"
     return 0
 }
 
