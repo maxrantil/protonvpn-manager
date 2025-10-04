@@ -2,11 +2,21 @@
 # ABOUTME: Main VPN management CLI interface script for Artix/Arch Linux
 # ABOUTME: Routes commands to appropriate VPN management sub-scripts
 
-VPN_DIR="$(dirname "$(realpath "$0")")"
-PROJECT_ROOT="$(dirname "$VPN_DIR")"
-VPN_MANAGER="$VPN_DIR/vpn-manager"
-VPN_CONNECTOR="$VPN_DIR/vpn-connector"
-LOCATIONS_DIR="$PROJECT_ROOT/locations"
+# Configuration paths
+CONFIG_DIR="${VPN_CONFIG_DIR:-$HOME/.config/vpn}"
+LOCATIONS_DIR="$CONFIG_DIR/locations"
+
+# Script locations (when installed to /usr/local/bin)
+if [[ -f "/usr/local/bin/vpn-manager" ]]; then
+    VPN_MANAGER="/usr/local/bin/vpn-manager"
+    VPN_CONNECTOR="/usr/local/bin/vpn-connector"
+    VPN_DIR="/usr/local/bin"
+else
+    # Development mode - use local paths
+    VPN_DIR="$(dirname "$(realpath "$0")")"
+    VPN_MANAGER="$VPN_DIR/vpn-manager"
+    VPN_CONNECTOR="$VPN_DIR/vpn-connector"
+fi
 
 # Source centralized error handling
 source "$VPN_DIR/vpn-error-handler"
