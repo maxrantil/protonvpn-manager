@@ -43,3 +43,12 @@ venv/
 *.orig
 locations/backups/
 locations/*.ovpn.original
+
+# Development workflow files (keep local)
+CLAUDE.md
+AGENT_FEEDBACK.md
+AGENT_REVIEW.md
+*SESSION*.md
+*HANDOFF*.md
+*HANDOVER*.md
+docs/implementation/
