@@ -10,8 +10,9 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# Configuration
-VPN_DIR="$HOME/workspace/claude-code/vpn"
+# Configuration - auto-detect project directory
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+VPN_DIR="$SCRIPT_DIR"
 LOCATIONS_DIR="$VPN_DIR/locations"
 SRC_DIR="$VPN_DIR/src"
 
