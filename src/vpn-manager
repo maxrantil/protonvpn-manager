@@ -421,21 +421,111 @@ validate_openvpn_process() {
     [[ "$cmd_line" =~ ^openvpn.*--config ]]
 }
 
+# Discover all VPN-related processes including zombies
+# Returns: newline-separated list of PIDs
+validate_and_discover_processes() {
+    local openvpn_pids zombie_pids pids
+
+    # Find running OpenVPN processes
+    openvpn_pids=$(pgrep -f "openvpn.*--config" 2>/dev/null || true)
+
+    # Find zombie OpenVPN processes
+    zombie_pids=$(ps -eo pid,stat,comm | awk '$2~/^Z/ && $3=="openvpn" {print $1}' 2>/dev/null || true)
+
+    # Combine and deduplicate PIDs
+    pids=$(echo -e "$openvpn_pids\n$zombie_pids" | grep -v '^$' | sort -u || true)
+
+    echo "$pids"
+}
+
+# Attempt graceful termination using TERM signal
+# Args: $1 = newline-separated PIDs
+# Returns: 0 on success
+attempt_graceful_termination() {
+    local pids="$1"
+
+    while IFS= read -r pid; do
+        if [[ -z "$pid" ]]; then
+            continue
+        fi
+        if validate_openvpn_process "$pid"; then
+            echo "  Sending TERM signal to process $pid..."
+            kill -TERM "$pid" 2>/dev/null || true
+        else
+            log_message "SECURITY: Skipped invalid/non-OpenVPN PID $pid" "$VPN_LOG_FILE"
+        fi
+    done <<< "$pids"
+
+    sleep 3
+}
+
+# Attempt forceful termination using KILL signal
+# Args: $1 = newline-separated PIDs
+# Returns: 0 on success
+attempt_forceful_termination() {
+    local pids="$1"
+
+    while IFS= read -r pid; do
+        if [[ -z "$pid" ]]; then
+            continue
+        fi
+        if validate_openvpn_process "$pid"; then
+            echo "  Sending KILL signal to process $pid..."
+            kill -KILL "$pid" 2>/dev/null || true
+        else
+            log_message "SECURITY: Skipped invalid/non-OpenVPN PID $pid" "$VPN_LOG_FILE"
+        fi
+    done <<< "$pids"
+
+    sleep 2
+}
+
+# Attempt termination using sudo KILL signal
+# Args: $1 = newline-separated PIDs
+# Returns: 0 on success
+attempt_sudo_termination() {
+    local pids="$1"
+
+    while IFS= read -r pid; do
+        if [[ -z "$pid" ]]; then
+            continue
+        fi
+        if validate_openvpn_process "$pid"; then
+            echo "  Using sudo KILL on process $pid..."
+            sudo kill -KILL "$pid" 2>/dev/null || true
+        else
+            log_message "SECURITY: Skipped invalid/non-OpenVPN PID $pid" "$VPN_LOG_FILE"
+        fi
+    done <<< "$pids"
+
+    sleep 2
+}
+
+# Verify that all VPN processes have been cleaned up
+# Returns: 0 if no processes remain, 1 otherwise
+verify_cleanup_success() {
+    local remaining_pids
+    remaining_pids=$(pgrep -f "openvpn.*--config" 2>/dev/null || true)
+
+    if [[ -z "$remaining_pids" ]]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
 hierarchical_process_cleanup() {
     local force="${1:-false}"
     local max_cleanup_time=30
-    local start_time=$(date +%s)
+    local start_time
+    start_time=$(date +%s)
 
     echo -e "\033[1;33mPerforming hierarchical VPN process cleanup...\033[0m"
     log_message "Hierarchical process cleanup requested (force=$force)" "$VPN_LOG_FILE"
 
-    # Enhanced process discovery with secure zombie detection
-    local pids openvpn_pids zombie_pids
-    openvpn_pids=$(pgrep -f "openvpn.*--config" 2>/dev/null || true)
-    zombie_pids=$(ps -eo pid,stat,comm | awk '$2~/^Z/ && $3=="openvpn" {print $1}' 2>/dev/null || true)
-
-    # Combine all VPN-related PIDs and remove duplicates
-    pids=$(echo -e "$openvpn_pids\n$zombie_pids" | grep -v '^$' | sort -u || true)
+    # Discover all VPN-related processes
+    local pids
+    pids=$(validate_and_discover_processes)
 
     if [[ -z "$pids" ]]; then
         echo -e "\033[1;32m✓ No VPN processes found to cleanup\033[0m"
@@ -452,11 +542,12 @@ hierarchical_process_cleanup() {
 
     echo "Target processes for cleanup: $(echo "$pids" | tr '\n' ' ')"
 
-    # Enhanced escalation levels with timeout and pattern matching
-    local escalation_levels=("TERM" "KILL" "sudo_KILL" "pkill_pattern")
+    # Try escalating termination methods
+    local escalation_levels=("graceful" "forceful" "sudo" "pattern")
 
     for level in "${escalation_levels[@]}"; do
-        local current_time=$(date +%s)
+        local current_time
+        current_time=$(date +%s)
         if [[ $((current_time - start_time)) -gt $max_cleanup_time ]]; then
             echo -e "\033[1;31mCleanup timeout reached (${max_cleanup_time}s), escalating to emergency mode\033[0m"
             break
@@ -465,40 +556,16 @@ hierarchical_process_cleanup() {
         echo "Cleanup escalation level: $level"
 
         case "$level" in
-            "TERM")
-                while IFS= read -r pid; do
-                    if validate_openvpn_process "$pid"; then
-                        echo "  Sending TERM signal to process $pid..."
-                        kill -TERM "$pid" 2>/dev/null || true
-                    else
-                        log_message "SECURITY: Skipped invalid/non-OpenVPN PID $pid" "$VPN_LOG_FILE"
-                    fi
-                done <<< "$pids"
-                sleep 3
+            "graceful")
+                attempt_graceful_termination "$pids"
                 ;;
-            "KILL")
-                while IFS= read -r pid; do
-                    if validate_openvpn_process "$pid"; then
-                        echo "  Sending KILL signal to process $pid..."
-                        kill -KILL "$pid" 2>/dev/null || true
-                    else
-                        log_message "SECURITY: Skipped invalid/non-OpenVPN PID $pid" "$VPN_LOG_FILE"
-                    fi
-                done <<< "$pids"
-                sleep 2
+            "forceful")
+                attempt_forceful_termination "$pids"
                 ;;
-            "sudo_KILL")
-                while IFS= read -r pid; do
-                    if validate_openvpn_process "$pid"; then
-                        echo "  Using sudo KILL on process $pid..."
-                        sudo kill -KILL "$pid" 2>/dev/null || true
-                    else
-                        log_message "SECURITY: Skipped invalid/non-OpenVPN PID $pid" "$VPN_LOG_FILE"
-                    fi
-                done <<< "$pids"
-                sleep 2
+            "sudo")
+                attempt_sudo_termination "$pids"
                 ;;
-            "pkill_pattern")
+            "pattern")
                 echo "  Using validated PID-based process killing..."
                 # Only kill processes we've validated as OpenVPN
                 while IFS= read -r pid; do
@@ -514,24 +581,23 @@ hierarchical_process_cleanup() {
                 ;;
         esac
 
-        # Verify cleanup at this level
-        local remaining_pids
-        remaining_pids=$(pgrep -f "openvpn.*--config" 2>/dev/null || true)
-
-        if [[ -z "$remaining_pids" ]]; then
+        # Check if cleanup succeeded
+        if verify_cleanup_success; then
             echo -e "\033[1;32m✓ All VPN processes terminated at escalation level: $level\033[0m"
             return 0
         else
+            local remaining_pids
+            remaining_pids=$(pgrep -f "openvpn.*--config" 2>/dev/null || true)
             echo "  Remaining processes after $level: $(echo "$remaining_pids" | tr '\n' ' ')"
         fi
     done
 
-    # Final verification
+    # Final verification with emergency cleanup if force mode enabled
     sleep 1
-    local final_check
-    final_check=$(pgrep -f "openvpn.*--config" 2>/dev/null || true)
+    if ! verify_cleanup_success; then
+        local final_check
+        final_check=$(pgrep -f "openvpn.*--config" 2>/dev/null || true)
 
-    if [[ -n "$final_check" ]]; then
         if [[ "$force" == "true" ]]; then
             echo -e "\033[1;33mForce mode: Attempting validated emergency process group termination...\033[0m"
             # Try to kill entire process groups, but only if they contain only OpenVPN processes
@@ -554,10 +620,11 @@ hierarchical_process_cleanup() {
             done <<< "$final_check"
 
             sleep 2
-            final_check=$(pgrep -f "openvpn.*--config" 2>/dev/null || true)
         fi
 
-        if [[ -n "$final_check" ]]; then
+        # Final check
+        if ! verify_cleanup_success; then
+            final_check=$(pgrep -f "openvpn.*--config" 2>/dev/null || true)
             echo -e "\033[1;31mFAILED: Cannot cleanup processes $(echo "$final_check" | tr '\n' ' ')\033[0m"
             echo -e "\033[1;33mRecommendation: Run 'vpn emergency-reset' or consider system reboot\033[0m"
             return 1
