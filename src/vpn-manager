@@ -30,23 +30,10 @@ elif [[ "$(stat -c '%a' "$VPN_LOG_FILE" 2>/dev/null)" != "644" ]]; then
     chmod 644 "$VPN_LOG_FILE"
 fi
 
-# Source centralized error handling
+# Source centralized error handling and utilities
 source "$VPN_DIR/vpn-error-handler"
-
-# Simple notification function for basic feedback
-notify_event() {
-    local event_type="$1"
-    local arg1="${2:-}"
-    local arg2="${3:-}"
-    echo "[INFO] $event_type: $arg1 $arg2" >&2
-}
-
-log_message() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "$VPN_LOG_FILE" 2>/dev/null || {
-        # Fallback if log file not writable
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >&2
-    }
-}
+source "$VPN_DIR/vpn-utils"
+source "$VPN_DIR/vpn-colors"
 
 # Enhanced logging function for VPN events
 # Usage: log_vpn_event "LEVEL" "message"
@@ -135,13 +122,13 @@ validate_credentials() {
     local credentials_file="$1"
 
     if [[ ! -f "$credentials_file" ]]; then
-        log_message "Credential validation: credentials file not found"
+        log_message "Credential validation: credentials file not found" "$VPN_LOG_FILE"
         return 1
     fi
 
     # Security: Check if file is a symlink (prevent symlink attacks)
     if [[ -L "$credentials_file" ]]; then
-        log_message "ERROR: Credentials file is a symlink - security risk!"
+        log_message "ERROR: Credentials file is a symlink - security risk!" "$VPN_LOG_FILE"
         return 1
     fi
 
@@ -149,7 +136,7 @@ validate_credentials() {
     local file_owner
     file_owner=$(stat -c "%U" "$credentials_file" 2>/dev/null)
     if [[ "$file_owner" != "$(whoami)" ]]; then
-        log_message "ERROR: Credentials file not owned by current user!"
+        log_message "ERROR: Credentials file not owned by current user!" "$VPN_LOG_FILE"
         return 1
     fi
 
@@ -157,7 +144,7 @@ validate_credentials() {
     local file_perms
     file_perms=$(stat -c "%a" "$credentials_file" 2>/dev/null)
     if [[ "$file_perms" != "600" ]]; then
-        log_message "WARNING: Fixing insecure credentials file permissions"
+        log_message "WARNING: Fixing insecure credentials file permissions" "$VPN_LOG_FILE"
         chmod 600 "$credentials_file"
     fi
 
@@ -166,17 +153,17 @@ validate_credentials() {
     line_count=$(wc -l < "$credentials_file" 2>/dev/null || echo 0)
 
     if [[ $line_count -lt 2 ]]; then
-        log_message "Credential validation: insufficient credential lines (auth failure likely)"
+        log_message "Credential validation: insufficient credential lines (auth failure likely)" "$VPN_LOG_FILE"
         return 1
     fi
 
     # Check for empty credentials
     if grep -q "^$" "$credentials_file"; then
-        log_message "Credential validation: empty credential lines detected"
+        log_message "Credential validation: empty credential lines detected" "$VPN_LOG_FILE"
         return 1
     fi
 
-    log_message "Credential validation: security checks passed"
+    log_message "Credential validation: security checks passed" "$VPN_LOG_FILE"
     return 0
 }
 
@@ -287,7 +274,7 @@ show_status() {
         interface=$(get_vpn_interface)
 
         # Log credential status for audit (helps with credential validation testing)
-        log_message "Connection status check: credential auth validated"
+        log_message "Connection status check: credential auth validated" "$VPN_LOG_FILE"
 
         echo -e "\033[1;32m✓ VPN Status: CONNECTED\033[0m"
         echo -e "  Process ID: $pid"
@@ -345,7 +332,7 @@ show_status() {
 
 stop_vpn() {
     echo -e "\033[1;33mStopping VPN connection...\033[0m"
-    log_message "VPN stop requested"
+    log_message "VPN stop requested" "$VPN_LOG_FILE"
     log_vpn_event "INFO" "VPN disconnect requested by user"
 
     if ! is_vpn_running; then
@@ -399,12 +386,12 @@ stop_vpn() {
 
         if is_vpn_running; then
             process_error "$COMP_VPN_MANAGER" "stop VPN process" "Process $pid refused to terminate gracefully" "Try 'vpn kill-all' or manual process termination"
-            log_message "Failed to stop VPN process $pid"
+            log_message "Failed to stop VPN process $pid" "$VPN_LOG_FILE"
             log_vpn_event "ERROR" "VPN process refused to terminate (PID: $pid)"
             return 1
         else
             echo -e "\033[1;32m✓ VPN process stopped successfully\033[0m"
-            log_message "VPN process $pid stopped successfully"
+            log_message "VPN process $pid stopped successfully" "$VPN_LOG_FILE"
             log_vpn_event "INFO" "VPN disconnected successfully (PID: $pid)"
         fi
     fi
@@ -440,7 +427,7 @@ hierarchical_process_cleanup() {
     local start_time=$(date +%s)
 
     echo -e "\033[1;33mPerforming hierarchical VPN process cleanup...\033[0m"
-    log_message "Hierarchical process cleanup requested (force=$force)"
+    log_message "Hierarchical process cleanup requested (force=$force)" "$VPN_LOG_FILE"
 
     # Enhanced process discovery with secure zombie detection
     local pids openvpn_pids zombie_pids
@@ -484,7 +471,7 @@ hierarchical_process_cleanup() {
                         echo "  Sending TERM signal to process $pid..."
                         kill -TERM "$pid" 2>/dev/null || true
                     else
-                        log_message "SECURITY: Skipped invalid/non-OpenVPN PID $pid"
+                        log_message "SECURITY: Skipped invalid/non-OpenVPN PID $pid" "$VPN_LOG_FILE"
                     fi
                 done <<< "$pids"
                 sleep 3
@@ -495,7 +482,7 @@ hierarchical_process_cleanup() {
                         echo "  Sending KILL signal to process $pid..."
                         kill -KILL "$pid" 2>/dev/null || true
                     else
-                        log_message "SECURITY: Skipped invalid/non-OpenVPN PID $pid"
+                        log_message "SECURITY: Skipped invalid/non-OpenVPN PID $pid" "$VPN_LOG_FILE"
                     fi
                 done <<< "$pids"
                 sleep 2
@@ -506,7 +493,7 @@ hierarchical_process_cleanup() {
                         echo "  Using sudo KILL on process $pid..."
                         sudo kill -KILL "$pid" 2>/dev/null || true
                     else
-                        log_message "SECURITY: Skipped invalid/non-OpenVPN PID $pid"
+                        log_message "SECURITY: Skipped invalid/non-OpenVPN PID $pid" "$VPN_LOG_FILE"
                     fi
                 done <<< "$pids"
                 sleep 2
@@ -560,7 +547,7 @@ hierarchical_process_cleanup() {
                             echo "  Killing validated OpenVPN-only process group $pgid..."
                             sudo kill -KILL -"$pgid" 2>/dev/null || true
                         else
-                            log_message "SECURITY: Skipped process group $pgid - contains non-OpenVPN processes"
+                            log_message "SECURITY: Skipped process group $pgid - contains non-OpenVPN processes" "$VPN_LOG_FILE"
                         fi
                     fi
                 fi
@@ -586,7 +573,7 @@ hierarchical_process_cleanup() {
 
 kill_all_vpn() {
     echo -e "\033[1;33mForce killing all VPN processes...\033[0m"
-    log_message "Force kill all VPN processes requested"
+    log_message "Force kill all VPN processes requested" "$VPN_LOG_FILE"
 
     if hierarchical_process_cleanup "true"; then
         cleanup_files
@@ -646,7 +633,7 @@ cleanup_routes() {
 
 full_cleanup() {
     echo -e "\033[1;33mPerforming VPN cleanup...\033[0m"
-    log_message "Full cleanup requested"
+    log_message "Full cleanup requested" "$VPN_LOG_FILE"
 
     # Use hierarchical process cleanup
     if hierarchical_process_cleanup "false"; then
@@ -657,12 +644,12 @@ full_cleanup() {
         cleanup_routes_light
 
         echo -e "\033[1;32m✓ VPN cleanup completed\033[0m"
-        log_message "VPN cleanup completed"
+        log_message "VPN cleanup completed" "$VPN_LOG_FILE"
         notify_event "process_health" "Cleanup completed"
         return 0
     else
         echo -e "\033[1;31mVPN cleanup failed - some processes could not be terminated\033[0m"
-        log_message "VPN cleanup failed"
+        log_message "VPN cleanup failed" "$VPN_LOG_FILE"
         return 1
     fi
 }
