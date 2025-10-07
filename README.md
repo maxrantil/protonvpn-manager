@@ -45,7 +45,6 @@ This project follows the Unix philosophy: **"Do one thing and do it right."** It
 ```bash
 git clone https://github.com/maxrantil/protonvpn-manager.git
 cd protonvpn-manager
-git checkout vpn-simple  # Use the simplified version
 
 # Place your OpenVPN configs in locations/ directory
 # Then start using:
@@ -62,6 +61,8 @@ This simplified version contains only essential components:
 - **`src/best-vpn-profile`** - Performance testing engine (104 lines)
 - **`src/vpn-error-handler`** - Error handling (275 lines)
 - **`src/fix-ovpn-configs`** - Configuration file validation (281 lines)
+- **`src/vpn-utils`** - Shared utility functions (logging, notifications)
+- **`src/vpn-colors`** - Color management with NO_COLOR support
 
 ## Available Commands
 
@@ -91,6 +92,12 @@ This simplified version contains only essential components:
 
 ## Recent Enhancements
 
+**October 2025 - Code Quality Improvements:**
+- Extracted shared utilities to eliminate duplication (~40 lines saved)
+- Centralized color management with NO_COLOR support (accessibility)
+- Unified logging functions across all components
+- Added comprehensive unit tests for utilities
+
 **October 2025 - Basic Logging System:**
 - Added simple event logging to help with debugging
 - View logs with: `./src/vpn logs [lines]`
@@ -111,7 +118,7 @@ In September 2025, this project was simplified from a complex enterprise system 
 - Database encryption and backup systems
 - Notification management frameworks
 
-**These features are preserved** in the `src_archive/` directory and on the `master` branch if needed for reference.
+**These features were archived** in git history (see commits before October 2025) if needed for reference.
 
 ## Development
 
@@ -123,10 +130,11 @@ This project prioritizes simplicity and reliability. See `CLAUDE.md` for develop
 3. **No Feature Creep**: Resist adding "nice to have" features
 4. **Maintainability**: Keep code readable and debuggable
 
-## Branches
+## Branch Structure
 
-- **`vpn-simple`**: Main development branch (current, simplified version)
-- **`master`**: Enterprise version (archived, 13K+ lines, preserved for reference)
+- **`master`**: Main development branch (simplified version, ~2,900 lines)
+
+The enterprise version (13K+ lines) was removed in October 2025. All development now happens on `master`.
 
 ## Contributing
 
