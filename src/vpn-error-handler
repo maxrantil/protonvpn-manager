@@ -8,11 +8,8 @@ readonly ERROR_HIGH=2
 readonly ERROR_MEDIUM=3
 readonly ERROR_INFO=4
 
-# Color definitions for visual terminals
-readonly RED='\033[1;31m'
-readonly YELLOW='\033[1;33m'
-readonly BLUE='\033[1;34m'
-readonly NC='\033[0m'
+# Note: Color variables (RED, YELLOW, BLUE, NC) are defined in vpn-colors
+# They will be available when vpn-colors is sourced before this script
 
 # Text-based indicators for accessibility (screen readers)
 readonly ERROR_SYMBOLS=(
