@@ -165,7 +165,8 @@ Connect to the best performing server based on testing.
 Show current VPN connection status.
 
 ```bash
-./src/vpn status
+./src/vpn status              # Standard output
+./src/vpn status --accessible # Screen reader friendly (plain text)
 ```
 
 Example output:
