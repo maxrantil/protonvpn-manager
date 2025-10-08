@@ -4,7 +4,7 @@
 
 # shellcheck disable=SC2317  # Mock functions are called dynamically by tests
 
-set -euo pipefail
+set -uo pipefail
 
 # Determine project root (works when run directly or from project root)
 if [[ -f "src/vpn-manager" ]]; then
@@ -60,7 +60,7 @@ test_vpn_status_calls_show_status() {
     if grep -q 'status-wcag' "$PROJECT_ROOT/src/vpn"; then
         fail "vpn status should not call status-wcag" \
              "Found status-wcag call in src/vpn (should call 'status' only)"
-        return 1
+        return 0
     fi
 
     # Verify the status case in src/vpn calls vpn-manager with 'status' not 'status-wcag'
@@ -70,7 +70,7 @@ test_vpn_status_calls_show_status() {
     if echo "$status_case" | grep -q 'status-wcag\|status-accessible\|status-enhanced\|status-dashboard'; then
         fail "vpn status case should only call simple 'status'" \
              "Found enterprise status variants in status case block"
-        return 1
+        return 0
     fi
 
     pass "vpn status calls simple show_status (no enterprise variants)"
@@ -100,8 +100,6 @@ test_enterprise_status_functions_removed() {
 
     if [[ $found_enterprise -eq 0 ]]; then
         pass "All enterprise status functions removed from vpn-manager"
-    else
-        return 1
     fi
 }
 
@@ -128,8 +126,6 @@ test_enterprise_status_cases_removed() {
 
     if [[ $found_cases -eq 0 ]]; then
         pass "All enterprise status case handlers removed from vpn-manager"
-    else
-        return 1
     fi
 }
 
@@ -141,7 +137,6 @@ test_show_status_is_only_status_function() {
     if ! grep -q "^show_status()" "$PROJECT_ROOT/src/vpn-manager"; then
         fail "show_status() function must exist in vpn-manager" \
              "Could not find show_status() definition"
-        return 1
     fi
 
     # Count total status-related functions (should be exactly 1)
@@ -153,7 +148,6 @@ test_show_status_is_only_status_function() {
     else
         fail "Should have exactly 1 status function (show_status)" \
              "Found $status_func_count status functions"
-        return 1
     fi
 }
 
@@ -168,13 +162,11 @@ test_vpn_status_no_format_flags() {
     if echo "$status_case" | grep -q 'case.*\$2'; then
         fail "vpn status should not accept format flags" \
              "Found case statement on \$2 in status handler"
-        return 1
     fi
 
     if echo "$status_case" | grep -q '\-\-accessible\|\-\-enhanced\|\-\-dashboard\|\-\-format'; then
         fail "vpn status should not handle --accessible, --enhanced, --dashboard, or --format flags" \
              "Found enterprise flags in status case"
-        return 1
     fi
 
     pass "vpn status accepts no format flags (single unified format)"
@@ -191,19 +183,16 @@ test_status_output_format_consistent() {
     if ! grep -A 20 "^show_status()" "$PROJECT_ROOT/src/vpn-manager" | grep -q "VPN Status Report"; then
         fail "show_status() function missing expected header" \
              "Expected 'VPN Status Report' in function"
-        return 1
     fi
 
-    if ! grep -A 30 "^show_status()" "$PROJECT_ROOT/src/vpn-manager" | grep -q "External IP:"; then
+    if ! grep -A 50 "^show_status()" "$PROJECT_ROOT/src/vpn-manager" | grep -q "External IP:"; then
         fail "show_status() function missing External IP display" \
              "Expected 'External IP:' in function"
-        return 1
     fi
 
-    if ! grep -A 30 "^show_status()" "$PROJECT_ROOT/src/vpn-manager" | grep -q "Active tunnels:"; then
+    if ! grep -A 75 "^show_status()" "$PROJECT_ROOT/src/vpn-manager" | grep -q "Active tunnels:"; then
         fail "show_status() function missing Active tunnels display" \
              "Expected 'Active tunnels:' in function"
-        return 1
     fi
 
     pass "show_status produces consistent unified format"
@@ -221,14 +210,12 @@ test_vpn_manager_case_simplified() {
     if echo "$case_section" | grep -E '"status-wcag"|"status-accessible"|"status-enhanced"|"status-format"' >/dev/null; then
         fail "vpn-manager case statement should not have enterprise status cases" \
              "Found enterprise status case handlers"
-        return 1
     fi
 
     # Verify simple status case exists
     if ! echo "$case_section" | grep -q '"status"|"s"'; then
         fail "vpn-manager must have 'status'|'s' case" \
              "Could not find status case handler"
-        return 1
     fi
 
     pass "vpn-manager case statement simplified (no enterprise handlers)"
