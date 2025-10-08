@@ -110,7 +110,11 @@ case "$1" in
         ;;
     "status"|"s")
         if [[ -x "$VPN_MANAGER" ]]; then
-            "$VPN_MANAGER" status
+            if [[ "$2" == "--accessible" ]]; then
+                VPN_ACCESSIBLE_MODE=1 "$VPN_MANAGER" status
+            else
+                "$VPN_MANAGER" status
+            fi
         else
             file_not_found_error "$COMP_VPN_MAIN" "$VPN_MANAGER" "Check installation and file permissions"
             exit 1
