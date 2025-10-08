@@ -12,6 +12,7 @@ This project follows the Unix philosophy: **"Do one thing and do it right."** It
 - **Safe Process Management**: Prevents multiple OpenVPN processes, handles cleanup properly
 - **Performance Testing**: Tests server latency and speed for optimal connections
 - **Clear Status Information**: Shows connection state, external IP, and performance metrics
+- **Accessibility Support**: Screen reader mode, NO_COLOR support, WCAG AA compliant (October 2025)
 - **Configuration Management**: Validates and fixes OpenVPN configuration files
 - **Simple Logging**: Color-coded event logging for debugging and monitoring (October 2025)
 
@@ -72,6 +73,7 @@ This simplified version contains only essential components:
 ./src/vpn disconnect          # Disconnect from VPN
 ./src/vpn reconnect          # Reconnect to current server
 ./src/vpn status             # Show connection status
+./src/vpn status --accessible  # Screen reader friendly output
 ```
 
 ### Server Selection
