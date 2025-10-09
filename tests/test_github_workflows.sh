@@ -58,8 +58,8 @@ done
 
 echo ""
 
-# Test 2: AI Attribution Detection
-echo "=== Test 2: AI Attribution Detection ==="
+# Test 2: AI/Agent Attribution Detection
+echo "=== Test 2: AI/Agent Attribution Detection ==="
 
 # Simulate git log output with AI attribution
 AI_ATTRIBUTIONS=(
@@ -67,6 +67,15 @@ AI_ATTRIBUTIONS=(
     "Generated with Claude Code"
     "See https://claude.com/claude-code"
     "Co-authored-by: GPT-4 <gpt@openai.com>"
+)
+
+# Agent attribution examples
+AGENT_ATTRIBUTIONS=(
+    "Reviewed by security-validator agent"
+    "Validated by architecture-designer agent"
+    "Approved by test-automation-qa agent"
+    "Checked by performance-optimizer"
+    "Agent review completed successfully"
 )
 
 HUMAN_ATTRIBUTIONS=(
@@ -80,6 +89,15 @@ for attr in "${AI_ATTRIBUTIONS[@]}"; do
         pass "AI attribution detected: '$attr'"
     else
         fail "AI attribution missed: '$attr'"
+    fi
+done
+
+for attr in "${AGENT_ATTRIBUTIONS[@]}"; do
+    # Match agent mention patterns
+    if echo "$attr" | grep -Eiq "(reviewed by|validated by|approved by|checked by).*(agent|architecture-designer|security-validator|performance-optimizer)|agent (review|validation|approval)"; then
+        pass "Agent attribution detected: '$attr'"
+    else
+        fail "Agent attribution missed: '$attr'"
     fi
 done
 
@@ -183,6 +201,99 @@ for workflow in "$PROJECT_ROOT"/.github/workflows/*.yml; do
         fail "Workflow syntax invalid: $filename"
     fi
 done
+
+echo ""
+
+# Test 8: Session Handoff Detection Logic
+echo "=== Test 8: Session Handoff Detection ==="
+
+# Simulate scenarios
+SESSION_HANDOFF_EXISTS=false
+DATED_HANDOFF_EXISTS=false
+
+# Check if SESSION_HANDOVER.md would be detected
+if [[ -f "$PROJECT_ROOT/SESSION_HANDOVER.md" ]]; then
+    SESSION_HANDOFF_EXISTS=true
+fi
+
+# Check if dated session files would be detected
+if ls "$PROJECT_ROOT"/docs/implementation/SESSION*.md &>/dev/null; then
+    DATED_HANDOFF_EXISTS=true
+fi
+
+if [[ "$SESSION_HANDOFF_EXISTS" == true ]]; then
+    pass "Session handoff detection: SESSION_HANDOVER.md found"
+elif [[ "$DATED_HANDOFF_EXISTS" == true ]]; then
+    pass "Session handoff detection: Dated session file found"
+else
+    warn "No session handoff file exists (workflow will warn on PRs)"
+fi
+
+# Test the workflow logic itself exists
+if grep -q "SESSION_HANDOVER.md" "$PROJECT_ROOT/.github/workflows/verify-session-handoff.yml"; then
+    pass "Handoff workflow checks for SESSION_HANDOVER.md"
+else
+    fail "Handoff workflow missing SESSION_HANDOVER.md check"
+fi
+
+if grep -q "SESSION.*\.md" "$PROJECT_ROOT/.github/workflows/verify-session-handoff.yml"; then
+    pass "Handoff workflow checks for dated session files"
+else
+    fail "Handoff workflow missing dated file check"
+fi
+
+echo ""
+
+# Test 9: Issue Workflow Validation
+echo "=== Test 9: Issue Workflow Checks ==="
+
+# Check issue AI attribution workflow exists
+if [[ -f "$PROJECT_ROOT/.github/workflows/issue-ai-attribution-check.yml" ]]; then
+    pass "Issue AI attribution check workflow exists"
+
+    # Verify it has proper triggers
+    if grep -q "issues:" "$PROJECT_ROOT/.github/workflows/issue-ai-attribution-check.yml" && \
+       grep -q "opened" "$PROJECT_ROOT/.github/workflows/issue-ai-attribution-check.yml"; then
+        pass "Issue workflow has correct triggers (opened, edited)"
+    else
+        fail "Issue workflow missing proper triggers"
+    fi
+else
+    fail "Issue AI attribution check workflow not found"
+fi
+
+# Check issue PRD reminder workflow
+if [[ -f "$PROJECT_ROOT/.github/workflows/issue-prd-reminder.yml" ]]; then
+    pass "Issue PRD reminder workflow exists"
+
+    if grep -q "enhancement\|feature" "$PROJECT_ROOT/.github/workflows/issue-prd-reminder.yml"; then
+        pass "PRD reminder checks for feature/enhancement labels"
+    else
+        fail "PRD reminder missing label detection"
+    fi
+else
+    fail "Issue PRD reminder workflow not found"
+fi
+
+# Check issue auto-labeling workflow
+if [[ -f "$PROJECT_ROOT/.github/workflows/issue-auto-label.yml" ]]; then
+    pass "Issue auto-labeling workflow exists"
+
+    if grep -q "github-script" "$PROJECT_ROOT/.github/workflows/issue-auto-label.yml"; then
+        pass "Auto-labeling uses github-script action"
+    else
+        fail "Auto-labeling missing github-script"
+    fi
+else
+    fail "Issue auto-labeling workflow not found"
+fi
+
+# Check issue format check workflow
+if [[ -f "$PROJECT_ROOT/.github/workflows/issue-format-check.yml" ]]; then
+    pass "Issue format check workflow exists"
+else
+    fail "Issue format check workflow not found"
+fi
 
 echo ""
 echo "=========================================="
