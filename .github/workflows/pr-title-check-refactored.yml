@@ -1,0 +1,23 @@
+# ABOUTME: Refactored PR title validation using reusable action
+# ABOUTME: Demonstrates how to eliminate regex duplication
+name: PR Title Check (Refactored Example)
+on:
+  pull_request:
+    types: [opened, edited, synchronize]
+    branches:
+      - master
+
+jobs:
+  check-title:
+    name: Validate PR Title Format
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout for reusable action
+        uses: actions/checkout@v4
+
+      - name: Validate PR title
+        uses: ./.github/actions/validate-conventional-commit
+        with:
+          text: ${{ github.event.pull_request.title }}
+          type: 'pr-title'
