@@ -1,0 +1,35 @@
+name: Commit Format
+on:
+  pull_request:
+    branches:
+      - master
+
+jobs:
+  check-commit-format:
+    name: Check Conventional Commits
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate commit messages
+        run: |
+          COMMITS=$(git log origin/master..HEAD --format=%s)
+
+          while IFS= read -r commit; do
+            if [[ "$commit" =~ ^Merge ]]; then
+              continue
+            fi
+
+            if ! [[ "$commit" =~ ^(feat|fix|docs|style|refactor|test|chore|perf|ci|build|revert)(\(.+\))?!?:\ .+ ]]; then
+              echo "❌ Invalid commit message: $commit"
+              echo ""
+              echo "Use: type(scope): description"
+              echo "Types: feat, fix, docs, style, refactor, test, chore, perf, ci, build, revert"
+              exit 1
+            fi
+          done <<< "$COMMITS"
+
+          echo "✅ All commit messages valid"
