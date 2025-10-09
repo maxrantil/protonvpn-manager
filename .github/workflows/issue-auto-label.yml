@@ -1,0 +1,101 @@
+name: Issue Auto-Labeling
+on:
+  issues:
+    types: [opened, edited]
+
+jobs:
+  auto-label:
+    name: Automatically Label Issues
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Auto-label based on content
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = context.payload.issue;
+            const title = issue.title.toLowerCase();
+            const body = (issue.body || '').toLowerCase();
+            const combined = title + ' ' + body;
+
+            const labels = [];
+
+            // Bug detection
+            if (/\b(bug|error|crash|fail|broken|issue|problem|not working)\b/.test(combined)) {
+              labels.push('bug');
+            }
+
+            // Feature/Enhancement detection
+            if (/\b(feature|add|implement|new|enhancement|improve|support for)\b/.test(combined)) {
+              labels.push('enhancement');
+            }
+
+            // Documentation
+            if (/\b(docs|documentation|readme|guide|tutorial|document)\b/.test(combined)) {
+              labels.push('documentation');
+            }
+
+            // Security
+            if (/\b(security|vulnerability|cve|exploit|injection|xss|csrf)\b/.test(combined)) {
+              labels.push('security');
+            }
+
+            // Performance
+            if (/\b(performance|slow|optimize|speed|latency|timeout)\b/.test(combined)) {
+              labels.push('performance');
+            }
+
+            // Testing
+            if (/\b(test|testing|unit test|integration test|coverage)\b/.test(combined)) {
+              labels.push('testing');
+            }
+
+            // Refactoring
+            if (/\b(refactor|refactoring|cleanup|code quality|technical debt)\b/.test(combined)) {
+              labels.push('refactoring');
+            }
+
+            // CI/CD
+            if (/\b(ci|cd|pipeline|workflow|github actions|deployment)\b/.test(combined)) {
+              labels.push('ci-cd');
+            }
+
+            // Priority detection (from title usually)
+            if (/\b(urgent|critical|blocker|p0)\b/.test(title)) {
+              labels.push('priority: high');
+            } else if (/\b(important|soon|p1)\b/.test(title)) {
+              labels.push('priority: medium');
+            }
+
+            // Question detection
+            if (/\?|how to|how do|why|what is|can i|is it possible/.test(combined)) {
+              labels.push('question');
+            }
+
+            if (labels.length > 0) {
+              console.log(`📋 Auto-labeling with: ${labels.join(', ')}`);
+
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                labels: labels
+              });
+
+              // Post comment explaining the labels
+              const comment = `🏷️ **Auto-labeled this issue**
+
+              Applied labels: ${labels.map(l => `\`${l}\``).join(', ')}
+
+              These labels were automatically assigned based on issue content. If they're incorrect, feel free to adjust them manually.`;
+
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                body: comment
+              });
+            } else {
+              console.log('ℹ️ No auto-labels matched');
+            }
