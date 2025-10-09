@@ -21,23 +21,15 @@ repos:
     rev: v0.9.0.6
     hooks:
       - id: shellcheck
-        args: ['-e', 'SC1091', '-e', 'SC2034', '-e', 'SC2155', '-e', 'SC2016', '-e', 'SC2001']  # Ignore sourcing, unused vars, declare+assign, single quotes, sed usage
+        args: ['-e', 'SC1091', '-e', 'SC2034', '-e', 'SC2155', '-e', 'SC2016', '-e', 'SC2001', '-e', 'SC2126']
         types: [shell]
-
-  # Bash formatting - disabled due to module issues
-  # - repo: https://github.com/lovesegfault/beautysh
-  #   rev: v6.2.1
-  #   hooks:
-  #     - id: beautysh
-  #       args: ['--indent-size=4']
-  #       types: [shell]
 
   # Markdown linting
   - repo: https://github.com/igorshubovych/markdownlint-cli
     rev: v0.37.0
     hooks:
       - id: markdownlint
-        args: ['--disable', 'MD013', '--disable', 'MD041']  # Disable line length and first line rules
+        args: ['--disable', 'MD013', '--disable', 'MD041']
 
   # File permissions and security checks
   - repo: local
@@ -54,7 +46,6 @@ repos:
         language: system
         pass_filenames: false
 
-      # Test execution hooks
       - id: unit-tests
         name: Run unit tests
         entry: bash -c 'cd tests && ./run_tests.sh --unit-only'
@@ -87,3 +78,28 @@ repos:
         language: system
         pass_filenames: false
         files: '^(src/fix-ovpn-configs|tests/config_fixing_tests\.sh|locations/.*\.ovpn)$'
+
+      - id: no-ai-attribution
+        name: Block AI Attribution in Commits
+        entry: bash -c 'if git diff --cached --diff-filter=ACMR -- ":(exclude).github/" ":(exclude)tests/test_github_workflows.sh" ":(exclude)config/.pre-commit-config.yaml" | grep -iE "(Co-authored-by|Generated with|Claude|AI-generated|Created by Claude)"; then echo "❌ ERROR Remove AI attribution from commits (per CLAUDE.md)"; exit 1; fi'
+        language: system
+        stages: [pre-commit]
+
+      - id: conventional-commit-msg
+        name: Enforce Conventional Commit Format
+        entry: python3 -c
+        language: system
+        stages: [commit-msg]
+        args:
+          - |
+            import sys, re
+            with open(sys.argv[1]) as f:
+                msg = f.read().strip()
+            pattern = r'^(feat|fix|docs|style|refactor|test|chore|perf|ci|build|revert)(\(.+\))?!?: .+'
+            if not re.match(pattern, msg):
+                print('❌ ERROR: Use conventional commit format')
+                print('Examples:')
+                print('  feat(vpn): add new connection method')
+                print('  fix(config): resolve parsing issue')
+                print('  docs: update README')
+                sys.exit(1)

@@ -1,0 +1,41 @@
+name: Block AI Attribution
+on:
+  pull_request:
+    branches:
+      - master
+
+jobs:
+  check-attribution:
+    name: Detect AI Attribution Markers
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for AI attribution markers
+        run: |
+          # Check for AI tool attribution in Co-authored-by
+          if git log origin/master..HEAD | grep -Eiq "Co-authored-by:.*(Claude|GPT|ChatGPT|Copilot|Gemini|Bard|AI)"; then
+            echo "❌ ERROR: AI tool attribution detected in Co-authored-by!"
+            echo "Found AI tool name in co-author field"
+            exit 1
+          fi
+
+          # Check for "Generated with" messages
+          if git log origin/master..HEAD | grep -Eiq "Generated with.*(Claude|AI|GPT|ChatGPT|Copilot)"; then
+            echo "❌ ERROR: AI generation attribution detected!"
+            echo "Found: Generated with [AI tool]"
+            exit 1
+          fi
+
+          # Check for Claude Code specific attribution
+          if git log origin/master..HEAD | grep -Eq "claude\.com/claude-code"; then
+            echo "❌ ERROR: Claude Code attribution link detected!"
+            echo "Found: claude.com/claude-code reference"
+            exit 1
+          fi
+
+          echo "✅ No AI attribution markers found"
+          echo "✅ Human co-authors are allowed and encouraged!"
