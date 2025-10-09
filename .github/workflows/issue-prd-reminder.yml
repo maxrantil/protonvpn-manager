@@ -1,0 +1,92 @@
+name: Issue PRD/PDR Reminder
+on:
+  issues:
+    types: [opened, labeled]
+
+jobs:
+  check-prd-requirement:
+    name: Check PRD/PDR Requirement
+    runs-on: ubuntu-latest
+    # Only run on new feature requests or enhancements
+    if: contains(github.event.issue.labels.*.name, 'enhancement') || contains(github.event.issue.labels.*.name, 'feature')
+    steps:
+      - name: Remind about PRD/PDR workflow
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = context.payload.issue;
+            const body = issue.body || '';
+
+            // Check if PRD/PDR is already mentioned
+            const hasPRDMention = /PRD|PDR|Product Requirements|Product Design/i.test(body);
+
+            if (!hasPRDMention) {
+              const comment = `📋 **Feature Request Workflow Reminder**
+
+              This issue is labeled as a feature/enhancement. Per **CLAUDE.md Section 1**, feature requests require:
+
+              ## Required Documentation:
+
+              ### 1. PRD (Product Requirements Document)
+              **Required for**: New features or significant UX changes
+              **Location**: \`docs/implementation/PRD-[name]-[YYYY-MM-DD].md\`
+              **Must include**:
+              - Problem statement and user needs
+              - Success criteria
+              - User stories and acceptance criteria
+              - Stakeholder requirements
+
+              **Review process**:
+              1. Create PRD
+              2. Agent review (general-purpose-agent)
+              3. Stakeholder approval
+              4. **Doctor Hubert final approval** ✅
+
+              ### 2. PDR (Product Design Document)
+              **Required after**: PRD approval
+              **Location**: \`docs/implementation/PDR-[name]-[YYYY-MM-DD].md\`
+              **Must include**:
+              - Technical architecture
+              - Implementation approach
+              - Security considerations
+              - Performance requirements
+              - Test strategy
+
+              **Review process**:
+              1. Create PDR
+              2. Agent validation (6 core agents):
+                 - architecture-designer
+                 - security-validator
+                 - performance-optimizer
+                 - test-automation-qa
+                 - code-quality-analyzer
+                 - documentation-knowledge-manager
+              3. Tech review
+              4. **Doctor Hubert final approval** ✅
+
+              ## Workflow:
+              \`\`\`
+              💡 Feature Idea (this issue)
+                ↓
+              📋 PRD → Review → Approval
+                ↓
+              🏗️ PDR → Agent Validation → Approval
+                ↓
+              ⚡ Implementation → PR → Merge
+              \`\`\`
+
+              **Next Step**: If this is a significant feature, please create a PRD document first or update this issue to reference an existing PRD.
+
+              If this is a small enhancement that doesn't require full PRD/PDR, please add a comment explaining why.`;
+
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                body: comment
+              });
+
+              console.log('✅ PRD/PDR reminder posted');
+            } else {
+              console.log('✅ Issue already mentions PRD/PDR workflow');
+            }
