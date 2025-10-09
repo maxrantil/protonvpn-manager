@@ -1,0 +1,28 @@
+name: Protect Master Branch
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  block-direct-push:
+    name: Block Direct Push to Master
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    steps:
+      - name: Check if push is from PR merge
+        run: |
+          COMMIT_MSG="${{ github.event.head_commit.message }}"
+          FIRST_LINE=$(echo "$COMMIT_MSG" | head -n 1)
+
+          PR_NUMBER_PATTERN='\(#[0-9]+\)$'
+          MERGE_PATTERN='^Merge pull request'
+
+          if [[ "$FIRST_LINE" =~ $PR_NUMBER_PATTERN ]] || [[ "$FIRST_LINE" =~ $MERGE_PATTERN ]]; then
+            echo "✅ PR merge detected - allowing"
+            exit 0
+          fi
+
+          echo "❌ ERROR: Direct pushes to master are not allowed!"
+          echo "Please create a feature branch and submit a PR"
+          exit 1
