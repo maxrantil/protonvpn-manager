@@ -7,6 +7,8 @@ jobs:
   check-prd-requirement:
     name: Check PRD/PDR Requirement
     runs-on: ubuntu-latest
+    permissions:
+      issues: write
     # Only run on new feature requests or enhancements
     if: contains(github.event.issue.labels.*.name, 'enhancement') || contains(github.event.issue.labels.*.name, 'feature')
     steps:

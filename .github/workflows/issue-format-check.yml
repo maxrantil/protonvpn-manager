@@ -7,6 +7,8 @@ jobs:
   check-format:
     name: Validate Issue Format
     runs-on: ubuntu-latest
+    permissions:
+      issues: write
     steps:
       - name: Check issue completeness
         uses: actions/github-script@v7
