@@ -80,8 +80,8 @@ repos:
         files: '^(src/fix-ovpn-configs|tests/config_fixing_tests\.sh|locations/.*\.ovpn)$'
 
       - id: no-ai-attribution
-        name: Block AI Attribution in Commits
-        entry: bash -c 'if git diff --cached --diff-filter=ACMR -- ":(exclude).github/" ":(exclude)tests/test_github_workflows.sh" ":(exclude)config/.pre-commit-config.yaml" ":(exclude).gitignore" | grep -iE "(Co-authored-by|Generated with|Claude|AI-generated|Created by Claude)"; then echo "❌ ERROR Remove AI attribution from commits (per CLAUDE.md)"; exit 1; fi'
+        name: Block AI/Agent Attribution in Commits
+        entry: bash -c 'if git diff --cached --diff-filter=ACMR -- ":(exclude).github/" ":(exclude)tests/test_github_workflows.sh" ":(exclude)config/.pre-commit-config.yaml" ":(exclude).gitignore" ":(exclude)docs/" | grep -iE "(Co-authored-by|Generated with|Claude|AI-generated|Created by Claude|(reviewed by|validated by|approved by|checked by).*(agent|architecture-designer|security-validator|performance-optimizer)|agent (review|validation|approval))"; then echo "❌ ERROR Remove AI/agent attribution from commits (per CLAUDE.md)"; exit 1; fi'
         language: system
         stages: [pre-commit]
 

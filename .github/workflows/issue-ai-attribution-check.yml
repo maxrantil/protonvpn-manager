@@ -17,13 +17,15 @@ jobs:
             const title = issue.title || '';
             const combined = title + '\n' + body;
 
-            // Pattern to detect AI tool attribution
+            // Pattern to detect AI tool attribution and agent mentions
             const aiPatterns = [
               /Co-authored-by:.*(Claude|GPT|ChatGPT|Copilot|Gemini|Bard|AI Assistant)/i,
               /Generated with.*(Claude|AI|GPT|ChatGPT|Copilot)/i,
               /claude\.com\/claude-code/i,
               /Created by (Claude|ChatGPT|GPT|Copilot|AI)/i,
               /Written by (Claude|ChatGPT|GPT|Copilot|AI)/i,
+              /(Reviewed by|Validated by|Approved by|Checked by).*(agent|architecture-designer|security-validator|performance-optimizer|test-automation-qa|code-quality-analyzer|documentation-knowledge-manager|ux-accessibility-i18n-agent|devops-deployment-agent|general-purpose-agent)/i,
+              /agent (review|validation|approval|check)/i,
             ];
 
             let foundAttribution = false;
@@ -38,26 +40,32 @@ jobs:
             }
 
             if (foundAttribution) {
-              const comment = `❌ **AI Attribution Detected**
+              const comment = `❌ **AI/Agent Attribution Detected**
 
-              This issue contains AI tool attribution, which is against project policy.
+              This issue contains AI tool or agent attribution, which is against project policy.
 
               **Found pattern**: ${matchedPattern}
 
-              **Policy**: Per CLAUDE.md Section 1, AI attribution should not be included in:
-              - Issue descriptions
-              - Issue comments
-              - Commit messages
-              - Pull request descriptions
+              **Policy**: Per CLAUDE.md Section 1, AI/agent attribution should NOT be in:
+              - ❌ Issue descriptions
+              - ❌ Commit messages
+              - ❌ Pull request descriptions
 
-              **Why?**
-              - Issues should describe problems/features, not authorship
-              - AI tools are development aids, not contributors
+              **Where agent validations SHOULD be documented:**
+              - ✅ Session handoff files (SESSION_HANDOVER.md)
+              - ✅ Implementation documentation (docs/implementation/)
+              - ✅ PRD/PDR documents
+              - ✅ PR comments (workflow progress updates)
+
+              **Why this policy?**
+              - Issues/PRs should describe problems/solutions, not authorship
+              - AI tools and agents are development aids, not contributors
               - Focus on content, not creation method
+              - Agent validations belong in internal documentation
 
-              **Action Required**: Please edit this issue to remove AI attribution references.
+              **Action Required**: Please edit this issue to remove AI/agent attribution references.
 
-              Human co-authors are welcome and encouraged!`;
+              **Note**: Human co-authors are welcome and encouraged!`;
 
               await github.rest.issues.createComment({
                 owner: context.repo.owner,
