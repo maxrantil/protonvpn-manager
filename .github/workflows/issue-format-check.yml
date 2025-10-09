@@ -1,0 +1,111 @@
+name: Issue Format Check
+on:
+  issues:
+    types: [opened, edited]
+
+jobs:
+  check-format:
+    name: Validate Issue Format
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check issue completeness
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = context.payload.issue;
+            const body = issue.body || '';
+            const title = issue.title || '';
+
+            const problems = [];
+            const warnings = [];
+
+            // Check if issue is empty or too short
+            if (body.trim().length < 20) {
+              problems.push('❌ Issue body is too short (< 20 characters). Please provide more detail.');
+            }
+
+            // Check for vague titles
+            const vagueWords = ['fix', 'update', 'change', 'improve', 'issue', 'problem'];
+            const titleWords = title.toLowerCase().split(/\s+/);
+            if (titleWords.length < 3 && vagueWords.some(word => titleWords.includes(word))) {
+              warnings.push('⚠️ Issue title seems vague. Consider being more specific about what needs to be done.');
+            }
+
+            // Check for missing context sections
+            const hasProblem = /problem|issue|bug|error|what('s| is) wrong/i.test(body);
+            const hasExpected = /expected|should|want|need/i.test(body);
+            const hasActual = /actual|currently|instead|but/i.test(body);
+            const hasSteps = /steps|reproduce|how to|reproduction/i.test(body);
+
+            if (!hasProblem && !hasExpected) {
+              warnings.push('⚠️ Consider describing the problem or desired behavior');
+            }
+
+            // Check for template markers (if templates exist)
+            const hasTemplateMarkers = /###|##|\[x\]|\[ \]/.test(body);
+            if (!hasTemplateMarkers && body.length < 100) {
+              warnings.push('⚠️ Issue may benefit from using an issue template for better structure');
+            }
+
+            // Check if it's just a title with no body
+            if (!body || body.trim() === '') {
+              problems.push('❌ Issue has no description. Please provide details about the issue or feature request.');
+            }
+
+            // Generate feedback
+            if (problems.length > 0 || warnings.length > 0) {
+              let comment = '## 📋 Issue Format Feedback\n\n';
+
+              if (problems.length > 0) {
+                comment += '### Critical Issues:\n';
+                problems.forEach(p => comment += `${p}\n`);
+                comment += '\n';
+              }
+
+              if (warnings.length > 0) {
+                comment += '### Suggestions for Improvement:\n';
+                warnings.forEach(w => comment += `${w}\n`);
+                comment += '\n';
+              }
+
+              comment += '### Recommended Issue Structure:\n\n';
+              comment += '**For Bug Reports:**\n';
+              comment += '- What is the problem?\n';
+              comment += '- Steps to reproduce\n';
+              comment += '- Expected behavior\n';
+              comment += '- Actual behavior\n';
+              comment += '- Environment details (if relevant)\n\n';
+
+              comment += '**For Feature Requests:**\n';
+              comment += '- What feature/capability is needed?\n';
+              comment += '- Why is it needed? (use case)\n';
+              comment += '- Proposed solution (optional)\n';
+              comment += '- Alternatives considered (optional)\n\n';
+
+              comment += '**For Tasks/Chores:**\n';
+              comment += '- What needs to be done?\n';
+              comment += '- Why does it need to be done?\n';
+              comment += '- Acceptance criteria\n';
+              comment += '- Related issues/PRs (if applicable)\n\n';
+
+              comment += 'Well-structured issues help maintainers understand and address them more quickly!';
+
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                body: comment
+              });
+
+              if (problems.length > 0) {
+                await github.rest.issues.addLabels({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issue.number,
+                  labels: ['needs-info']
+                });
+                core.setFailed('Issue format needs improvement');
+              }
+            } else {
+              console.log('✅ Issue format looks good');
+            }

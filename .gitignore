@@ -48,7 +48,4 @@ locations/*.ovpn.original
 CLAUDE.md
 AGENT_FEEDBACK.md
 AGENT_REVIEW.md
-*SESSION*.md
-*HANDOFF*.md
-*HANDOVER*.md
 docs/implementation/
