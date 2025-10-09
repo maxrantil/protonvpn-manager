@@ -1,0 +1,66 @@
+# ABOUTME: Reusable action for validating conventional commit format
+# ABOUTME: Centralizes regex pattern to eliminate duplication across workflows
+name: 'Validate Conventional Commit'
+description: 'Validates commit message or PR title follows conventional commit format'
+
+inputs:
+  text:
+    description: 'The commit message or PR title to validate'
+    required: true
+  type:
+    description: 'Type of text being validated (commit or pr-title)'
+    required: false
+    default: 'commit'
+
+outputs:
+  valid:
+    description: 'Whether the text is valid (true/false)'
+    value: ${{ steps.validate.outputs.valid }}
+  error:
+    description: 'Error message if invalid'
+    value: ${{ steps.validate.outputs.error }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Validate format
+      id: validate
+      shell: bash
+      run: |
+        TEXT="${{ inputs.text }}"
+        TYPE="${{ inputs.type }}"
+
+        # CENTRALIZED REGEX PATTERN (single source of truth)
+        # Format: type(scope): description
+        # - type: required (feat, fix, docs, etc.)
+        # - scope: optional, lowercase alphanumeric with dashes/underscores
+        # - !: optional breaking change indicator
+        # - description: required, must have space after colon
+        PATTERN='^(feat|fix|docs|style|refactor|test|chore|perf|ci|build|revert)(\([a-z0-9_-]+\))?!?: .+'
+
+        if [[ "$TEXT" =~ $PATTERN ]]; then
+          echo "valid=true" >> $GITHUB_OUTPUT
+          echo "error=" >> $GITHUB_OUTPUT
+          echo "✅ Valid $TYPE format: $TEXT"
+        else
+          echo "valid=false" >> $GITHUB_OUTPUT
+
+          # Build error message
+          echo "error<<EOF" >> $GITHUB_OUTPUT
+          echo "Invalid $TYPE format: $TEXT" >> $GITHUB_OUTPUT
+          echo "" >> $GITHUB_OUTPUT
+          echo "Valid format: type(scope): description" >> $GITHUB_OUTPUT
+          echo "" >> $GITHUB_OUTPUT
+          echo "Examples:" >> $GITHUB_OUTPUT
+          echo "  feat(vpn): add connection retry logic" >> $GITHUB_OUTPUT
+          echo "  fix(config): resolve parsing issue" >> $GITHUB_OUTPUT
+          echo "  docs: update installation guide" >> $GITHUB_OUTPUT
+          echo "  refactor!: breaking change" >> $GITHUB_OUTPUT
+          echo "" >> $GITHUB_OUTPUT
+          echo "Valid types: feat, fix, docs, style, refactor, test, chore, perf, ci, build, revert" >> $GITHUB_OUTPUT
+          echo "Scope: optional, lowercase letters/numbers/dashes/underscores only" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+          echo "❌ Invalid $TYPE format: $TEXT"
+          exit 1
+        fi
