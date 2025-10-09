@@ -58,8 +58,8 @@ done
 
 echo ""
 
-# Test 2: AI Attribution Detection
-echo "=== Test 2: AI Attribution Detection ==="
+# Test 2: AI/Agent Attribution Detection
+echo "=== Test 2: AI/Agent Attribution Detection ==="
 
 # Simulate git log output with AI attribution
 AI_ATTRIBUTIONS=(
@@ -67,6 +67,15 @@ AI_ATTRIBUTIONS=(
     "Generated with Claude Code"
     "See https://claude.com/claude-code"
     "Co-authored-by: GPT-4 <gpt@openai.com>"
+)
+
+# Agent attribution examples
+AGENT_ATTRIBUTIONS=(
+    "Reviewed by security-validator agent"
+    "Validated by architecture-designer agent"
+    "Approved by test-automation-qa agent"
+    "Checked by performance-optimizer"
+    "Agent review completed successfully"
 )
 
 HUMAN_ATTRIBUTIONS=(
@@ -80,6 +89,15 @@ for attr in "${AI_ATTRIBUTIONS[@]}"; do
         pass "AI attribution detected: '$attr'"
     else
         fail "AI attribution missed: '$attr'"
+    fi
+done
+
+for attr in "${AGENT_ATTRIBUTIONS[@]}"; do
+    # Match agent mention patterns
+    if echo "$attr" | grep -Eiq "(reviewed by|validated by|approved by|checked by).*(agent|architecture-designer|security-validator|performance-optimizer)|agent (review|validation|approval)"; then
+        pass "Agent attribution detected: '$attr'"
+    else
+        fail "Agent attribution missed: '$attr'"
     fi
 done
 
