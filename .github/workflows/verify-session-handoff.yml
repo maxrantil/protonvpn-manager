@@ -45,8 +45,8 @@ jobs:
             exit 0
           fi
 
-          # No handoff found - issue warning but don't fail
-          echo "⚠️  WARNING: No session handoff documentation detected"
+          # No handoff found - fail the check
+          echo "❌ ERROR: No session handoff documentation detected"
           echo ""
           echo "Per CLAUDE.md Section 5: Session handoff is MANDATORY after:"
           echo "  • Completing any GitHub issue"
@@ -65,7 +65,7 @@ jobs:
           echo "  • Next session priorities"
           echo "  • Startup prompt for next session"
           echo ""
-          echo "This is a WARNING, not a failure - please add handoff documentation"
+          echo "This is a FAILURE - session handoff is MANDATORY per CLAUDE.md"
 
-          # Exit with success (warning only)
-          exit 0
+          # Exit with failure (blocks PR)
+          exit 1
