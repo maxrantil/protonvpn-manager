@@ -1,0 +1,34 @@
+name: Shell Quality
+on:
+  pull_request:
+    branches:
+      - master
+
+jobs:
+  shellcheck:
+    name: ShellCheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run ShellCheck
+        uses: ludeeus/action-shellcheck@master
+        with:
+          severity: warning
+          ignore_paths: tests/mocks
+
+  shfmt:
+    name: Shell Format Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install shfmt
+        run: |
+          wget -O shfmt https://github.com/mvdan/sh/releases/download/v3.7.0/shfmt_v3.7.0_linux_amd64
+          chmod +x shfmt
+          sudo mv shfmt /usr/local/bin/
+
+      - name: Check formatting
+        run: |
+          shfmt -d -i 4 -ci -sr src/vpn src/vpn-manager src/vpn-connector src/vpn-utils src/vpn-colors src/vpn-error-handler tests/*.sh
