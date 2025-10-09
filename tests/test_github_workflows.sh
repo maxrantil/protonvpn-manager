@@ -185,6 +185,46 @@ for workflow in "$PROJECT_ROOT"/.github/workflows/*.yml; do
 done
 
 echo ""
+
+# Test 8: Session Handoff Detection Logic
+echo "=== Test 8: Session Handoff Detection ==="
+
+# Simulate scenarios
+SESSION_HANDOFF_EXISTS=false
+DATED_HANDOFF_EXISTS=false
+
+# Check if SESSION_HANDOVER.md would be detected
+if [[ -f "$PROJECT_ROOT/SESSION_HANDOVER.md" ]]; then
+    SESSION_HANDOFF_EXISTS=true
+fi
+
+# Check if dated session files would be detected
+if ls "$PROJECT_ROOT"/docs/implementation/SESSION*.md &>/dev/null; then
+    DATED_HANDOFF_EXISTS=true
+fi
+
+if [[ "$SESSION_HANDOFF_EXISTS" == true ]]; then
+    pass "Session handoff detection: SESSION_HANDOVER.md found"
+elif [[ "$DATED_HANDOFF_EXISTS" == true ]]; then
+    pass "Session handoff detection: Dated session file found"
+else
+    warn "No session handoff file exists (workflow will warn on PRs)"
+fi
+
+# Test the workflow logic itself exists
+if grep -q "SESSION_HANDOVER.md" "$PROJECT_ROOT/.github/workflows/verify-session-handoff.yml"; then
+    pass "Handoff workflow checks for SESSION_HANDOVER.md"
+else
+    fail "Handoff workflow missing SESSION_HANDOVER.md check"
+fi
+
+if grep -q "SESSION.*\.md" "$PROJECT_ROOT/.github/workflows/verify-session-handoff.yml"; then
+    pass "Handoff workflow checks for dated session files"
+else
+    fail "Handoff workflow missing dated file check"
+fi
+
+echo ""
 echo "=========================================="
 echo "Test Summary"
 echo "=========================================="
