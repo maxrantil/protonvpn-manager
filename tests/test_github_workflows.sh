@@ -225,6 +225,59 @@ else
 fi
 
 echo ""
+
+# Test 9: Issue Workflow Validation
+echo "=== Test 9: Issue Workflow Checks ==="
+
+# Check issue AI attribution workflow exists
+if [[ -f "$PROJECT_ROOT/.github/workflows/issue-ai-attribution-check.yml" ]]; then
+    pass "Issue AI attribution check workflow exists"
+
+    # Verify it has proper triggers
+    if grep -q "issues:" "$PROJECT_ROOT/.github/workflows/issue-ai-attribution-check.yml" && \
+       grep -q "opened" "$PROJECT_ROOT/.github/workflows/issue-ai-attribution-check.yml"; then
+        pass "Issue workflow has correct triggers (opened, edited)"
+    else
+        fail "Issue workflow missing proper triggers"
+    fi
+else
+    fail "Issue AI attribution check workflow not found"
+fi
+
+# Check issue PRD reminder workflow
+if [[ -f "$PROJECT_ROOT/.github/workflows/issue-prd-reminder.yml" ]]; then
+    pass "Issue PRD reminder workflow exists"
+
+    if grep -q "enhancement\|feature" "$PROJECT_ROOT/.github/workflows/issue-prd-reminder.yml"; then
+        pass "PRD reminder checks for feature/enhancement labels"
+    else
+        fail "PRD reminder missing label detection"
+    fi
+else
+    fail "Issue PRD reminder workflow not found"
+fi
+
+# Check issue auto-labeling workflow
+if [[ -f "$PROJECT_ROOT/.github/workflows/issue-auto-label.yml" ]]; then
+    pass "Issue auto-labeling workflow exists"
+
+    if grep -q "github-script" "$PROJECT_ROOT/.github/workflows/issue-auto-label.yml"; then
+        pass "Auto-labeling uses github-script action"
+    else
+        fail "Auto-labeling missing github-script"
+    fi
+else
+    fail "Issue auto-labeling workflow not found"
+fi
+
+# Check issue format check workflow
+if [[ -f "$PROJECT_ROOT/.github/workflows/issue-format-check.yml" ]]; then
+    pass "Issue format check workflow exists"
+else
+    fail "Issue format check workflow not found"
+fi
+
+echo ""
 echo "=========================================="
 echo "Test Summary"
 echo "=========================================="

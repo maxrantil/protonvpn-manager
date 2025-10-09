@@ -1,0 +1,80 @@
+name: Issue AI Attribution Check
+on:
+  issues:
+    types: [opened, edited]
+
+jobs:
+  check-attribution:
+    name: Detect AI Attribution in Issues
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check for AI attribution markers
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = context.payload.issue;
+            const body = issue.body || '';
+            const title = issue.title || '';
+            const combined = title + '\n' + body;
+
+            // Pattern to detect AI tool attribution
+            const aiPatterns = [
+              /Co-authored-by:.*(Claude|GPT|ChatGPT|Copilot|Gemini|Bard|AI Assistant)/i,
+              /Generated with.*(Claude|AI|GPT|ChatGPT|Copilot)/i,
+              /claude\.com\/claude-code/i,
+              /Created by (Claude|ChatGPT|GPT|Copilot|AI)/i,
+              /Written by (Claude|ChatGPT|GPT|Copilot|AI)/i,
+            ];
+
+            let foundAttribution = false;
+            let matchedPattern = '';
+
+            for (const pattern of aiPatterns) {
+              if (pattern.test(combined)) {
+                foundAttribution = true;
+                matchedPattern = pattern.toString();
+                break;
+              }
+            }
+
+            if (foundAttribution) {
+              const comment = `❌ **AI Attribution Detected**
+
+              This issue contains AI tool attribution, which is against project policy.
+
+              **Found pattern**: ${matchedPattern}
+
+              **Policy**: Per CLAUDE.md Section 1, AI attribution should not be included in:
+              - Issue descriptions
+              - Issue comments
+              - Commit messages
+              - Pull request descriptions
+
+              **Why?**
+              - Issues should describe problems/features, not authorship
+              - AI tools are development aids, not contributors
+              - Focus on content, not creation method
+
+              **Action Required**: Please edit this issue to remove AI attribution references.
+
+              Human co-authors are welcome and encouraged!`;
+
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                body: comment
+              });
+
+              // Add label
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                labels: ['needs-revision']
+              });
+
+              core.setFailed('AI attribution detected in issue');
+            } else {
+              console.log('✅ No AI attribution found in issue');
+            }
