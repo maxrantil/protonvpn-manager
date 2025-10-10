@@ -18,7 +18,7 @@ fi
 
 # Create secure log directory
 LOG_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/vpn"
-mkdir -p "$LOG_DIR" 2>/dev/null
+mkdir -p "$LOG_DIR" 2> /dev/null
 
 PERFORMANCE_CACHE="$LOG_DIR/vpn_performance.cache"
 CONNECTION_LOG="$LOG_DIR/vpn_connect.log"
@@ -72,7 +72,7 @@ validate_wireguard_config() {
 }
 
 check_internet() {
-    if ping -c 1 -W 5 8.8.8.8 >/dev/null 2>&1; then
+    if ping -c 1 -W 5 8.8.8.8 > /dev/null 2>&1; then
         return 0
     else
         network_error "$COMP_VPN_CONNECTOR" "Cannot reach external servers for connectivity test"
@@ -83,14 +83,14 @@ check_internet() {
 check_dependencies() {
     local missing_deps=()
 
-    command -v openvpn >/dev/null || missing_deps+=("openvpn")
-    command -v curl >/dev/null || missing_deps+=("curl")
-    command -v bc >/dev/null || missing_deps+=("bc")
-    command -v notify-send >/dev/null || missing_deps+=("libnotify")
-    command -v ip >/dev/null || missing_deps+=("iproute2")
+    command -v openvpn > /dev/null || missing_deps+=("openvpn")
+    command -v curl > /dev/null || missing_deps+=("curl")
+    command -v bc > /dev/null || missing_deps+=("bc")
+    command -v notify-send > /dev/null || missing_deps+=("libnotify")
+    command -v ip > /dev/null || missing_deps+=("iproute2")
 
     # WireGuard support - wg-quick for .conf protocol handling
-    command -v wg-quick >/dev/null || missing_deps+=("wireguard-tools")
+    command -v wg-quick > /dev/null || missing_deps+=("wireguard-tools")
 
     if [[ ${#missing_deps[@]} -gt 0 ]]; then
         dependency_error "$COMP_VPN_CONNECTOR" "${missing_deps[*]}" "sudo pacman -S ${missing_deps[*]}"
@@ -103,8 +103,8 @@ check_dependencies() {
 acquire_lock() {
     if [[ -f "$LOCK_FILE" ]]; then
         local lock_pid
-        lock_pid=$(cat "$LOCK_FILE" 2>/dev/null)
-        if [[ -n "$lock_pid" ]] && kill -0 "$lock_pid" 2>/dev/null; then
+        lock_pid=$(cat "$LOCK_FILE" 2> /dev/null)
+        if [[ -n "$lock_pid" ]] && kill -0 "$lock_pid" 2> /dev/null; then
             echo -e "\033[1;33mAnother VPN connection is already in progress (PID: $lock_pid)\033[0m"
             return 1
         else
@@ -139,7 +139,7 @@ list_profiles() {
     if [[ -n "$filter" ]]; then
         profiles=$(find_profiles_by_country "$filter")
     else
-        profiles=$(find "$LOCATIONS_DIR" \( -name "*.ovpn" -o -name "*.conf" \) 2>/dev/null | sort)
+        profiles=$(find "$LOCATIONS_DIR" \( -name "*.ovpn" -o -name "*.conf" \) 2> /dev/null | sort)
     fi
 
     if [[ -z "$profiles" ]]; then
@@ -164,7 +164,7 @@ list_profiles() {
             server_ip=$(grep -m1 "^remote " "$profile" | awk '{print $2}')
 
             # Check for secure core indicators using two-country-code pattern
-            if echo "$name" | grep -E '^[a-z]{2}-[a-z]{2}-[0-9]+' >/dev/null; then
+            if echo "$name" | grep -E '^[a-z]{2}-[a-z]{2}-[0-9]+' > /dev/null; then
                 # Secure core: extract entry and exit countries
                 if [[ "$name" =~ ^([a-z]{2})-([a-z]{2})-([0-9]+) ]]; then
                     country_info=" (${BASH_REMATCH[1]^^} → ${BASH_REMATCH[2]^^})"
@@ -197,19 +197,19 @@ list_profiles() {
 }
 
 detect_secure_core_profiles() {
-    find "$LOCATIONS_DIR" \( -name "*.ovpn" -o -name "*.conf" \) 2>/dev/null | while IFS= read -r profile; do
+    find "$LOCATIONS_DIR" \( -name "*.ovpn" -o -name "*.conf" \) 2> /dev/null | while IFS= read -r profile; do
         local name
         # Handle both .ovpn and .conf extensions
         name=$(basename "$profile" | sed 's/\.\(ovpn\|conf\)$//')
 
         # Check for two-country-code pattern: [country1]-[country2]-[number]
         # Examples: is-br-01, se-au-01, ch-us-10
-        if echo "$name" | grep -E '^[a-z]{2}-[a-z]{2}-[0-9]+' >/dev/null; then
+        if echo "$name" | grep -E '^[a-z]{2}-[a-z]{2}-[0-9]+' > /dev/null; then
             echo "$profile"
         # Fallback: check for legacy secure core indicators in filename or content
         elif echo "$name" | grep -iq "secure\|core\|tor"; then
             echo "$profile"
-        elif grep -q "# Secure Core" "$profile" 2>/dev/null; then
+        elif grep -q "# Secure Core" "$profile" 2> /dev/null; then
             echo "$profile"
         fi
     done
@@ -223,7 +223,7 @@ interactive_profile_selection() {
         profiles=$(find_profiles_by_country "$filter")
         echo -e "\033[1;36mProfiles matching '$filter':\033[0m"
     else
-        profiles=$(find "$LOCATIONS_DIR" \( -name "*.ovpn" -o -name "*.conf" \) 2>/dev/null | sort)
+        profiles=$(find "$LOCATIONS_DIR" \( -name "*.ovpn" -o -name "*.conf" \) 2> /dev/null | sort)
         echo -e "\033[1;36mAll available profiles:\033[0m"
     fi
 
@@ -263,7 +263,7 @@ interactive_profile_selection() {
         return 1
     fi
 
-    local selected_profile="${profile_array[$((selection-1))]}"
+    local selected_profile="${profile_array[$((selection - 1))]}"
     echo -e "\033[1;32mSelected: $(basename "$selected_profile" .ovpn)\033[0m"
 
     connect_to_profile "$selected_profile"
@@ -295,7 +295,7 @@ find_profiles_by_country() {
     local country_code="$1"
 
     if [[ -z "$country_code" ]]; then
-        find "$LOCATIONS_DIR" \( -name "*.ovpn" -o -name "*.conf" \) 2>/dev/null | sort
+        find "$LOCATIONS_DIR" \( -name "*.ovpn" -o -name "*.conf" \) 2> /dev/null | sort
         return
     fi
 
@@ -309,7 +309,7 @@ find_profiles_by_country() {
     local results
 
     # Primary pattern: country code prefix for both protocols
-    results=$(find "$LOCATIONS_DIR" \( -name "${country_code}-*.ovpn" -o -name "${country_code}-*.conf" \) 2>/dev/null)
+    results=$(find "$LOCATIONS_DIR" \( -name "${country_code}-*.ovpn" -o -name "${country_code}-*.conf" \) 2> /dev/null)
 
     # Secondary pattern: try variations like *_se_*, *SE*, etc.
     if [[ -z "$results" ]]; then
@@ -326,7 +326,7 @@ find_profiles_by_country() {
 
         for pattern in "${patterns[@]}"; do
             local matches
-            matches=$(find "$LOCATIONS_DIR" -name "$pattern" 2>/dev/null)
+            matches=$(find "$LOCATIONS_DIR" -name "$pattern" 2> /dev/null)
             if [[ -n "$matches" ]]; then
                 results="$matches"
                 break
@@ -336,14 +336,14 @@ find_profiles_by_country() {
 
     # Fallback: case-insensitive search in filenames for both protocols
     if [[ -z "$results" ]]; then
-        results=$(find "$LOCATIONS_DIR" \( -name "*.ovpn" -o -name "*.conf" \) 2>/dev/null | grep -i "$country_code")
+        results=$(find "$LOCATIONS_DIR" \( -name "*.ovpn" -o -name "*.conf" \) 2> /dev/null | grep -i "$country_code")
     fi
 
     echo "$results" | sort
 }
 
 get_available_countries() {
-    find "$LOCATIONS_DIR" \( -name "*.ovpn" -o -name "*.conf" \) 2>/dev/null | while IFS= read -r profile; do
+    find "$LOCATIONS_DIR" \( -name "*.ovpn" -o -name "*.conf" \) 2> /dev/null | while IFS= read -r profile; do
         local name
         # Handle both .ovpn and .conf extensions
         name=$(basename "$profile" | sed 's/\.\(ovpn\|conf\)$//')
@@ -368,7 +368,7 @@ test_server_latency() {
     fi
 
     local ping_result
-    ping_result=$(ping -c 3 -W $timeout "$server_ip" 2>/dev/null | grep "avg" | awk -F '/' '{print $5}')
+    ping_result=$(ping -c 3 -W $timeout "$server_ip" 2> /dev/null | grep "avg" | awk -F '/' '{print $5}')
 
     if [[ -n "$ping_result" ]]; then
         echo "$ping_result"
@@ -411,8 +411,8 @@ check_vpn_processes() {
     local openvpn_processes
     local wireguard_interfaces
 
-    openvpn_processes=$(pgrep -f "openvpn.*config" 2>/dev/null | wc -l)
-    wireguard_interfaces=$(wg show 2>/dev/null | grep -c "^interface:" 2>/dev/null || echo 0)
+    openvpn_processes=$(pgrep -f "openvpn.*config" 2> /dev/null | wc -l)
+    wireguard_interfaces=$(wg show 2> /dev/null | grep -c "^interface:" 2> /dev/null || echo 0)
 
     # Ensure we have clean numeric values
     openvpn_processes=${openvpn_processes//[^0-9]/}
@@ -454,7 +454,7 @@ connect_openvpn_profile() {
 
     # Check ownership
     local file_owner
-    file_owner=$(stat -c "%U" "$CREDENTIALS_FILE" 2>/dev/null)
+    file_owner=$(stat -c "%U" "$CREDENTIALS_FILE" 2> /dev/null)
     if [[ "$file_owner" != "$(whoami)" ]]; then
         echo -e "\033[1;31mERROR: Credentials file not owned by current user!\033[0m"
         return 1
@@ -462,7 +462,7 @@ connect_openvpn_profile() {
 
     # Fix permissions if needed
     local file_perms
-    file_perms=$(stat -c "%a" "$CREDENTIALS_FILE" 2>/dev/null)
+    file_perms=$(stat -c "%a" "$CREDENTIALS_FILE" 2> /dev/null)
     if [[ "$file_perms" != "600" ]]; then
         chmod 600 "$CREDENTIALS_FILE"
     fi
@@ -479,17 +479,17 @@ connect_openvpn_profile() {
     log_message "Attempting OpenVPN connection to $profile_name" "$CONNECTION_LOG"
 
     # Log to secure log file
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] Connection attempt started: $profile_name" >> "$CONNECTION_LOG" 2>/dev/null || true
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] Connection attempt started: $profile_name" >> "$CONNECTION_LOG" 2> /dev/null || true
 
     # Clean state before connecting
-    "$VPN_DIR/vpn-manager" cleanup >/dev/null 2>&1
+    "$VPN_DIR/vpn-manager" cleanup > /dev/null 2>&1
     sleep 2
 
     for attempt in $(seq 1 "$max_attempts"); do
         echo "  Attempt $attempt of $max_attempts"
 
         # Clear previous log to avoid false positives
-        sudo rm -f "$LOG_DIR/openvpn.log" 2>/dev/null || true
+        sudo rm -f "$LOG_DIR/openvpn.log" 2> /dev/null || true
 
         # Start OpenVPN daemon without aggressive timeout
         sudo openvpn \
@@ -508,16 +508,16 @@ connect_openvpn_profile() {
             # Check for authentication failures
             # openvpn may write to /tmp/openvpn.log as fallback if it can't write to LOG_DIR
             for log_location in "$LOG_DIR/openvpn.log" "/tmp/openvpn.log"; do
-                if [[ -f "$log_location" ]] && sudo grep -q "AUTH_FAILED" "$log_location" 2>/dev/null; then
+                if [[ -f "$log_location" ]] && sudo grep -q "AUTH_FAILED" "$log_location" 2> /dev/null; then
                     echo -e "\033[1;31m✗ Authentication failed - check credentials in $CREDENTIALS_FILE\033[0m"
                     log_message "Authentication failed for $profile_name - invalid credentials" "$CONNECTION_LOG"
-                    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [ERROR] AUTH_FAILED: $profile_name" >> "$CONNECTION_LOG" 2>/dev/null || true
+                    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [ERROR] AUTH_FAILED: $profile_name" >> "$CONNECTION_LOG" 2> /dev/null || true
                     notify_event "auth_failed" "$profile_name"
-                    sudo "$VPN_DIR/vpn-manager" cleanup >/dev/null 2>&1
+                    sudo "$VPN_DIR/vpn-manager" cleanup > /dev/null 2>&1
                     return 1
                 fi
                 # Check if connection was established (TLS handshake complete)
-                if [[ -f "$log_location" ]] && sudo grep -q "Peer Connection Initiated" "$log_location" 2>/dev/null; then
+                if [[ -f "$log_location" ]] && sudo grep -q "Peer Connection Initiated" "$log_location" 2> /dev/null; then
                     # Connection initiated, break out of auth check loop
                     break 2
                 fi
@@ -532,7 +532,7 @@ connect_openvpn_profile() {
 
             # Check for auth failures during connection (both log locations)
             for log_location in "$LOG_DIR/openvpn.log" "/tmp/openvpn.log"; do
-                if [[ -f "$log_location" ]] && sudo grep -q "AUTH_FAILED" "$log_location" 2>/dev/null; then
+                if [[ -f "$log_location" ]] && sudo grep -q "AUTH_FAILED" "$log_location" 2> /dev/null; then
                     echo -e "\033[1;31m✗ Authentication failed during connection\033[0m"
                     log_message "Authentication failed for $profile_name during connection phase" "$CONNECTION_LOG"
                     connection_established=-1
@@ -545,7 +545,7 @@ connect_openvpn_profile() {
 
             # Check status without health warnings interfering
             local status_check
-            status_check=$("$VPN_DIR/vpn-manager" status 2>/dev/null | grep "VPN Status:" | grep -q "CONNECTED" && echo "connected" || echo "not_connected")
+            status_check=$("$VPN_DIR/vpn-manager" status 2> /dev/null | grep "VPN Status:" | grep -q "CONNECTED" && echo "connected" || echo "not_connected")
             if [[ "$status_check" == "connected" ]]; then
                 connection_established=1
                 break
@@ -557,10 +557,10 @@ connect_openvpn_profile() {
         if [[ $connection_established -eq 1 ]]; then
             echo -e "\033[1;32m✓ Successfully connected to OpenVPN $profile_name\033[0m"
             log_message "Successfully connected to OpenVPN $profile_name on attempt $attempt" "$CONNECTION_LOG"
-            echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] Connected successfully: $profile_name (attempt $attempt/$max_attempts)" >> "$CONNECTION_LOG" 2>/dev/null || true
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] Connected successfully: $profile_name (attempt $attempt/$max_attempts)" >> "$CONNECTION_LOG" 2> /dev/null || true
 
             notify_event "connection_established" "$profile_name"
-            pkill -RTMIN+4 dwmblocks 2>/dev/null || true
+            pkill -RTMIN+4 dwmblocks 2> /dev/null || true
 
             return 0
         fi
@@ -570,11 +570,11 @@ connect_openvpn_profile() {
 
         # Clean up failed processes after each attempt
         local failed_processes
-        failed_processes=$(pgrep -f "openvpn.*--config" 2>/dev/null | wc -l)
+        failed_processes=$(pgrep -f "openvpn.*--config" 2> /dev/null | wc -l)
         if [[ $failed_processes -gt 1 ]]; then
             echo -e "\033[1;33m  Cleaning up $((failed_processes - 1)) failed process(es)\033[0m"
             # Kill all but the most recent process (keep the one that might succeed)
-            pgrep -f "openvpn.*--config" 2>/dev/null | head -n -1 | xargs -r sudo kill 2>/dev/null || true
+            pgrep -f "openvpn.*--config" 2> /dev/null | head -n -1 | xargs -r sudo kill 2> /dev/null || true
         fi
 
         if [[ $attempt -lt $max_attempts ]]; then
@@ -585,7 +585,7 @@ connect_openvpn_profile() {
 
     echo -e "\033[1;31m✗ Failed to connect to OpenVPN $profile_name after $max_attempts attempts\033[0m"
     log_message "Failed to connect to OpenVPN $profile_name after $max_attempts attempts" "$CONNECTION_LOG"
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [ERROR] Connection failed: $profile_name (all $max_attempts attempts exhausted)" >> "$CONNECTION_LOG" 2>/dev/null || true
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [ERROR] Connection failed: $profile_name (all $max_attempts attempts exhausted)" >> "$CONNECTION_LOG" 2> /dev/null || true
     notify_event "connection_failed" "$profile_name"
 
     return 1
@@ -619,7 +619,7 @@ connect_wireguard_profile() {
         # WireGuard connection attempt notification removed - using centralized system for result only
 
         # Simple WireGuard connection attempt (reverted to prevent network disruption)
-        if sudo wg-quick up "$profile_path" >/dev/null 2>&1; then
+        if sudo wg-quick up "$profile_path" > /dev/null 2>&1; then
             sleep 3
 
             # Verify connection is up
@@ -628,7 +628,7 @@ connect_wireguard_profile() {
                 log_message "Successfully connected to WireGuard $interface_name on attempt $attempt" "$CONNECTION_LOG"
 
                 notify_event "connection_established" "$interface_name"
-                pkill -RTMIN+4 dwmblocks 2>/dev/null || true
+                pkill -RTMIN+4 dwmblocks 2> /dev/null || true
 
                 return 0
             fi
@@ -638,7 +638,7 @@ connect_wireguard_profile() {
         log_message "WireGuard connection attempt $attempt failed for $interface_name" "$CONNECTION_LOG"
 
         # Cleanup failed attempt - use full path to config file
-        sudo wg-quick down "$profile_path" >/dev/null 2>&1 || true
+        sudo wg-quick down "$profile_path" > /dev/null 2>&1 || true
 
         if [[ $attempt -lt $max_attempts ]]; then
             echo "  Waiting before retry..."
@@ -688,7 +688,7 @@ load_performance_cache() {
 
     # Check if cache is older than 2 hours (7200 seconds)
     local cache_age
-    cache_age=$(($(date +%s) - $(stat -f %m "$PERFORMANCE_CACHE" 2>/dev/null || stat -c %Y "$PERFORMANCE_CACHE" 2>/dev/null || echo 0)))
+    cache_age=$(($(date +%s) - $(stat -f %m "$PERFORMANCE_CACHE" 2> /dev/null || stat -c %Y "$PERFORMANCE_CACHE" 2> /dev/null || echo 0)))
 
     if [[ $cache_age -gt 7200 ]]; then
         echo -e "\033[1;33mPerformance cache expired (${cache_age}s old), will refresh\033[0m"
@@ -711,7 +711,7 @@ get_cached_best_profile() {
 
     # Use our comprehensive performance cache system
     local best_profile_name
-    if best_profile_name=$("$VPN_DIR/best-vpn-profile" best "$country_filter" 2>/dev/null); then
+    if best_profile_name=$("$VPN_DIR/best-vpn-profile" best "$country_filter" 2> /dev/null); then
         # Convert profile name back to full path
         local profile_path
         if [[ -n "$country_filter" ]]; then
@@ -755,7 +755,7 @@ test_and_cache_performance() {
 
     # Use our comprehensive performance testing engine
     local best_profile_name
-    if best_profile_name=$("$VPN_DIR/best-vpn-profile" fresh "$country_filter" 2>/dev/null); then
+    if best_profile_name=$("$VPN_DIR/best-vpn-profile" fresh "$country_filter" 2> /dev/null); then
         # Convert profile name back to full path
         local profile_path
         if [[ -n "$country_filter" ]]; then
@@ -798,7 +798,7 @@ best_server_connect() {
         return 0
     else
         # Use best-vpn-profile for performance testing (will create connection)
-        if best_profile=$("$VPN_DIR/best-vpn-profile" best "$country_filter" 2>/dev/null); then
+        if best_profile=$("$VPN_DIR/best-vpn-profile" best "$country_filter" 2> /dev/null); then
             echo -e "\033[1;32m✓ Best server connection simulation completed\033[0m"
             return 0
         else
@@ -875,7 +875,7 @@ connect_custom_profile() {
 }
 
 case "$1" in
-    "connect"|"c")
+    "connect" | "c")
         if ! check_dependencies; then
             exit 1
         fi
@@ -886,7 +886,7 @@ case "$1" in
 
         connect_random "$2"
         ;;
-    "best"|"b")
+    "best" | "b")
         if ! check_dependencies; then
             exit 1
         fi
@@ -899,7 +899,7 @@ case "$1" in
         echo -e "\033[1;36mFinding best server and connecting...\033[0m"
         best_server_connect "full" "$2"
         ;;
-    "fast"|"f")
+    "fast" | "f")
         if ! check_dependencies; then
             exit 1
         fi
@@ -933,7 +933,7 @@ case "$1" in
 
         connect_custom_profile "$2"
         ;;
-    "interactive"|"i")
+    "interactive" | "i")
         if ! check_dependencies; then
             exit 1
         fi
@@ -951,7 +951,7 @@ case "$1" in
             printf "  %-3s (%d profiles)\n" "${country^^}" "$count"
         done
         ;;
-    "list"|"l")
+    "list" | "l")
         if [[ "$2" == "detailed" ]]; then
             list_profiles "$3" "detailed"
         else
@@ -970,13 +970,13 @@ case "$1" in
                 ;;
             "info")
                 if [[ -f "$PERFORMANCE_CACHE" ]]; then
-                    cache_age=$(($(date +%s) - $(stat -c %Y "$PERFORMANCE_CACHE" 2>/dev/null || echo 0)))
-                    cache_size=$(du -h "$PERFORMANCE_CACHE" 2>/dev/null | cut -f1)
-                    cache_entries=$(wc -l < "$PERFORMANCE_CACHE" 2>/dev/null)
+                    cache_age=$(($(date +%s) - $(stat -c %Y "$PERFORMANCE_CACHE" 2> /dev/null || echo 0)))
+                    cache_size=$(du -h "$PERFORMANCE_CACHE" 2> /dev/null | cut -f1)
+                    cache_entries=$(wc -l < "$PERFORMANCE_CACHE" 2> /dev/null)
 
                     echo -e "\033[1;36mPerformance Cache Information:\033[0m"
                     echo "  File: $PERFORMANCE_CACHE"
-                    echo "  Age: ${cache_age}s ($(( cache_age / 60 ))m $(( cache_age % 60 ))s)"
+                    echo "  Age: ${cache_age}s ($((cache_age / 60))m $((cache_age % 60))s)"
                     echo "  Size: $cache_size"
                     echo "  Entries: $cache_entries"
 
@@ -994,7 +994,7 @@ case "$1" in
                 ;;
         esac
         ;;
-    "test"|"t")
+    "test" | "t")
         if ! check_dependencies; then
             echo -e "\033[1;31mDependency check failed\033[0m"
             exit 1
@@ -1010,7 +1010,7 @@ case "$1" in
             exit 1
         fi
 
-        if ! list_profiles >/dev/null; then
+        if ! list_profiles > /dev/null; then
             echo -e "\033[1;31mNo VPN profiles available\033[0m"
             exit 1
         fi

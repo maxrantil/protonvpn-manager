@@ -13,7 +13,7 @@ fi
 
 # Create secure log directory
 LOG_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/vpn"
-mkdir -p "$LOG_DIR" 2>/dev/null
+mkdir -p "$LOG_DIR" 2> /dev/null
 
 VPN_PID_FILE="/var/run/openvpn.pid"
 VPN_LOG_FILE="$LOG_DIR/vpn_manager.log"
@@ -28,7 +28,7 @@ fi
 if [[ ! -f "$VPN_LOG_FILE" ]]; then
     touch "$VPN_LOG_FILE"
     chmod 644 "$VPN_LOG_FILE"
-elif [[ "$(stat -c '%a' "$VPN_LOG_FILE" 2>/dev/null)" != "644" ]]; then
+elif [[ "$(stat -c '%a' "$VPN_LOG_FILE" 2> /dev/null)" != "644" ]]; then
     chmod 644 "$VPN_LOG_FILE"
 fi
 
@@ -48,7 +48,7 @@ log_vpn_event() {
     local max_lines=1000
 
     # Create log entry
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [$level] $message" >> "$log_file" 2>/dev/null || {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [$level] $message" >> "$log_file" 2> /dev/null || {
         # Fallback to stderr if log file not writable
         echo "[$(date '+%Y-%m-%d %H:%M:%S')] [$level] $message" >&2
         return 1
@@ -57,12 +57,12 @@ log_vpn_event() {
     # Simple log rotation: keep last N lines
     if [[ -f "$log_file" ]]; then
         local line_count
-        line_count=$(wc -l < "$log_file" 2>/dev/null || echo 0)
+        line_count=$(wc -l < "$log_file" 2> /dev/null || echo 0)
 
         if [[ $line_count -gt $max_lines ]]; then
             # Keep last max_lines entries
-            if tail -n "$max_lines" "$log_file" > "${log_file}.tmp" 2>/dev/null; then
-                mv "${log_file}.tmp" "$log_file" 2>/dev/null || true
+            if tail -n "$max_lines" "$log_file" > "${log_file}.tmp" 2> /dev/null; then
+                mv "${log_file}.tmp" "$log_file" 2> /dev/null || true
             fi
         fi
     fi
@@ -87,36 +87,36 @@ view_logs() {
     tail -n "$num_lines" "$log_file" | while IFS= read -r line; do
         # Color code by log level
         if [[ "$line" =~ \[ERROR\] ]]; then
-            echo -e "\033[1;31m$line\033[0m"  # Red for errors
+            echo -e "\033[1;31m$line\033[0m" # Red for errors
         elif [[ "$line" =~ \[WARN\] ]]; then
-            echo -e "\033[1;33m$line\033[0m"  # Yellow for warnings
+            echo -e "\033[1;33m$line\033[0m" # Yellow for warnings
         elif [[ "$line" =~ \[INFO\] ]]; then
-            echo -e "\033[1;32m$line\033[0m"  # Green for info
+            echo -e "\033[1;32m$line\033[0m" # Green for info
         else
-            echo "$line"  # Default for debug/other
+            echo "$line" # Default for debug/other
         fi
     done
 }
 
 get_cached_external_ip() {
     local cache_file="/tmp/vpn_external_ip_cache"
-    local cache_age=30  # Cache for 30 seconds
+    local cache_age=30 # Cache for 30 seconds
 
     # Use cache if it exists and is recent
     if [[ -f "$cache_file" ]]; then
         local cache_timestamp file_age
-        cache_timestamp=$(stat -c %Y "$cache_file" 2>/dev/null || echo "0")
+        cache_timestamp=$(stat -c %Y "$cache_file" 2> /dev/null || echo "0")
         file_age=$(($(date +%s) - cache_timestamp))
 
         if [[ "$file_age" -lt "$cache_age" ]]; then
-            cat "$cache_file" 2>/dev/null && return
+            cat "$cache_file" 2> /dev/null && return
         fi
     fi
 
     # Fetch fresh IP and cache it
     local external_ip
-    external_ip=$(curl -s --max-time 5 https://ipinfo.io/ip 2>/dev/null || echo "Unable to determine")
-    echo "$external_ip" > "$cache_file" 2>/dev/null || true
+    external_ip=$(curl -s --max-time 5 https://ipinfo.io/ip 2> /dev/null || echo "Unable to determine")
+    echo "$external_ip" > "$cache_file" 2> /dev/null || true
     echo "$external_ip"
 }
 
@@ -137,7 +137,7 @@ validate_credentials() {
 
     # Security: Check file ownership (must be owned by current user)
     local file_owner
-    file_owner=$(stat -c "%U" "$credentials_file" 2>/dev/null)
+    file_owner=$(stat -c "%U" "$credentials_file" 2> /dev/null)
     if [[ "$file_owner" != "$(whoami)" ]]; then
         log_message "ERROR: Credentials file not owned by current user!" "$VPN_LOG_FILE"
         return 1
@@ -145,7 +145,7 @@ validate_credentials() {
 
     # Security: Check file permissions (must be 600)
     local file_perms
-    file_perms=$(stat -c "%a" "$credentials_file" 2>/dev/null)
+    file_perms=$(stat -c "%a" "$credentials_file" 2> /dev/null)
     if [[ "$file_perms" != "600" ]]; then
         log_message "WARNING: Fixing insecure credentials file permissions" "$VPN_LOG_FILE"
         chmod 600 "$credentials_file"
@@ -153,7 +153,7 @@ validate_credentials() {
 
     # Check for basic credential structure (username and password lines)
     local line_count
-    line_count=$(wc -l < "$credentials_file" 2>/dev/null || echo 0)
+    line_count=$(wc -l < "$credentials_file" 2> /dev/null || echo 0)
 
     if [[ $line_count -lt 2 ]]; then
         log_message "Credential validation: insufficient credential lines (auth failure likely)" "$VPN_LOG_FILE"
@@ -174,11 +174,11 @@ get_vpn_pid() {
     local pid_from_file pid_from_process
 
     # First, try to find running OpenVPN process
-    pid_from_process=$(pgrep -f "^openvpn.*--config" 2>/dev/null | head -1 || true)
+    pid_from_process=$(pgrep -f "^openvpn.*--config" 2> /dev/null | head -1 || true)
 
     # If we have a PID file, check if it matches the running process
     if [[ -f "$VPN_PID_FILE" ]]; then
-        pid_from_file=$(cat "$VPN_PID_FILE" 2>/dev/null)
+        pid_from_file=$(cat "$VPN_PID_FILE" 2> /dev/null)
 
         # If PID file matches running process, prefer it
         if [[ -n "$pid_from_file" && -n "$pid_from_process" && "$pid_from_file" == "$pid_from_process" ]]; then
@@ -187,7 +187,7 @@ get_vpn_pid() {
         fi
 
         # If we can signal the PID from file (user has permission), use it
-        if [[ -n "$pid_from_file" ]] && kill -0 "$pid_from_file" 2>/dev/null; then
+        if [[ -n "$pid_from_file" ]] && kill -0 "$pid_from_file" 2> /dev/null; then
             echo "$pid_from_file"
             return 0
         fi
@@ -208,12 +208,12 @@ is_vpn_running() {
 
     if [[ -n "$pid" ]]; then
         # First try kill -0 (works if we have permission)
-        if kill -0 "$pid" 2>/dev/null; then
+        if kill -0 "$pid" 2> /dev/null; then
             return 0
         fi
 
         # Fall back to ps check (works for any process)
-        if ps -p "$pid" >/dev/null 2>&1; then
+        if ps -p "$pid" > /dev/null 2>&1; then
             return 0
         fi
     fi
@@ -223,7 +223,7 @@ is_vpn_running() {
 
 check_process_health() {
     local process_count pids
-    pids=$(pgrep -f "^openvpn.*--config" 2>/dev/null || true)
+    pids=$(pgrep -f "^openvpn.*--config" 2> /dev/null || true)
     if [[ -n "$pids" ]]; then
         process_count=$(echo "$pids" | wc -l)
     else
@@ -238,7 +238,7 @@ check_process_health() {
     elif [[ $process_count -eq 1 ]]; then
         return 0
     else
-        return 2  # No processes running
+        return 2 # No processes running
     fi
 }
 
@@ -297,7 +297,7 @@ show_status() {
         if [[ -n "$interface" ]]; then
             echo -e "  Interface: $interface"
             local vpn_ip gateway
-            vpn_ip=$(ip addr show "$interface" 2>/dev/null | grep "inet " | awk '{print $2}' | cut -d'/' -f1)
+            vpn_ip=$(ip addr show "$interface" 2> /dev/null | grep "inet " | awk '{print $2}' | cut -d'/' -f1)
             gateway=$(get_vpn_gateway)
 
             if [[ -n "$vpn_ip" ]]; then
@@ -313,7 +313,7 @@ show_status() {
         echo "$external_ip"
 
         local uptime
-        uptime=$(ps -o etime= -p "$pid" 2>/dev/null | tr -d ' ')
+        uptime=$(ps -o etime= -p "$pid" 2> /dev/null | tr -d ' ')
         if [[ -n "$uptime" ]]; then
             echo -e "  Uptime: $uptime"
         fi
@@ -335,12 +335,12 @@ show_status() {
 
     echo
     local active_tunnels
-    active_tunnels=$(ip addr show | grep -c "tun[0-9]" 2>/dev/null || echo "0")
+    active_tunnels=$(ip addr show | grep -c "tun[0-9]" 2> /dev/null || echo "0")
     echo -e "  Active tunnels: $active_tunnels"
 
     if [[ -f "$VPN_LOG_FILE" ]]; then
         local log_size
-        log_size=$(du -h "$VPN_LOG_FILE" 2>/dev/null | cut -f1)
+        log_size=$(du -h "$VPN_LOG_FILE" 2> /dev/null | cut -f1)
         echo -e "  Log file size: $log_size"
     fi
 }
@@ -365,9 +365,9 @@ stop_vpn() {
 
         # Try regular kill first, then sudo if needed
         local kill_success=false
-        if kill -TERM "$pid" 2>/dev/null; then
+        if kill -TERM "$pid" 2> /dev/null; then
             kill_success=true
-        elif sudo kill -TERM "$pid" 2>/dev/null; then
+        elif sudo kill -TERM "$pid" 2> /dev/null; then
             kill_success=true
             echo "  Used sudo to terminate root process"
         fi
@@ -377,7 +377,7 @@ stop_vpn() {
             local count=0
             # Wait for process to terminate, using ps check for root processes
             while [[ $count -lt 10 ]]; do
-                if ps -p "$pid" >/dev/null 2>&1; then
+                if ps -p "$pid" > /dev/null 2>&1; then
                     sleep 1
                     ((count++))
                 else
@@ -386,11 +386,11 @@ stop_vpn() {
             done
 
             # If still running, try KILL signal
-            if ps -p "$pid" >/dev/null 2>&1; then
+            if ps -p "$pid" > /dev/null 2>&1; then
                 echo "Process still running, sending KILL signal"
                 log_vpn_event "WARN" "VPN process required KILL signal (PID: $pid)"
-                if ! kill -KILL "$pid" 2>/dev/null; then
-                    sudo kill -KILL "$pid" 2>/dev/null || true
+                if ! kill -KILL "$pid" 2> /dev/null; then
+                    sudo kill -KILL "$pid" 2> /dev/null || true
                 fi
                 sleep 2
             fi
@@ -416,7 +416,7 @@ stop_vpn() {
 
     notify_event "status_check" "DISCONNECTED"
 
-    pkill -RTMIN+4 dwmblocks 2>/dev/null || true
+    pkill -RTMIN+4 dwmblocks 2> /dev/null || true
 
     return 0
 }
@@ -432,7 +432,7 @@ validate_openvpn_process() {
         return 1
     fi
     local cmd_line
-    cmd_line=$(ps -p "$pid" -o cmd= 2>/dev/null || true)
+    cmd_line=$(ps -p "$pid" -o cmd= 2> /dev/null || true)
     [[ "$cmd_line" =~ ^openvpn.*--config ]]
 }
 
@@ -442,10 +442,10 @@ validate_and_discover_processes() {
     local openvpn_pids zombie_pids pids
 
     # Find running OpenVPN processes
-    openvpn_pids=$(pgrep -f "openvpn.*--config" 2>/dev/null || true)
+    openvpn_pids=$(pgrep -f "openvpn.*--config" 2> /dev/null || true)
 
     # Find zombie OpenVPN processes
-    zombie_pids=$(ps -eo pid,stat,comm | awk '$2~/^Z/ && $3=="openvpn" {print $1}' 2>/dev/null || true)
+    zombie_pids=$(ps -eo pid,stat,comm | awk '$2~/^Z/ && $3=="openvpn" {print $1}' 2> /dev/null || true)
 
     # Combine and deduplicate PIDs
     pids=$(echo -e "$openvpn_pids\n$zombie_pids" | grep -v '^$' | sort -u || true)
@@ -465,7 +465,7 @@ attempt_graceful_termination() {
         fi
         if validate_openvpn_process "$pid"; then
             echo "  Sending TERM signal to process $pid..."
-            kill -TERM "$pid" 2>/dev/null || true
+            kill -TERM "$pid" 2> /dev/null || true
         else
             log_message "SECURITY: Skipped invalid/non-OpenVPN PID $pid" "$VPN_LOG_FILE"
         fi
@@ -486,7 +486,7 @@ attempt_forceful_termination() {
         fi
         if validate_openvpn_process "$pid"; then
             echo "  Sending KILL signal to process $pid..."
-            kill -KILL "$pid" 2>/dev/null || true
+            kill -KILL "$pid" 2> /dev/null || true
         else
             log_message "SECURITY: Skipped invalid/non-OpenVPN PID $pid" "$VPN_LOG_FILE"
         fi
@@ -507,7 +507,7 @@ attempt_sudo_termination() {
         fi
         if validate_openvpn_process "$pid"; then
             echo "  Using sudo KILL on process $pid..."
-            sudo kill -KILL "$pid" 2>/dev/null || true
+            sudo kill -KILL "$pid" 2> /dev/null || true
         else
             log_message "SECURITY: Skipped invalid/non-OpenVPN PID $pid" "$VPN_LOG_FILE"
         fi
@@ -520,7 +520,7 @@ attempt_sudo_termination() {
 # Returns: 0 if no processes remain, 1 otherwise
 verify_cleanup_success() {
     local remaining_pids
-    remaining_pids=$(pgrep -f "openvpn.*--config" 2>/dev/null || true)
+    remaining_pids=$(pgrep -f "openvpn.*--config" 2> /dev/null || true)
 
     if [[ -z "$remaining_pids" ]]; then
         return 0
@@ -586,9 +586,9 @@ hierarchical_process_cleanup() {
                 while IFS= read -r pid; do
                     if [[ -n "$pid" ]] && [[ "$pid" =~ ^[0-9]+$ ]]; then
                         local cmd_line
-                        cmd_line=$(ps -p "$pid" -o cmd= 2>/dev/null || true)
+                        cmd_line=$(ps -p "$pid" -o cmd= 2> /dev/null || true)
                         if [[ "$cmd_line" =~ ^openvpn.*--config ]]; then
-                            sudo kill -KILL "$pid" 2>/dev/null || true
+                            sudo kill -KILL "$pid" 2> /dev/null || true
                         fi
                     fi
                 done <<< "$pids"
@@ -602,7 +602,7 @@ hierarchical_process_cleanup() {
             return 0
         else
             local remaining_pids
-            remaining_pids=$(pgrep -f "openvpn.*--config" 2>/dev/null || true)
+            remaining_pids=$(pgrep -f "openvpn.*--config" 2> /dev/null || true)
             echo "  Remaining processes after $level: $(echo "$remaining_pids" | tr '\n' ' ')"
         fi
     done
@@ -611,7 +611,7 @@ hierarchical_process_cleanup() {
     sleep 1
     if ! verify_cleanup_success; then
         local final_check
-        final_check=$(pgrep -f "openvpn.*--config" 2>/dev/null || true)
+        final_check=$(pgrep -f "openvpn.*--config" 2> /dev/null || true)
 
         if [[ "$force" == "true" ]]; then
             echo -e "\033[1;33mForce mode: Attempting validated emergency process group termination...\033[0m"
@@ -619,14 +619,14 @@ hierarchical_process_cleanup() {
             while IFS= read -r pid; do
                 if validate_openvpn_process "$pid"; then
                     local pgid
-                    pgid=$(ps -o pgid= -p "$pid" 2>/dev/null | tr -d ' ')
+                    pgid=$(ps -o pgid= -p "$pid" 2> /dev/null | tr -d ' ')
                     if [[ -n "$pgid" ]]; then
                         # Check if process group contains only OpenVPN processes
                         local non_openvpn_count
                         non_openvpn_count=$(pgrep -g "$pgid" | xargs -r ps -o comm= | grep -c -v "openvpn" || echo 0)
                         if [[ $non_openvpn_count -eq 0 ]]; then
                             echo "  Killing validated OpenVPN-only process group $pgid..."
-                            sudo kill -KILL -"$pgid" 2>/dev/null || true
+                            sudo kill -KILL -"$pgid" 2> /dev/null || true
                         else
                             log_message "SECURITY: Skipped process group $pgid - contains non-OpenVPN processes" "$VPN_LOG_FILE"
                         fi
@@ -639,7 +639,7 @@ hierarchical_process_cleanup() {
 
         # Final check
         if ! verify_cleanup_success; then
-            final_check=$(pgrep -f "openvpn.*--config" 2>/dev/null || true)
+            final_check=$(pgrep -f "openvpn.*--config" 2> /dev/null || true)
             echo -e "\033[1;31mFAILED: Cannot cleanup processes $(echo "$final_check" | tr '\n' ' ')\033[0m"
             echo -e "\033[1;33mRecommendation: Run 'vpn emergency-reset' or consider system reboot\033[0m"
             return 1
@@ -671,15 +671,15 @@ kill_all_vpn() {
 cleanup_files() {
     # Clean up PID file (may need sudo since OpenVPN creates it as root)
     if [[ -f "$VPN_PID_FILE" ]]; then
-        if ! rm -f "$VPN_PID_FILE" 2>/dev/null; then
+        if ! rm -f "$VPN_PID_FILE" 2> /dev/null; then
             # Try with sudo if regular removal fails
-            sudo rm -f "$VPN_PID_FILE" 2>/dev/null || true
+            sudo rm -f "$VPN_PID_FILE" 2> /dev/null || true
         fi
     fi
 
     # Clean up lock files (these should be user-writable)
-    [[ -f "$LOCK_FILE" ]] && rm -f "$LOCK_FILE" 2>/dev/null
-    [[ -f "/tmp/vpn_connect.lock" ]] && rm -f "/tmp/vpn_connect.lock" 2>/dev/null
+    [[ -f "$LOCK_FILE" ]] && rm -f "$LOCK_FILE" 2> /dev/null
+    [[ -f "/tmp/vpn_connect.lock" ]] && rm -f "/tmp/vpn_connect.lock" 2> /dev/null
 }
 
 cleanup_routes_light() {
@@ -694,8 +694,8 @@ cleanup_routes_light() {
         while IFS= read -r interface; do
             if [[ -n "$interface" ]]; then
                 echo "  Removing interface: $interface"
-                sudo ip link set "$interface" down 2>/dev/null || true
-                sudo ip link delete "$interface" 2>/dev/null || true
+                sudo ip link set "$interface" down 2> /dev/null || true
+                sudo ip link delete "$interface" 2> /dev/null || true
             fi
         done <<< "$interfaces"
     fi
@@ -720,7 +720,7 @@ full_cleanup() {
     # Use hierarchical process cleanup
     if hierarchical_process_cleanup "false"; then
         echo "Cleaning up temporary files..."
-        rm -f /tmp/vpn_*.log /tmp/vpn_*.cache /tmp/vpn_*.lock 2>/dev/null || true
+        rm -f /tmp/vpn_*.log /tmp/vpn_*.cache /tmp/vpn_*.lock 2> /dev/null || true
 
         cleanup_files
         cleanup_routes_light
@@ -744,15 +744,15 @@ emergency_network_reset() {
 
     echo "Resetting network configuration..."
     # Try different init systems
-    if command -v sv >/dev/null 2>&1; then
+    if command -v sv > /dev/null 2>&1; then
         # Artix Linux with runit
-        sudo sv restart NetworkManager 2>/dev/null || true
-    elif command -v systemctl >/dev/null 2>&1; then
+        sudo sv restart NetworkManager 2> /dev/null || true
+    elif command -v systemctl > /dev/null 2>&1; then
         # systemd systems
-        sudo systemctl restart NetworkManager 2>/dev/null || true
+        sudo systemctl restart NetworkManager 2> /dev/null || true
     else
         # Fallback for other init systems
-        sudo service NetworkManager restart 2>/dev/null || true
+        sudo service NetworkManager restart 2> /dev/null || true
     fi
 
     echo -e "\033[1;32m✓ Emergency network reset completed\033[0m"
@@ -779,14 +779,14 @@ show_status_wcag() {
         echo "  Process ID: $pid"
         if [[ -n "$interface" ]]; then
             echo "  Interface: $interface"
-            vpn_ip=$(ip addr show "$interface" 2>/dev/null | grep "inet " | awk '{print $2}' | cut -d'/' -f1)
+            vpn_ip=$(ip addr show "$interface" 2> /dev/null | grep "inet " | awk '{print $2}' | cut -d'/' -f1)
             gateway=$(get_vpn_gateway)
             [[ -n "$vpn_ip" ]] && echo "  VPN IP: $vpn_ip"
             [[ -n "$gateway" ]] && echo "  Gateway: $gateway"
         fi
         echo "  External IP: $external_ip"
 
-        uptime=$(ps -o etime= -p "$pid" 2>/dev/null | tr -d ' ')
+        uptime=$(ps -o etime= -p "$pid" 2> /dev/null | tr -d ' ')
         [[ -n "$uptime" ]] && echo "  Connection Duration: $uptime"
     else
         echo -e "\033[1;31mCONNECTION STATUS: DISCONNECTED\033[0m"
@@ -797,11 +797,11 @@ show_status_wcag() {
     echo
     echo -e "\033[1;32mSYSTEM HEALTH: ALL SYSTEMS OPERATIONAL\033[0m"
     local active_tunnels log_size
-    active_tunnels=$(ip addr show | grep -c "tun[0-9]" 2>/dev/null || echo "0")
+    active_tunnels=$(ip addr show | grep -c "tun[0-9]" 2> /dev/null || echo "0")
     echo "  Active tunnels: $active_tunnels"
 
     if [[ -f "$VPN_LOG_FILE" ]]; then
-        log_size=$(du -h "$VPN_LOG_FILE" 2>/dev/null | cut -f1)
+        log_size=$(du -h "$VPN_LOG_FILE" 2> /dev/null | cut -f1)
         echo "  Log file size: $log_size"
     fi
 }
@@ -822,13 +822,13 @@ show_status_accessible() {
         [[ -n "$interface" ]] && echo "  Network Interface: $interface"
 
         if [[ -n "$interface" ]]; then
-            vpn_ip=$(ip addr show "$interface" 2>/dev/null | grep "inet " | awk '{print $2}' | cut -d'/' -f1)
+            vpn_ip=$(ip addr show "$interface" 2> /dev/null | grep "inet " | awk '{print $2}' | cut -d'/' -f1)
             [[ -n "$vpn_ip" ]] && echo "  VPN IP Address: $vpn_ip"
         fi
 
         echo "  External IP Address: $external_ip"
 
-        uptime=$(ps -o etime= -p "$pid" 2>/dev/null | tr -d ' ')
+        uptime=$(ps -o etime= -p "$pid" 2> /dev/null | tr -d ' ')
         [[ -n "$uptime" ]] && echo "  Connection Duration: $uptime"
     else
         echo "  Status: Disconnected"
@@ -851,7 +851,7 @@ show_status_accessible() {
     fi
 
     local active_tunnels
-    active_tunnels=$(ip addr show | grep -c "tun[0-9]" 2>/dev/null || echo "0")
+    active_tunnels=$(ip addr show | grep -c "tun[0-9]" 2> /dev/null || echo "0")
     echo "  Active Network Tunnels: $active_tunnels"
 }
 
@@ -869,12 +869,12 @@ show_status_enhanced() {
         external_ip=$(get_cached_external_ip)
 
         echo "  Process ID: $pid"
-        uptime=$(ps -o etime= -p "$pid" 2>/dev/null | tr -d ' ')
+        uptime=$(ps -o etime= -p "$pid" 2> /dev/null | tr -d ' ')
         [[ -n "$uptime" ]] && echo "  Connection Duration: $uptime"
 
         if [[ -n "$interface" ]]; then
             echo "  Network Interface: $interface"
-            vpn_ip=$(ip addr show "$interface" 2>/dev/null | grep "inet " | awk '{print $2}' | cut -d'/' -f1)
+            vpn_ip=$(ip addr show "$interface" 2> /dev/null | grep "inet " | awk '{print $2}' | cut -d'/' -f1)
             gateway=$(get_vpn_gateway)
             [[ -n "$vpn_ip" ]] && echo "  VPN IP Address: $vpn_ip"
             [[ -n "$gateway" ]] && echo "  VPN Gateway: $gateway"
@@ -921,7 +921,7 @@ show_status_json() {
         local pid interface vpn_ip gateway uptime
         pid=$(get_vpn_pid)
         interface=$(get_vpn_interface)
-        uptime=$(ps -o etime= -p "$pid" 2>/dev/null | tr -d ' ')
+        uptime=$(ps -o etime= -p "$pid" 2> /dev/null | tr -d ' ')
 
         echo "  \"connection\": {"
         echo "    \"status\": \"connected\","
@@ -930,7 +930,7 @@ show_status_json() {
         [[ -n "$uptime" ]] && echo "    \"duration\": \"$uptime\","
 
         if [[ -n "$interface" ]]; then
-            vpn_ip=$(ip addr show "$interface" 2>/dev/null | grep "inet " | awk '{print $2}' | cut -d'/' -f1)
+            vpn_ip=$(ip addr show "$interface" 2> /dev/null | grep "inet " | awk '{print $2}' | cut -d'/' -f1)
             gateway=$(get_vpn_gateway)
             [[ -n "$vpn_ip" ]] && echo "    \"vpn_ip\": \"$vpn_ip\","
             [[ -n "$gateway" ]] && echo "    \"gateway\": \"$gateway\","
@@ -978,10 +978,10 @@ show_status_csv() {
         local pid interface vpn_ip gateway uptime
         pid=$(get_vpn_pid)
         interface=$(get_vpn_interface)
-        uptime=$(ps -o etime= -p "$pid" 2>/dev/null | tr -d ' ')
+        uptime=$(ps -o etime= -p "$pid" 2> /dev/null | tr -d ' ')
 
         if [[ -n "$interface" ]]; then
-            vpn_ip=$(ip addr show "$interface" 2>/dev/null | grep "inet " | awk '{print $2}' | cut -d'/' -f1)
+            vpn_ip=$(ip addr show "$interface" 2> /dev/null | grep "inet " | awk '{print $2}' | cut -d'/' -f1)
             gateway=$(get_vpn_gateway)
         fi
 
@@ -1009,7 +1009,7 @@ show_status_format() {
 }
 
 case "$1" in
-    "status"|"s")
+    "status" | "s")
         show_status
         ;;
     "status-wcag")
@@ -1024,27 +1024,30 @@ case "$1" in
     "status-format")
         show_status_format "$2"
         ;;
-    "stop"|"disconnect"|"d")
+    "stop" | "disconnect" | "d")
         stop_vpn
         ;;
-    "kill-all"|"kill"|"k")
+    "kill-all" | "kill" | "k")
         kill_all_vpn
         ;;
-    "cleanup"|"clean"|"c")
+    "cleanup" | "clean" | "c")
         full_cleanup
         ;;
-    "emergency-reset"|"emergency"|"reset")
+    "emergency-reset" | "emergency" | "reset")
         emergency_network_reset
         ;;
-    "health"|"check"|"h")
+    "health" | "check" | "h")
         check_process_health
         case $? in
             0) echo -e "\033[1;32m✓ Process health: GOOD (1 process running)\033[0m" ;;
-            1) echo -e "\033[1;31m✗ Process health: CRITICAL (multiple processes)\033[0m"; exit 1 ;;
+            1)
+                echo -e "\033[1;31m✗ Process health: CRITICAL (multiple processes)\033[0m"
+                exit 1
+                ;;
             2) echo -e "\033[1;33m○ Process health: NO PROCESSES RUNNING\033[0m" ;;
         esac
         ;;
-    "logs"|"log"|"l")
+    "logs" | "log" | "l")
         view_logs "${2:-50}"
         ;;
     *)
