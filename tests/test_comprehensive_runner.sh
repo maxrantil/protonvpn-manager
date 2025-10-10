@@ -132,7 +132,7 @@ cleanup_test_environment() {
 
     # Clean up mock framework
     if [[ -f "$TEST_DIR/test_mocking_framework.sh" ]]; then
-        bash "$TEST_DIR/test_mocking_framework.sh" cleanup 2>/dev/null || true
+        bash "$TEST_DIR/test_mocking_framework.sh" cleanup 2> /dev/null || true
     fi
 
     # Clean up test data
@@ -159,7 +159,7 @@ Test Summary:
 Total Test Suites: $TOTAL_TEST_SUITES
 Individual Tests Passed: $TOTAL_TESTS_PASSED
 Individual Tests Failed: $TOTAL_TESTS_FAILED
-Test Suite Success Rate: $(( (TOTAL_TEST_SUITES - ${#FAILED_TEST_SUITES[@]}) * 100 / TOTAL_TEST_SUITES || 0 ))%
+Test Suite Success Rate: $(((TOTAL_TEST_SUITES - ${#FAILED_TEST_SUITES[@]}) * 100 / TOTAL_TEST_SUITES || 0))%
 
 Failed Test Suites:
 -------------------
@@ -225,50 +225,50 @@ run_comprehensive_tests() {
         "security")
             log_info "Running security tests only..."
             run_test_suite "$TEST_DIR/test_security_validation.sh" \
-                          "Security Validation" \
-                          "Validates security fixes and hardening measures"
+                "Security Validation" \
+                "Validates security fixes and hardening measures"
             ;;
         "installation")
             log_info "Running installation tests only..."
             run_test_suite "$TEST_DIR/test_installation.sh" \
-                          "Installation Robustness" \
-                          "Tests installation scenarios and rollback procedures"
+                "Installation Robustness" \
+                "Tests installation scenarios and rollback procedures"
             ;;
         "service")
             log_info "Running service management tests only..."
             run_test_suite "$TEST_DIR/test_service_management.sh" \
-                          "Service Management" \
-                          "Tests service lifecycle and management operations"
+                "Service Management" \
+                "Tests service lifecycle and management operations"
             ;;
         "integration")
             log_info "Running integration tests only..."
             run_test_suite "$TEST_DIR/integration_tests.sh" \
-                          "Integration Testing" \
-                          "Tests component interactions and system integration"
+                "Integration Testing" \
+                "Tests component interactions and system integration"
             ;;
-        "all"|*)
+        "all" | *)
             log_info "Running all test suites..."
 
             # Security Tests (High Priority)
             run_test_suite "$TEST_DIR/test_security_validation.sh" \
-                          "Security Validation" \
-                          "Validates security fixes and hardening measures"
+                "Security Validation" \
+                "Validates security fixes and hardening measures"
 
             # Installation Tests
             run_test_suite "$TEST_DIR/test_installation.sh" \
-                          "Installation Robustness" \
-                          "Tests installation scenarios and rollback procedures"
+                "Installation Robustness" \
+                "Tests installation scenarios and rollback procedures"
 
             # Service Management Tests
             run_test_suite "$TEST_DIR/test_service_management.sh" \
-                          "Service Management" \
-                          "Tests service lifecycle and management operations"
+                "Service Management" \
+                "Tests service lifecycle and management operations"
 
             # Integration Tests
             if [[ -f "$TEST_DIR/integration_tests.sh" ]]; then
                 run_test_suite "$TEST_DIR/integration_tests.sh" \
-                              "Integration Testing" \
-                              "Tests component interactions and system integration"
+                    "Integration Testing" \
+                    "Tests component interactions and system integration"
             fi
 
             # Additional existing tests
@@ -276,8 +276,8 @@ run_comprehensive_tests() {
                 if [[ -f "$test_file" ]] && [[ ! "$test_file" =~ (test_security_validation|test_installation|test_service_management|integration_tests) ]]; then
                     local test_name=$(basename "$test_file" .sh)
                     run_test_suite "$test_file" \
-                                  "$test_name" \
-                                  "Additional system testing"
+                        "$test_name" \
+                        "Additional system testing"
                 fi
             done
             ;;
@@ -354,7 +354,7 @@ main() {
     local mode="${1:-all}"
 
     case "$mode" in
-        "help"|"--help"|"-h")
+        "help" | "--help" | "-h")
             show_usage
             ;;
         *)

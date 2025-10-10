@@ -2,7 +2,7 @@
 # ABOUTME: Test GitHub Actions workflows locally before pushing
 # ABOUTME: Validates workflow logic without needing to create actual PRs
 
-set -uo pipefail  # Removed -e to allow test failures
+set -uo pipefail # Removed -e to allow test failures
 
 SCRIPT_DIR="$(dirname "$(realpath "$0")")"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
@@ -217,7 +217,7 @@ if [[ -f "$PROJECT_ROOT/SESSION_HANDOVER.md" ]]; then
 fi
 
 # Check if dated session files would be detected
-if ls "$PROJECT_ROOT"/docs/implementation/SESSION*.md &>/dev/null; then
+if ls "$PROJECT_ROOT"/docs/implementation/SESSION*.md &> /dev/null; then
     DATED_HANDOFF_EXISTS=true
 fi
 
@@ -252,8 +252,8 @@ if [[ -f "$PROJECT_ROOT/.github/workflows/issue-ai-attribution-check.yml" ]]; th
     pass "Issue AI attribution check workflow exists"
 
     # Verify it has proper triggers
-    if grep -q "issues:" "$PROJECT_ROOT/.github/workflows/issue-ai-attribution-check.yml" && \
-       grep -q "opened" "$PROJECT_ROOT/.github/workflows/issue-ai-attribution-check.yml"; then
+    if grep -q "issues:" "$PROJECT_ROOT/.github/workflows/issue-ai-attribution-check.yml" &&
+        grep -q "opened" "$PROJECT_ROOT/.github/workflows/issue-ai-attribution-check.yml"; then
         pass "Issue workflow has correct triggers (opened, edited)"
     else
         fail "Issue workflow missing proper triggers"

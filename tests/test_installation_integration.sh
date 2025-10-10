@@ -41,7 +41,7 @@ test_header() {
 
 # Check if running as root (needed for sudo operations)
 check_sudo() {
-    if ! sudo -n true 2>/dev/null; then
+    if ! sudo -n true 2> /dev/null; then
         echo -e "${YELLOW}Note: These tests require sudo access for installation${NC}"
         echo -e "${YELLOW}You may be prompted for your password${NC}"
     fi
@@ -134,7 +134,7 @@ test_installed_mode_detection() {
         vpn_dir=$(bash -c '
             source '"$INSTALL_DIR"'/vpn 2>/dev/null || true
             echo "$VPN_DIR"
-        ' 2>/dev/null || echo "")
+        ' 2> /dev/null || echo "")
 
         if [[ "$vpn_dir" == "$INSTALL_DIR" ]]; then
             test_passed "Installed mode: VPN_DIR correctly detected as $INSTALL_DIR"
@@ -173,7 +173,7 @@ test_vpn_help_command() {
     test_header "Test 7: VPN Help Command"
 
     if [[ -f "$INSTALL_DIR/vpn" ]]; then
-        if "$INSTALL_DIR/vpn" help &>/dev/null; then
+        if "$INSTALL_DIR/vpn" help &> /dev/null; then
             test_passed "vpn help command executes successfully"
         else
             test_failed "vpn help command" "Command failed to execute"

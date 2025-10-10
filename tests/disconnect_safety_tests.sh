@@ -59,7 +59,7 @@ test_internet_connectivity_check() {
     log "Testing internet connectivity validation"
 
     # Test with known good DNS
-    if ping -c 1 -W 5 8.8.8.8 >/dev/null 2>&1; then
+    if ping -c 1 -W 5 8.8.8.8 > /dev/null 2>&1; then
         return 0
     else
         log "ERROR: Basic internet connectivity check failed"
@@ -73,11 +73,11 @@ test_clean_starting_state() {
 
     # Check for OpenVPN processes
     local openvpn_count
-    openvpn_count=$(pgrep -f "openvpn.*config" 2>/dev/null | wc -l)
+    openvpn_count=$(pgrep -f "openvpn.*config" 2> /dev/null | wc -l)
 
     # Check for WireGuard interfaces
     local wg_count
-    wg_count=$(wg show 2>/dev/null | grep -c "^interface:" 2>/dev/null || echo 0)
+    wg_count=$(wg show 2> /dev/null | grep -c "^interface:" 2> /dev/null || echo 0)
     wg_count=${wg_count//[^0-9]/}
     wg_count=${wg_count:-0}
 
@@ -95,14 +95,14 @@ test_disconnect_restores_internet() {
     log "Testing disconnect command internet restoration"
 
     # Skip if no VPN profiles available
-    if [[ ! -d "$PROJECT_ROOT/locations" ]] || [[ -z "$(find "$PROJECT_ROOT/locations" -name "*.ovpn" -o -name "*.conf" 2>/dev/null | head -1)" ]]; then
+    if [[ ! -d "$PROJECT_ROOT/locations" ]] || [[ -z "$(find "$PROJECT_ROOT/locations" -name "*.ovpn" -o -name "*.conf" 2> /dev/null | head -1)" ]]; then
         log "SKIP: No VPN profiles available for testing"
         return 0
     fi
 
     # Connect to first available profile
     local test_profile
-    test_profile=$(find "$PROJECT_ROOT/locations" -name "*.ovpn" -o -name "*.conf" 2>/dev/null | head -1)
+    test_profile=$(find "$PROJECT_ROOT/locations" -name "*.ovpn" -o -name "*.conf" 2> /dev/null | head -1)
 
     if [[ -z "$test_profile" ]]; then
         log "SKIP: No suitable test profile found"
@@ -112,20 +112,20 @@ test_disconnect_restores_internet() {
     log "Using test profile: $(basename "$test_profile")"
 
     # Connect
-    if ! timeout 60 "$VPN_SCRIPT" custom "$test_profile" >/dev/null 2>&1; then
+    if ! timeout 60 "$VPN_SCRIPT" custom "$test_profile" > /dev/null 2>&1; then
         log "SKIP: Failed to establish test connection"
         return 0
     fi
 
     # Verify connection established
-    if ! "$VPN_MANAGER" status | grep -q "CONNECTED" 2>/dev/null; then
+    if ! "$VPN_MANAGER" status | grep -q "CONNECTED" 2> /dev/null; then
         log "SKIP: Connection not properly established"
-        "$VPN_SCRIPT" cleanup >/dev/null 2>&1
+        "$VPN_SCRIPT" cleanup > /dev/null 2>&1
         return 0
     fi
 
     # Disconnect using the standard disconnect command
-    "$VPN_SCRIPT" disconnect >/dev/null 2>&1
+    "$VPN_SCRIPT" disconnect > /dev/null 2>&1
 
     # Wait for cleanup
     sleep 5
@@ -133,7 +133,7 @@ test_disconnect_restores_internet() {
     # Test internet connectivity after disconnect
     local connectivity_test=0
     for i in {1..3}; do
-        if ping -c 1 -W 10 8.8.8.8 >/dev/null 2>&1; then
+        if ping -c 1 -W 10 8.8.8.8 > /dev/null 2>&1; then
             connectivity_test=1
             break
         fi
@@ -141,7 +141,7 @@ test_disconnect_restores_internet() {
     done
 
     # Ensure cleanup regardless of test result
-    "$VPN_SCRIPT" cleanup >/dev/null 2>&1 || true
+    "$VPN_SCRIPT" cleanup > /dev/null 2>&1 || true
 
     if [[ $connectivity_test -eq 1 ]]; then
         log "SUCCESS: Internet connectivity restored after disconnect"
@@ -157,7 +157,7 @@ test_cleanup_command_reliability() {
     log "Testing cleanup command reliability"
 
     # Run cleanup (should work even if nothing to clean)
-    if "$VPN_SCRIPT" cleanup >/dev/null 2>&1; then
+    if "$VPN_SCRIPT" cleanup > /dev/null 2>&1; then
         # Wait for NetworkManager restart to complete (cleanup restarts NetworkManager)
         log "Waiting for network services to restart after cleanup..."
         sleep 10
@@ -165,7 +165,7 @@ test_cleanup_command_reliability() {
         # Test internet after cleanup with multiple attempts
         local connectivity_restored=0
         for i in {1..5}; do
-            if ping -c 1 -W 5 8.8.8.8 >/dev/null 2>&1; then
+            if ping -c 1 -W 5 8.8.8.8 > /dev/null 2>&1; then
                 connectivity_restored=1
                 break
             fi
@@ -227,7 +227,7 @@ test_multiple_disconnect_safety() {
 
     # Run disconnect multiple times (should be safe)
     for i in {1..3}; do
-        if ! "$VPN_SCRIPT" disconnect >/dev/null 2>&1; then
+        if ! "$VPN_SCRIPT" disconnect > /dev/null 2>&1; then
             log "ERROR: Disconnect command failed on attempt $i"
             return 1
         fi
@@ -239,7 +239,7 @@ test_multiple_disconnect_safety() {
     sleep 3
 
     # Test connectivity still works
-    if ping -c 1 -W 5 8.8.8.8 >/dev/null 2>&1; then
+    if ping -c 1 -W 5 8.8.8.8 > /dev/null 2>&1; then
         log "SUCCESS: Multiple disconnects safe, connectivity preserved"
         return 0
     else
@@ -253,17 +253,25 @@ test_process_health_monitoring() {
     log "Testing process health monitoring"
 
     # Test health command exists and works
-    if "$VPN_MANAGER" health >/dev/null 2>&1; then
+    if "$VPN_MANAGER" health > /dev/null 2>&1; then
         local health_exit_code=$?
         case $health_exit_code in
-            0) log "SUCCESS: Process health is good (1 or no processes)"
-               return 0 ;;
-            1) log "WARNING: Process health critical (multiple processes detected)"
-               return 0 ;;  # This is expected behavior
-            2) log "SUCCESS: Process health shows no processes running"
-               return 0 ;;
-            *) log "ERROR: Unexpected health check exit code: $health_exit_code"
-               return 1 ;;
+            0)
+                log "SUCCESS: Process health is good (1 or no processes)"
+                return 0
+                ;;
+            1)
+                log "WARNING: Process health critical (multiple processes detected)"
+                return 0
+                ;; # This is expected behavior
+            2)
+                log "SUCCESS: Process health shows no processes running"
+                return 0
+                ;;
+            *)
+                log "ERROR: Unexpected health check exit code: $health_exit_code"
+                return 1
+                ;;
         esac
     else
         log "ERROR: Process health monitoring command failed"
@@ -273,10 +281,10 @@ test_process_health_monitoring() {
 
 cleanup_after_tests() {
     log "Performing post-test cleanup"
-    "$VPN_SCRIPT" cleanup >/dev/null 2>&1 || true
+    "$VPN_SCRIPT" cleanup > /dev/null 2>&1 || true
 
     # Ensure no test artifacts remain
-    rm -f /tmp/vpn_test_* 2>/dev/null || true
+    rm -f /tmp/vpn_test_* 2> /dev/null || true
 }
 
 print_test_summary() {

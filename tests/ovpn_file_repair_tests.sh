@@ -222,7 +222,7 @@ test_tool_accessibility() {
     start_test "fix-ovpn-files tool exists and is executable"
 
     assert_file_exists "$FIX_OVPN_FILES" "fix-ovpn-files script exists" &&
-    assert_executable "$FIX_OVPN_FILES" "fix-ovpn-files is executable"
+        assert_executable "$FIX_OVPN_FILES" "fix-ovpn-files is executable"
     record_result
 }
 
@@ -233,8 +233,8 @@ test_help_functionality() {
     help_output=$("$FIX_OVPN_FILES" --help 2>&1) || true
 
     assert_contains "$help_output" "Usage:" "Help shows usage information" &&
-    assert_contains "$help_output" "--repair" "Help mentions repair option" &&
-    assert_contains "$help_output" "--check" "Help mentions check option"
+        assert_contains "$help_output" "--repair" "Help mentions repair option" &&
+        assert_contains "$help_output" "--check" "Help mentions check option"
     record_result
 }
 
@@ -246,9 +246,9 @@ test_corruption_detection() {
     check_output=$("$FIX_OVPN_FILES" --check 2>&1) || true
 
     assert_contains "$check_output" "corrupted-missing-client.ovpn" "Detects missing client directive" &&
-    assert_contains "$check_output" "corrupted-malformed-remote.ovpn" "Detects malformed remote directive" &&
-    assert_contains "$check_output" "corrupted-minimal.ovpn" "Detects minimal configuration" &&
-    assert_contains "$check_output" "totally-corrupted.ovpn" "Detects binary corruption"
+        assert_contains "$check_output" "corrupted-malformed-remote.ovpn" "Detects malformed remote directive" &&
+        assert_contains "$check_output" "corrupted-minimal.ovpn" "Detects minimal configuration" &&
+        assert_contains "$check_output" "totally-corrupted.ovpn" "Detects binary corruption"
     record_result
 }
 
@@ -260,7 +260,7 @@ test_valid_file_recognition() {
     check_output=$("$FIX_OVPN_FILES" --check 2>&1) || true
 
     assert_contains "$check_output" "VALID" "Shows valid file status" &&
-    assert_contains "$check_output" "valid-se-01.ovpn" "Recognizes valid configuration"
+        assert_contains "$check_output" "valid-se-01.ovpn" "Recognizes valid configuration"
     record_result
 }
 
@@ -273,7 +273,7 @@ test_repair_functionality() {
 
     # Should attempt repairs and create backups
     assert_contains "$repair_output" "REPAIRED" "Shows repair attempts" &&
-    assert_file_exists "$TEST_LOCATIONS_DIR/backups/corrupted-missing-client.ovpn.backup"* "Creates backup files"
+        assert_file_exists "$TEST_LOCATIONS_DIR/backups/corrupted-missing-client.ovpn.backup"* "Creates backup files"
     record_result
 }
 
@@ -286,13 +286,12 @@ test_backup_mechanism() {
     local files_before
     files_before=$(find "$TEST_LOCATIONS_DIR" -name "*.ovpn" | wc -l)
 
-    "$FIX_OVPN_FILES" --repair --backup &>/dev/null || true
+    "$FIX_OVPN_FILES" --repair --backup &> /dev/null || true
 
     # Check backup directory exists and has files
     assert_file_exists "$TEST_LOCATIONS_DIR/backups" "Backup directory created" &&
-
-    local backup_count
-    backup_count=$(find "$TEST_LOCATIONS_DIR/backups" -name "*.backup.*" 2>/dev/null | wc -l)
+        local backup_count
+    backup_count=$(find "$TEST_LOCATIONS_DIR/backups" -name "*.backup.*" 2> /dev/null | wc -l)
 
     [[ $backup_count -gt 0 ]] && echo -e "  ${GREEN}✓ PASS: Backup files created ($backup_count files)${NC}" ||
         echo -e "  ${RED}✗ FAIL: No backup files created${NC}"
@@ -308,7 +307,7 @@ test_unrepairable_file_handling() {
 
     # Should report unrepairable files
     assert_contains "$repair_output" "UNREPAIRABLE\|FAILED" "Reports unrepairable files" &&
-    assert_contains "$repair_output" "totally-corrupted.ovpn" "Identifies binary corruption as unrepairable"
+        assert_contains "$repair_output" "totally-corrupted.ovpn" "Identifies binary corruption as unrepairable"
     record_result
 }
 

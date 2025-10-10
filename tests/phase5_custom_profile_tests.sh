@@ -14,7 +14,7 @@ test_vpn_custom_command_exists() {
     start_test "vpn custom command exists in help"
 
     local help_output
-    help_output=$("$VPN_SCRIPT_PATH" help 2>/dev/null || true)
+    help_output=$("$VPN_SCRIPT_PATH" help 2> /dev/null || true)
 
     if echo "$help_output" | grep -q "custom.*profile"; then
         log_test "PASS" "$CURRENT_TEST"
@@ -44,7 +44,7 @@ test_vpn_connector_has_custom_mode() {
     start_test "vpn-connector supports custom profile mode"
 
     local help_output
-    help_output=$("$VPN_CONNECTOR_PATH" help 2>/dev/null || true)
+    help_output=$("$VPN_CONNECTOR_PATH" help 2> /dev/null || true)
 
     if echo "$help_output" | grep -q "custom"; then
         log_test "PASS" "$CURRENT_TEST"
