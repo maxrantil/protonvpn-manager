@@ -522,7 +522,7 @@ main() {
                 echo "Mock framework not initialized"
             fi
             ;;
-        "help"|*)
+        "help" | *)
             echo "ProtonVPN Mock Framework"
             echo "Usage: $0 {init|test|cleanup|status|help}"
             echo ""

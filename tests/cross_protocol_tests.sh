@@ -10,7 +10,7 @@ test_openvpn_blocks_wireguard() {
     start_test "OpenVPN process blocks WireGuard connection"
 
     # Simulate an OpenVPN process running
-    if command -v openvpn >/dev/null; then
+    if command -v openvpn > /dev/null; then
         # Create a dummy OpenVPN process with 'openvpn' and 'config' in command line
         sleep 30 &
         local sleep_pid=$!
@@ -43,8 +43,8 @@ test_openvpn_blocks_wireguard() {
         fi
 
         # Cleanup fake processes
-        kill $fake_openvpn_pid 2>/dev/null || true
-        kill $sleep_pid 2>/dev/null || true
+        kill $fake_openvpn_pid 2> /dev/null || true
+        kill $sleep_pid 2> /dev/null || true
     else
         log_test "SKIP" "$CURRENT_TEST: OpenVPN not available"
     fi
@@ -57,11 +57,11 @@ test_wireguard_blocks_openvpn() {
     local test_interface="test-wg-$$"
     local wg_config="$PROJECT_DIR/locations/wg-SE-160.conf"
 
-    if [[ -f "$wg_config" ]] && command -v wg-quick >/dev/null; then
+    if [[ -f "$wg_config" ]] && command -v wg-quick > /dev/null; then
         # Create a minimal test WireGuard interface
-        sudo ip link add dev "$test_interface" type wireguard 2>/dev/null || true
+        sudo ip link add dev "$test_interface" type wireguard 2> /dev/null || true
 
-        if ip link show "$test_interface" >/dev/null 2>&1; then
+        if ip link show "$test_interface" > /dev/null 2>&1; then
             # Test OpenVPN connection with WireGuard interface active
             local ovpn_config="$PROJECT_DIR/locations/sample_se.ovpn"
             if [[ -f "$ovpn_config" ]]; then
@@ -84,7 +84,7 @@ test_wireguard_blocks_openvpn() {
         fi
 
         # Cleanup test interface
-        sudo ip link delete dev "$test_interface" 2>/dev/null || true
+        sudo ip link delete dev "$test_interface" 2> /dev/null || true
     else
         log_test "SKIP" "$CURRENT_TEST: WireGuard tools not available"
     fi
@@ -184,7 +184,7 @@ EOF
     chmod +x "$test_script"
 
     # Test with no processes running (should pass)
-    if "$test_script" "$vpn_connector" >/dev/null 2>&1; then
+    if "$test_script" "$vpn_connector" > /dev/null 2>&1; then
         log_test "PASS" "$CURRENT_TEST: No processes detected when clean"
         ((TESTS_PASSED++))
     else
@@ -198,7 +198,7 @@ EOF
     local fake_pid=$!
     sleep 1
 
-    if ! "$test_script" "$vpn_connector" >/dev/null 2>&1; then
+    if ! "$test_script" "$vpn_connector" > /dev/null 2>&1; then
         log_test "PASS" "$CURRENT_TEST: OpenVPN process correctly detected"
         ((TESTS_PASSED++))
     else
@@ -208,7 +208,7 @@ EOF
     fi
 
     # Cleanup
-    kill $fake_pid 2>/dev/null || true
+    kill $fake_pid 2> /dev/null || true
     rm -f "$test_script"
 }
 

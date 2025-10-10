@@ -77,24 +77,24 @@ test_wireguard_interface_management() {
     interface_name=$(basename "$wg_config" .conf)
 
     # Check if interface already exists (should be down for clean test)
-    if wg show "$interface_name" >/dev/null 2>&1; then
+    if wg show "$interface_name" > /dev/null 2>&1; then
         log_test "INFO" "$CURRENT_TEST: Interface $interface_name already exists, cleaning up"
-        sudo wg-quick down "$interface_name" >/dev/null 2>&1 || true
+        sudo wg-quick down "$interface_name" > /dev/null 2>&1 || true
     fi
 
     # Test bringing up the interface
     log_test "INFO" "$CURRENT_TEST: Testing WireGuard interface up"
-    if sudo wg-quick up "$wg_config" >/dev/null 2>&1; then
+    if sudo wg-quick up "$wg_config" > /dev/null 2>&1; then
         # Verify interface came up
-        if wg show "$interface_name" >/dev/null 2>&1; then
+        if wg show "$interface_name" > /dev/null 2>&1; then
             log_test "PASS" "$CURRENT_TEST: WireGuard interface up successful"
             ((TESTS_PASSED++))
 
             # Test bringing down the interface
             log_test "INFO" "$CURRENT_TEST: Testing WireGuard interface down"
-            if sudo wg-quick down "$interface_name" >/dev/null 2>&1; then
+            if sudo wg-quick down "$interface_name" > /dev/null 2>&1; then
                 # Verify interface went down
-                if ! wg show "$interface_name" >/dev/null 2>&1; then
+                if ! wg show "$interface_name" > /dev/null 2>&1; then
                     log_test "PASS" "$CURRENT_TEST: WireGuard interface down successful"
                     ((TESTS_PASSED++))
                 else
@@ -161,7 +161,7 @@ test_performance_testing_dual_protocol() {
 
     # Test that best-vpn-profile script sees both protocols
     local best_result
-    best_result=$("$PROJECT_DIR/src/best-vpn-profile" best 2>/dev/null || echo "FAILED")
+    best_result=$("$PROJECT_DIR/src/best-vpn-profile" best 2> /dev/null || echo "FAILED")
 
     if [[ "$best_result" != "FAILED" ]] && [[ -n "$best_result" ]]; then
         log_test "PASS" "$CURRENT_TEST: Performance testing returns a profile"
@@ -171,15 +171,15 @@ test_performance_testing_dual_protocol() {
         mkdir -p /tmp/profile_backup
 
         # Test with only WireGuard files
-        if ls "$PROJECT_DIR/locations/"*.ovpn >/dev/null 2>&1; then
+        if ls "$PROJECT_DIR/locations/"*.ovpn > /dev/null 2>&1; then
             cp "$PROJECT_DIR/locations/"*.ovpn /tmp/profile_backup/
             rm -f "$PROJECT_DIR/locations/"*.ovpn
 
             local wg_result
-            wg_result=$("$PROJECT_DIR/src/best-vpn-profile" best 2>/dev/null || echo "FAILED")
+            wg_result=$("$PROJECT_DIR/src/best-vpn-profile" best 2> /dev/null || echo "FAILED")
 
             # Restore OpenVPN files
-            if ls /tmp/profile_backup/*.ovpn >/dev/null 2>&1; then
+            if ls /tmp/profile_backup/*.ovpn > /dev/null 2>&1; then
                 cp /tmp/profile_backup/*.ovpn "$PROJECT_DIR/locations/"
             fi
 
@@ -205,7 +205,7 @@ test_country_detection_real_profiles() {
     start_test "Country detection from real profile names"
 
     local countries_output
-    countries_output=$("$PROJECT_DIR/src/vpn-connector" countries 2>/dev/null || true)
+    countries_output=$("$PROJECT_DIR/src/vpn-connector" countries 2> /dev/null || true)
 
     if echo "$countries_output" | grep -q "Available countries"; then
         log_test "PASS" "$CURRENT_TEST: Countries command works"
@@ -235,7 +235,7 @@ test_network_connectivity_check() {
 
     if [[ -x "$network_test" ]]; then
         # Test connectivity check
-        if "$network_test" connectivity >/dev/null 2>&1; then
+        if "$network_test" connectivity > /dev/null 2>&1; then
             log_test "PASS" "$CURRENT_TEST: Network connectivity check works"
             ((TESTS_PASSED++))
         else
@@ -246,7 +246,7 @@ test_network_connectivity_check() {
 
         # Test latency check
         local latency
-        latency=$("$network_test" latency 8.8.8.8 2>/dev/null || echo "999")
+        latency=$("$network_test" latency 8.8.8.8 2> /dev/null || echo "999")
 
         if [[ "$latency" != "999" ]] && [[ "$latency" =~ ^[0-9]+\.?[0-9]*$ ]]; then
             log_test "PASS" "$CURRENT_TEST: Latency testing works (${latency}ms)"

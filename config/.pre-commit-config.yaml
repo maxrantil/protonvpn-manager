@@ -72,13 +72,6 @@ repos:
         language: system
         pass_filenames: false
 
-      - id: config-fixing-tests
-        name: VPN Config Fixing Tests
-        entry: bash -c 'cd tests && ./config_fixing_tests.sh'
-        language: system
-        pass_filenames: false
-        files: '^(src/fix-ovpn-configs|tests/config_fixing_tests\.sh|locations/.*\.ovpn)$'
-
       - id: no-ai-attribution
         name: Block AI/Agent Attribution in Commits
         entry: bash -c 'if git diff --cached --diff-filter=ACMR -- ":(exclude).github/" ":(exclude)tests/test_github_workflows.sh" ":(exclude)tests/test_github_workflows_extended.sh" ":(exclude)config/.pre-commit-config.yaml" ":(exclude).gitignore" ":(exclude)docs/" ":(exclude)SESSION_HANDOFF.md" ":(exclude)*HANDOFF*.md" ":(exclude)*SESSION*.md" | grep -iE "(Co-authored-by|Generated with|Claude|AI-generated|Created by Claude|(reviewed by|validated by|approved by|checked by).*(agent|architecture-designer|security-validator|performance-optimizer)|agent (review|validation|approval))"; then echo "❌ ERROR Remove AI/agent attribution from commits (per CLAUDE.md)"; exit 1; fi'

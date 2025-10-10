@@ -51,7 +51,7 @@ assert_command_succeeds() {
     local command="$1"
     local description="$2"
 
-    if eval "$command" >/dev/null 2>&1; then
+    if eval "$command" > /dev/null 2>&1; then
         echo "  ✓ $description"
         return 0
     else
@@ -87,7 +87,7 @@ test_vpn_statusbar_executable() {
 test_dwmblocks_update_functionality() {
     # This will fail until vpn-statusbar is implemented
     local result
-    result=$("$VPN_DIR/vpn-statusbar" update connected se-65 192.168.1.100 --dry-run 2>/dev/null || echo "FAIL")
+    result=$("$VPN_DIR/vpn-statusbar" update connected se-65 192.168.1.100 --dry-run 2> /dev/null || echo "FAIL")
 
     if [[ "$result" == "FAIL" ]]; then
         echo "  ✗ dwmblocks update functionality not implemented"
@@ -100,10 +100,10 @@ test_dwmblocks_update_functionality() {
 test_statusbar_state_management() {
     # This will fail until vpn-statusbar is implemented
     local connected_result
-    connected_result=$("$VPN_DIR/vpn-statusbar" update connected test-profile 1.1.1.1 --dry-run 2>/dev/null || echo "FAIL")
+    connected_result=$("$VPN_DIR/vpn-statusbar" update connected test-profile 1.1.1.1 --dry-run 2> /dev/null || echo "FAIL")
 
     local disconnected_result
-    disconnected_result=$("$VPN_DIR/vpn-statusbar" update disconnected --dry-run 2>/dev/null || echo "FAIL")
+    disconnected_result=$("$VPN_DIR/vpn-statusbar" update disconnected --dry-run 2> /dev/null || echo "FAIL")
 
     if [[ "$connected_result" == "FAIL" || "$disconnected_result" == "FAIL" ]]; then
         echo "  ✗ Status bar state management not implemented"
@@ -111,13 +111,13 @@ test_statusbar_state_management() {
     fi
 
     assert_string_contains "$connected_result" "connected" "Connected state should be handled" &&
-    assert_string_contains "$disconnected_result" "disconnected" "Disconnected state should be handled"
+        assert_string_contains "$disconnected_result" "disconnected" "Disconnected state should be handled"
 }
 
 test_dwmblocks_process_detection() {
     # This will fail until vpn-statusbar is implemented
     local result
-    result=$("$VPN_DIR/vpn-statusbar" --check-dwmblocks 2>/dev/null || echo "FAIL")
+    result=$("$VPN_DIR/vpn-statusbar" --check-dwmblocks 2> /dev/null || echo "FAIL")
 
     if [[ "$result" == "FAIL" ]]; then
         echo "  ✗ dwmblocks process detection not implemented"
@@ -131,7 +131,7 @@ test_dwmblocks_process_detection() {
 test_alternative_status_systems() {
     # This will fail until vpn-statusbar is implemented
     local result
-    result=$("$VPN_DIR/vpn-statusbar" --list-systems 2>/dev/null || echo "FAIL")
+    result=$("$VPN_DIR/vpn-statusbar" --list-systems 2> /dev/null || echo "FAIL")
 
     if [[ "$result" == "FAIL" ]]; then
         echo "  ✗ Alternative status systems not implemented"
@@ -143,7 +143,7 @@ test_alternative_status_systems() {
 
 test_statusbar_health_check() {
     # This will fail until vpn-statusbar is implemented
-    if "$VPN_DIR/vpn-statusbar" --health-check >/dev/null 2>&1; then
+    if "$VPN_DIR/vpn-statusbar" --health-check > /dev/null 2>&1; then
         echo "  ✓ Status bar health check passes"
         return 0
     else
@@ -165,7 +165,7 @@ EOF
     chmod +x "$test_script"
 
     local result
-    result=$("$test_script" 2>/dev/null || echo "FAIL")
+    result=$("$test_script" 2> /dev/null || echo "FAIL")
     rm -f "$test_script"
 
     if [[ "$result" == "FAIL" ]]; then
@@ -180,7 +180,7 @@ EOF
 test_status_content_formatting() {
     # This will fail until vpn-statusbar is implemented
     local result
-    result=$("$VPN_DIR/vpn-statusbar" update connected se-65 192.168.1.100 --show-content 2>/dev/null || echo "FAIL")
+    result=$("$VPN_DIR/vpn-statusbar" update connected se-65 192.168.1.100 --show-content 2> /dev/null || echo "FAIL")
 
     if [[ "$result" == "FAIL" ]]; then
         echo "  ✗ Status content formatting not implemented"
@@ -188,16 +188,16 @@ test_status_content_formatting() {
     fi
 
     assert_string_contains "$result" "se-65" "Status should include profile name" &&
-    assert_string_contains "$result" "192.168.1.100" "Status should include IP address"
+        assert_string_contains "$result" "192.168.1.100" "Status should include IP address"
 }
 
 test_status_icon_management() {
     # This will fail until vpn-statusbar is implemented
     local connected_result
-    connected_result=$("$VPN_DIR/vpn-statusbar" update connected test --show-content 2>/dev/null || echo "FAIL")
+    connected_result=$("$VPN_DIR/vpn-statusbar" update connected test --show-content 2> /dev/null || echo "FAIL")
 
     local disconnected_result
-    disconnected_result=$("$VPN_DIR/vpn-statusbar" update disconnected --show-content 2>/dev/null || echo "FAIL")
+    disconnected_result=$("$VPN_DIR/vpn-statusbar" update disconnected --show-content 2> /dev/null || echo "FAIL")
 
     if [[ "$connected_result" == "FAIL" || "$disconnected_result" == "FAIL" ]]; then
         echo "  ✗ Status icon management not implemented"
@@ -217,7 +217,7 @@ test_status_icon_management() {
 test_command_line_interface() {
     # This will fail until vpn-statusbar is implemented
     local help_result
-    help_result=$("$VPN_DIR/vpn-statusbar" --help 2>/dev/null || echo "FAIL")
+    help_result=$("$VPN_DIR/vpn-statusbar" --help 2> /dev/null || echo "FAIL")
 
     if [[ "$help_result" == "FAIL" ]]; then
         echo "  ✗ Command line interface not implemented"
@@ -225,14 +225,14 @@ test_command_line_interface() {
     fi
 
     assert_string_contains "$help_result" "Usage" "Should show usage information" &&
-    assert_string_contains "$help_result" "update" "Should document update command"
+        assert_string_contains "$help_result" "update" "Should document update command"
 }
 
 # dwmblocks specific tests
 test_dwmblocks_signal_handling() {
     # This will fail until vpn-statusbar properly handles dwmblocks
     local result
-    result=$("$VPN_DIR/vpn-statusbar" update connected test-profile 1.1.1.1 --show-command 2>/dev/null || echo "FAIL")
+    result=$("$VPN_DIR/vpn-statusbar" update connected test-profile 1.1.1.1 --show-command 2> /dev/null || echo "FAIL")
 
     if [[ "$result" == "FAIL" ]]; then
         echo "  ✗ dwmblocks signal handling not implemented"
@@ -245,7 +245,7 @@ test_dwmblocks_signal_handling() {
 test_fallback_when_dwmblocks_missing() {
     # This will fail until vpn-statusbar handles missing dwmblocks gracefully
     local result
-    result=$("$VPN_DIR/vpn-statusbar" update connected test --force-no-dwmblocks --dry-run 2>/dev/null || echo "FAIL")
+    result=$("$VPN_DIR/vpn-statusbar" update connected test --force-no-dwmblocks --dry-run 2> /dev/null || echo "FAIL")
 
     if [[ "$result" == "FAIL" ]]; then
         echo "  ✗ Fallback for missing dwmblocks not implemented"
@@ -260,7 +260,7 @@ test_fallback_when_dwmblocks_missing() {
 test_vpn_connector_uses_statusbar() {
     # This will likely fail until vpn-connector is updated to use status bar
     local result
-    result=$(grep -c "update_statusbar\|vpn-statusbar\|source.*vpn-integration" "$VPN_DIR/vpn-connector" 2>/dev/null || echo "0")
+    result=$(grep -c "update_statusbar\|vpn-statusbar\|source.*vpn-integration" "$VPN_DIR/vpn-connector" 2> /dev/null || echo "0")
 
     if [[ "$result" -gt 0 ]]; then
         echo "  ✓ vpn-connector integrates with status bar system"
@@ -274,7 +274,7 @@ test_vpn_connector_uses_statusbar() {
 test_vpn_manager_uses_statusbar() {
     # This will likely fail until vpn-manager is updated to use status bar
     local result
-    result=$(grep -c "update_statusbar\|vpn-statusbar\|source.*vpn-integration" "$VPN_DIR/vpn-manager" 2>/dev/null || echo "0")
+    result=$(grep -c "update_statusbar\|vpn-statusbar\|source.*vpn-integration" "$VPN_DIR/vpn-manager" 2> /dev/null || echo "0")
 
     if [[ "$result" -gt 0 ]]; then
         echo "  ✓ vpn-manager integrates with status bar system"
@@ -291,14 +291,14 @@ test_statusbar_performance() {
     local start_time
     start_time=$(date +%s%N)
 
-    "$VPN_DIR/vpn-statusbar" update connected test-profile 1.1.1.1 >/dev/null 2>&1 || {
+    "$VPN_DIR/vpn-statusbar" update connected test-profile 1.1.1.1 > /dev/null 2>&1 || {
         echo "  ✗ Status bar update performance test - script doesn't exist"
         return 1
     }
 
     local end_time
     end_time=$(date +%s%N)
-    local duration_ms=$(( (end_time - start_time) / 1000000 ))
+    local duration_ms=$(((end_time - start_time) / 1000000))
 
     if [[ $duration_ms -lt 100 ]]; then
         echo "  ✓ Status bar update is fast ($duration_ms ms)"

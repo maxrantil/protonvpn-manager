@@ -28,14 +28,17 @@ safe_lock_acquire() {
         fi
 
         # Try to acquire lock atomically
-        if (set -C; echo $$ > "$lock_file") 2>/dev/null; then
+        if (
+            set -C
+            echo $$ > "$lock_file"
+        ) 2> /dev/null; then
             # Double-check it's not a symlink (TOCTOU check)
             if [[ ! -L "$lock_file" ]]; then
                 # Verify we own it
                 local owner_pid
-                owner_pid=$(cat "$lock_file" 2>/dev/null || echo "0")
+                owner_pid=$(cat "$lock_file" 2> /dev/null || echo "0")
                 if [[ "$owner_pid" == "$$" ]]; then
-                    return 0  # Successfully acquired
+                    return 0 # Successfully acquired
                 fi
             fi
             rm -f "$lock_file"
@@ -45,7 +48,7 @@ safe_lock_acquire() {
         sleep 0.1
     done
 
-    return 1  # Failed to acquire
+    return 1 # Failed to acquire
 }
 
 # Test 1: Normal lock acquisition
@@ -121,8 +124,8 @@ safe_lock_acquire "$LOCK_FILE"
 # Try to replace with symlink (attack)
 (
     sleep 0.1
-    rm -f "$LOCK_FILE" 2>/dev/null || true
-    ln -s "$TEST_DIR/evil" "$LOCK_FILE" 2>/dev/null || true
+    rm -f "$LOCK_FILE" 2> /dev/null || true
+    ln -s "$TEST_DIR/evil" "$LOCK_FILE" 2> /dev/null || true
 ) &
 
 sleep 0.2
