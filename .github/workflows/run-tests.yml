@@ -15,7 +15,13 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y openvpn
+          sudo apt-get install -y openvpn coreutils
+          # Verify core utilities are available
+          echo "PATH: $PATH"
+          which realpath dirname chmod
+          realpath --version
+          dirname --version
+          chmod --version
 
       - name: Run all tests
         run: |
