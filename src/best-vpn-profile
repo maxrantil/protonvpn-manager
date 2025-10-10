@@ -20,10 +20,12 @@ if [[ -f "$CACHE_FILE" ]]; then
     chmod 644 "$CACHE_FILE"
 fi
 
-# Script locations
-if [[ -f "/usr/local/bin/vpn-error-handler" ]]; then
+# Script locations - robust detection for installed vs development mode
+if [[ -f "/usr/local/bin/vpn-manager" ]] && [[ -f "/usr/local/bin/vpn-error-handler" ]]; then
+    # Installed mode - all components in /usr/local/bin
     VPN_DIR="/usr/local/bin"
 else
+    # Development mode - use local paths relative to script location
     VPN_DIR="$(dirname "$(realpath "$0")")"
 fi
 

@@ -2,18 +2,13 @@
 # ABOUTME: VPN process and connection management script for Artix/Arch Linux
 # ABOUTME: Handles OpenVPN process lifecycle, status checking, and cleanup operations
 
-# Script locations
-# Check if running from source directory (development mode)
-SCRIPT_DIR="$(dirname "$(realpath "$0")")"
-if [[ -f "$SCRIPT_DIR/vpn-colors" ]] && [[ -f "$SCRIPT_DIR/vpn-utils" ]]; then
-    # Development mode - use local paths
-    VPN_DIR="$SCRIPT_DIR"
-elif [[ -f "/usr/local/bin/vpn-error-handler" ]]; then
-    # Installed mode
+# Script locations - robust detection for installed vs development mode
+if [[ -f "/usr/local/bin/vpn-manager" ]] && [[ -f "/usr/local/bin/vpn-error-handler" ]]; then
+    # Installed mode - all components in /usr/local/bin
     VPN_DIR="/usr/local/bin"
 else
-    # Fallback to script directory
-    VPN_DIR="$SCRIPT_DIR"
+    # Development mode - use local paths relative to script location
+    VPN_DIR="$(dirname "$(realpath "$0")")"
 fi
 
 # Create secure log directory
@@ -238,7 +233,7 @@ check_process_health() {
     if [[ $process_count -gt 1 ]]; then
         echo -e "\033[1;31m⚠️  CRITICAL WARNING: $process_count OpenVPN processes detected!\033[0m" >&2
         echo -e "\033[1;31m⚠️  Multiple processes can cause system overheating and high CPU usage!\033[0m" >&2
-        echo -e "\033[1;33m   Run './src/vpn cleanup' immediately to fix this.\033[0m" >&2
+        echo -e "\033[1;33m   Run 'vpn cleanup' immediately to fix this.\033[0m" >&2
         return 1
     elif [[ $process_count -eq 1 ]]; then
         return 0
