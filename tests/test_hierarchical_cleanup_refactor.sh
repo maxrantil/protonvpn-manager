@@ -10,7 +10,7 @@ SRC_DIR="$(dirname "$TEST_DIR")/src"
 
 # Source the module under test
 # shellcheck source=../src/vpn-manager
-source "$SRC_DIR/vpn-manager" 2>/dev/null || true
+source "$SRC_DIR/vpn-manager" 2> /dev/null || true
 
 # Test counters
 TESTS_RUN=0
@@ -46,7 +46,7 @@ test_validate_and_discover_no_processes() {
     export -f pgrep ps
 
     local result
-    result=$(validate_and_discover_processes 2>/dev/null || echo "")
+    result=$(validate_and_discover_processes 2> /dev/null || echo "")
 
     if [[ -z "$result" ]]; then
         pass "Returns empty string when no processes found"
@@ -76,7 +76,7 @@ test_validate_and_discover_with_openvpn() {
     export -f pgrep ps
 
     local result
-    result=$(validate_and_discover_processes 2>/dev/null || echo "")
+    result=$(validate_and_discover_processes 2> /dev/null || echo "")
 
     if [[ "$result" == "1234" ]]; then
         pass "Discovers OpenVPN process PIDs"
@@ -107,7 +107,7 @@ test_validate_and_discover_with_zombies() {
     export -f pgrep ps
 
     local result
-    result=$(validate_and_discover_processes 2>/dev/null | sort -u | tr '\n' ' ' | sed 's/ $//')
+    result=$(validate_and_discover_processes 2> /dev/null | sort -u | tr '\n' ' ' | sed 's/ $//')
 
     if [[ "$result" =~ "1234" && "$result" =~ "5678" ]]; then
         pass "Discovers both regular and zombie processes"
@@ -135,7 +135,7 @@ test_attempt_graceful_sends_term() {
     export -f kill
 
     rm -f /tmp/test_kill_log.$$
-    attempt_graceful_termination "1234" >/dev/null 2>&1 || true
+    attempt_graceful_termination "1234" > /dev/null 2>&1 || true
 
     if [[ -f /tmp/test_kill_log.$$ ]] && grep -q "TERM sent to 1234" /tmp/test_kill_log.$$; then
         pass "Sends TERM signal to process"
@@ -157,10 +157,10 @@ test_attempt_graceful_waits() {
     # Mock functions to avoid actual killing
     kill() { return 0; }
     validate_openvpn_process() { return 0; }
-    sleep() { command sleep 0.1; }  # Reduce wait time for testing
+    sleep() { command sleep 0.1; } # Reduce wait time for testing
     export -f kill validate_openvpn_process sleep
 
-    attempt_graceful_termination "1234" >/dev/null 2>&1 || true
+    attempt_graceful_termination "1234" > /dev/null 2>&1 || true
 
     end_time=$(date +%s)
     elapsed=$((end_time - start_time))
@@ -191,7 +191,7 @@ test_attempt_forceful_sends_kill() {
     export -f kill
 
     rm -f /tmp/test_kill_log.$$
-    attempt_forceful_termination "1234" >/dev/null 2>&1 || true
+    attempt_forceful_termination "1234" > /dev/null 2>&1 || true
 
     if [[ -f /tmp/test_kill_log.$$ ]] && grep -q "KILL sent to 1234" /tmp/test_kill_log.$$; then
         pass "Sends KILL signal to process"
@@ -220,7 +220,7 @@ test_attempt_sudo_uses_sudo() {
     export -f sudo
 
     rm -f /tmp/test_sudo_log.$$
-    attempt_sudo_termination "1234" >/dev/null 2>&1 || true
+    attempt_sudo_termination "1234" > /dev/null 2>&1 || true
 
     if [[ -f /tmp/test_sudo_log.$$ ]] && grep -q "sudo KILL sent to 1234" /tmp/test_sudo_log.$$; then
         pass "Uses sudo to send KILL signal"
@@ -243,7 +243,7 @@ test_verify_cleanup_success_no_processes() {
     pgrep() { return 1; }
     export -f pgrep
 
-    if verify_cleanup_success >/dev/null 2>&1; then
+    if verify_cleanup_success > /dev/null 2>&1; then
         pass "Returns success when no processes found"
     else
         fail "Should return success when clean"
@@ -255,10 +255,13 @@ test_verify_cleanup_success_no_processes() {
 test_verify_cleanup_success_processes_remain() {
     run_test "verify_cleanup_success returns 1 when processes remain"
 
-    pgrep() { echo "1234"; return 0; }
+    pgrep() {
+        echo "1234"
+        return 0
+    }
     export -f pgrep
 
-    if ! verify_cleanup_success >/dev/null 2>&1; then
+    if ! verify_cleanup_success > /dev/null 2>&1; then
         pass "Returns failure when processes remain"
     else
         fail "Should return failure when processes remain"
@@ -275,10 +278,10 @@ test_refactored_function_maintains_behavior() {
     run_test "Refactored hierarchical_process_cleanup maintains original behavior"
 
     # Mock all external dependencies
-    pgrep() { return 1; }  # No processes
+    pgrep() { return 1; } # No processes
     export -f pgrep
 
-    if hierarchical_process_cleanup "false" >/dev/null 2>&1; then
+    if hierarchical_process_cleanup "false" > /dev/null 2>&1; then
         pass "Function executes without errors when no processes"
     else
         fail "Function failed when it should succeed"
@@ -294,7 +297,7 @@ test_function_respects_force_flag() {
     pgrep() { return 1; }
     export -f pgrep
 
-    if hierarchical_process_cleanup "true" >/dev/null 2>&1; then
+    if hierarchical_process_cleanup "true" > /dev/null 2>&1; then
         pass "Accepts force parameter"
     else
         fail "Should accept force parameter"

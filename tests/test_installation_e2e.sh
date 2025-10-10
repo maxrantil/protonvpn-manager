@@ -99,7 +99,7 @@ test_installation_execution() {
         return
     fi
 
-    sleep 1  # Give filesystem a moment to sync
+    sleep 1 # Give filesystem a moment to sync
 }
 
 # E2E Test 3: Post-installation verification
@@ -147,8 +147,8 @@ test_basic_functionality() {
 
     section_header "Testing vpn help command"
 
-    if command -v vpn &>/dev/null; then
-        if vpn help &>/dev/null; then
+    if command -v vpn &> /dev/null; then
+        if vpn help &> /dev/null; then
             test_passed "vpn help command works"
         else
             test_failed "vpn help command" "Command failed to execute"
@@ -159,9 +159,9 @@ test_basic_functionality() {
 
     section_header "Testing vpn status command"
 
-    if command -v vpn &>/dev/null; then
+    if command -v vpn &> /dev/null; then
         # Status command should work even when not connected
-        if vpn status &>/dev/null; then
+        if vpn status &> /dev/null; then
             test_passed "vpn status command works"
         else
             # Status might fail due to missing dependencies, that's okay for now
@@ -173,7 +173,7 @@ test_basic_functionality() {
 
     # Verify scripts detect installed mode
     local detection_test
-    detection_test=$(bash -c 'source /usr/local/bin/vpn-manager 2>/dev/null && echo "$VPN_DIR"' 2>/dev/null || echo "")
+    detection_test=$(bash -c 'source /usr/local/bin/vpn-manager 2>/dev/null && echo "$VPN_DIR"' 2> /dev/null || echo "")
 
     if [[ "$detection_test" == "/usr/local/bin" ]]; then
         test_passed "Installed mode correctly detected (VPN_DIR=/usr/local/bin)"
@@ -195,7 +195,7 @@ test_no_hardcoded_paths_installed() {
         if [[ -f "$INSTALL_DIR/$script" ]]; then
             # Check for hardcoded src/ paths (excluding comments and source statements)
             local count
-            count=$(grep -c "src/" "$INSTALL_DIR/$script" 2>/dev/null | grep -v "# ABOUTME:" | grep -v "source " || echo 0)
+            count=$(grep -c "src/" "$INSTALL_DIR/$script" 2> /dev/null | grep -v "# ABOUTME:" | grep -v "source " || echo 0)
 
             if [[ $count -eq 0 ]]; then
                 test_passed "No hardcoded paths in installed $script"
@@ -223,7 +223,7 @@ test_cross_component_integration() {
         source "$VPN_DIR/vpn-error-handler" 2>/dev/null &&
         source "$VPN_DIR/vpn-utils" 2>/dev/null &&
         source "$VPN_DIR/vpn-colors" 2>/dev/null
-    ' 2>/dev/null; then
+    ' 2> /dev/null; then
         test_passed "vpn-manager dependencies source correctly"
     else
         test_failed "Component sourcing" "Failed to source vpn-manager dependencies"
@@ -233,7 +233,7 @@ test_cross_component_integration() {
     if bash -c '
         VPN_DIR=/usr/local/bin
         [[ -x "$VPN_DIR/vpn-manager" ]] && [[ -x "$VPN_DIR/vpn-connector" ]]
-    ' 2>/dev/null; then
+    ' 2> /dev/null; then
         test_passed "vpn can locate vpn-manager and vpn-connector"
     else
         test_failed "Component location" "vpn cannot locate required sub-components"

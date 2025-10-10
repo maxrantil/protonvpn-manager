@@ -51,7 +51,7 @@ test_development_mode_detection() {
         else
             echo "$(dirname "$(realpath "$0")")"
         fi
-    ' 2>/dev/null)
+    ' 2> /dev/null)
 
     # Check if detection logic works (either installed or development mode)
     if [[ "$vpn_dir" == "/usr/local/bin" ]]; then
@@ -75,7 +75,7 @@ test_consistent_path_resolution() {
 
     for script in "${scripts[@]}"; do
         # Check for the robust dual-file check pattern (using -F for fixed string)
-        if grep -qF 'if [[ -f "/usr/local/bin/vpn-manager" ]] && [[ -f "/usr/local/bin/vpn-error-handler" ]]' "$SRC_DIR/$script" 2>/dev/null; then
+        if grep -qF 'if [[ -f "/usr/local/bin/vpn-manager" ]] && [[ -f "/usr/local/bin/vpn-error-handler" ]]' "$SRC_DIR/$script" 2> /dev/null; then
             test_passed "Script $script uses robust path detection"
         else
             test_failed "Script $script path detection" "Does not use robust dual-check pattern"
@@ -88,10 +88,10 @@ test_no_hardcoded_paths() {
     test_header "Test 3: No Hardcoded src/ Paths"
 
     local hardcoded_count
-    hardcoded_count=$(grep -r "src/" "$SRC_DIR" 2>/dev/null | \
-        grep -v "# ABOUTME:" | \
-        grep -v ".ovpn" | \
-        grep -v "source " | \
+    hardcoded_count=$(grep -r "src/" "$SRC_DIR" 2> /dev/null |
+        grep -v "# ABOUTME:" |
+        grep -v ".ovpn" |
+        grep -v "source " |
         wc -l)
 
     if [[ $hardcoded_count -eq 0 ]]; then

@@ -57,15 +57,15 @@ run_test() {
 # SETUP: Ensure clean state before tests
 setup_test_environment() {
     # Clean up any existing WireGuard connections
-    sudo wg show 2>/dev/null | grep -E "^interface:" | while read -r line; do
+    sudo wg show 2> /dev/null | grep -E "^interface:" | while read -r line; do
         interface=$(echo "$line" | cut -d: -f2 | xargs)
         if [[ -n "$interface" ]]; then
-            sudo wg-quick down "$interface" 2>/dev/null || true
+            sudo wg-quick down "$interface" 2> /dev/null || true
         fi
     done
 
     # Clean up VPN processes
-    "$VPN_SCRIPT" cleanup >/dev/null 2>&1 || true
+    "$VPN_SCRIPT" cleanup > /dev/null 2>&1 || true
 }
 
 # TEST 1: WireGuard config validation works
@@ -73,7 +73,7 @@ test_wireguard_config_validation() {
     log "Testing WireGuard config validation"
 
     local test_config
-    test_config=$(find "$PROJECT_ROOT/locations" -name "*.conf" 2>/dev/null | head -1)
+    test_config=$(find "$PROJECT_ROOT/locations" -name "*.conf" 2> /dev/null | head -1)
 
     if [[ -z "$test_config" ]]; then
         log "SKIP: No WireGuard config files found"
@@ -95,7 +95,7 @@ test_wireguard_protocol_detection() {
     log "Testing WireGuard protocol detection"
 
     local test_config
-    test_config=$(find "$PROJECT_ROOT/locations" -name "*.conf" 2>/dev/null | head -1)
+    test_config=$(find "$PROJECT_ROOT/locations" -name "*.conf" 2> /dev/null | head -1)
 
     if [[ -z "$test_config" ]]; then
         log "SKIP: No WireGuard config files found"
@@ -117,7 +117,7 @@ test_wireguard_connection_establishment() {
     log "Testing WireGuard connection establishment"
 
     local test_config
-    test_config=$(find "$PROJECT_ROOT/locations" -name "*.conf" 2>/dev/null | head -1)
+    test_config=$(find "$PROJECT_ROOT/locations" -name "*.conf" 2> /dev/null | head -1)
 
     if [[ -z "$test_config" ]]; then
         log "SKIP: No WireGuard config files found"
@@ -127,25 +127,25 @@ test_wireguard_connection_establishment() {
     log "Attempting connection to $(basename "$test_config")"
 
     # This should FAIL until we fix the resolvconf issue
-    if timeout 60 "$VPN_SCRIPT" custom "$test_config" >/dev/null 2>&1; then
+    if timeout 60 "$VPN_SCRIPT" custom "$test_config" > /dev/null 2>&1; then
         # Verify connection is actually established
         local interface_name
         interface_name=$(basename "$test_config" .conf)
 
-        if wg show "$interface_name" >/dev/null 2>&1; then
+        if wg show "$interface_name" > /dev/null 2>&1; then
             log "SUCCESS: WireGuard connection established"
 
             # Clean up after successful test
-            "$VPN_SCRIPT" cleanup >/dev/null 2>&1 || true
+            "$VPN_SCRIPT" cleanup > /dev/null 2>&1 || true
             return 0
         else
             log "ERROR: Connection command succeeded but interface not active"
-            "$VPN_SCRIPT" cleanup >/dev/null 2>&1 || true
+            "$VPN_SCRIPT" cleanup > /dev/null 2>&1 || true
             return 1
         fi
     else
         log "ERROR: WireGuard connection establishment failed"
-        "$VPN_SCRIPT" cleanup >/dev/null 2>&1 || true
+        "$VPN_SCRIPT" cleanup > /dev/null 2>&1 || true
         return 1
     fi
 }
@@ -155,7 +155,7 @@ test_wireguard_connection_teardown() {
     log "Testing WireGuard connection teardown"
 
     local test_config
-    test_config=$(find "$PROJECT_ROOT/locations" -name "*.conf" 2>/dev/null | head -1)
+    test_config=$(find "$PROJECT_ROOT/locations" -name "*.conf" 2> /dev/null | head -1)
 
     if [[ -z "$test_config" ]]; then
         log "SKIP: No WireGuard config files found"
@@ -166,24 +166,24 @@ test_wireguard_connection_teardown() {
     local interface_name
     interface_name=$(basename "$test_config" .conf)
 
-    if sudo wg-quick up "$test_config" >/dev/null 2>&1; then
+    if sudo wg-quick up "$test_config" > /dev/null 2>&1; then
         log "Manual WireGuard connection established for teardown test"
 
         # Now test our disconnect functionality
-        if "$VPN_SCRIPT" disconnect >/dev/null 2>&1; then
+        if "$VPN_SCRIPT" disconnect > /dev/null 2>&1; then
             # Check if interface is gone
-            if ! wg show "$interface_name" >/dev/null 2>&1; then
+            if ! wg show "$interface_name" > /dev/null 2>&1; then
                 log "SUCCESS: WireGuard connection properly torn down"
                 return 0
             else
                 log "ERROR: WireGuard interface still active after disconnect"
                 # Force cleanup
-                sudo wg-quick down "$interface_name" 2>/dev/null || true
+                sudo wg-quick down "$interface_name" 2> /dev/null || true
                 return 1
             fi
         else
             log "ERROR: Disconnect command failed"
-            sudo wg-quick down "$interface_name" 2>/dev/null || true
+            sudo wg-quick down "$interface_name" 2> /dev/null || true
             return 1
         fi
     else
@@ -198,8 +198,8 @@ test_wireguard_openvpn_performance() {
 
     # This test should fail because we can't establish WireGuard connections yet
     local wg_config ovpn_config
-    wg_config=$(find "$PROJECT_ROOT/locations" -name "*.conf" 2>/dev/null | head -1)
-    ovpn_config=$(find "$PROJECT_ROOT/locations" -name "*.ovpn" 2>/dev/null | head -1)
+    wg_config=$(find "$PROJECT_ROOT/locations" -name "*.conf" 2> /dev/null | head -1)
+    ovpn_config=$(find "$PROJECT_ROOT/locations" -name "*.ovpn" 2> /dev/null | head -1)
 
     if [[ -z "$wg_config" ]] || [[ -z "$ovpn_config" ]]; then
         log "SKIP: Need both WireGuard and OpenVPN configs for comparison"
@@ -215,18 +215,18 @@ cleanup_after_tests() {
     log "Performing post-test cleanup"
 
     # Clean up any WireGuard interfaces
-    sudo wg show 2>/dev/null | grep -E "^interface:" | while read -r line; do
+    sudo wg show 2> /dev/null | grep -E "^interface:" | while read -r line; do
         interface=$(echo "$line" | cut -d: -f2 | xargs)
         if [[ -n "$interface" ]]; then
-            sudo wg-quick down "$interface" 2>/dev/null || true
+            sudo wg-quick down "$interface" 2> /dev/null || true
         fi
     done
 
     # Clean up VPN processes
-    "$VPN_SCRIPT" cleanup >/dev/null 2>&1 || true
+    "$VPN_SCRIPT" cleanup > /dev/null 2>&1 || true
 
     # Remove test artifacts
-    rm -f /tmp/wg_test_* 2>/dev/null || true
+    rm -f /tmp/wg_test_* 2> /dev/null || true
 }
 
 print_test_summary() {

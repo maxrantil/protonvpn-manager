@@ -12,7 +12,7 @@ run_regression_prevention_tests() {
 
     echo "Running simple regression prevention test suite..."
 
-    if "$TEST_DIR/simple_regression_tests.sh" >/dev/null 2>&1; then
+    if "$TEST_DIR/simple_regression_tests.sh" > /dev/null 2>&1; then
         log_test "PASS" "$CURRENT_TEST: All regression prevention tests passed"
         ((TESTS_PASSED++))
     else
@@ -29,7 +29,7 @@ test_cli_interface() {
 
     # Test help command
     local help_output
-    help_output=$("$vpn_script" help 2>/dev/null)
+    help_output=$("$vpn_script" help 2> /dev/null)
 
     assert_contains "$help_output" "Usage:" "Help should show usage information"
     assert_contains "$help_output" "Commands:" "Help should list available commands"
@@ -54,7 +54,7 @@ test_script_communication() {
     # Test that vpn script can call vpn-manager
     local vpn_script="$PROJECT_DIR/src/vpn"
     local status_output
-    status_output=$("$vpn_script" status 2>/dev/null)
+    status_output=$("$vpn_script" status 2> /dev/null)
 
     assert_contains "$status_output" "VPN Status" "Status command should work"
 
@@ -70,7 +70,7 @@ test_profile_listing_integration() {
     local connector_script="$PROJECT_DIR/src/vpn-connector"
 
     # Override LOCATIONS_DIR for testing
-    LOCATIONS_DIR="$TEST_LOCATIONS_DIR" "$connector_script" list > /tmp/list_output 2>/dev/null || true
+    LOCATIONS_DIR="$TEST_LOCATIONS_DIR" "$connector_script" list > /tmp/list_output 2> /dev/null || true
 
     if [[ -f /tmp/list_output ]]; then
         local list_output
@@ -94,7 +94,7 @@ test_country_filtering_integration() {
     local connector_script="$PROJECT_DIR/src/vpn-connector"
 
     # Test SE filtering
-    LOCATIONS_DIR="$TEST_LOCATIONS_DIR" "$connector_script" list se > /tmp/se_output 2>/dev/null || true
+    LOCATIONS_DIR="$TEST_LOCATIONS_DIR" "$connector_script" list se > /tmp/se_output 2> /dev/null || true
 
     if [[ -f /tmp/se_output ]]; then
         local se_output
@@ -113,7 +113,7 @@ test_country_filtering_integration() {
     fi
 
     # Test DK filtering
-    LOCATIONS_DIR="$TEST_LOCATIONS_DIR" "$connector_script" list dk > /tmp/dk_output 2>/dev/null || true
+    LOCATIONS_DIR="$TEST_LOCATIONS_DIR" "$connector_script" list dk > /tmp/dk_output 2> /dev/null || true
 
     if [[ -f /tmp/dk_output ]]; then
         local dk_output

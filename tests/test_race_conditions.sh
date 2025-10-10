@@ -80,7 +80,7 @@ test_credentials_symlink() {
     ln -s "$attacker_file" "$creds_file"
 
     # Run credential validation (should reject symlink)
-    if ../src/vpn-manager validate_credentials "$creds_file" 2>/dev/null; then
+    if ../src/vpn-manager validate_credentials "$creds_file" 2> /dev/null; then
         log_fail "Credentials symlink not detected - security vulnerability"
     else
         log_pass "Credentials symlink correctly rejected"
@@ -125,7 +125,7 @@ test_concurrent_locks() {
     # Start multiple processes trying to acquire the same lock
     for i in {1..5}; do
         (
-            exec 200>"$lock_file"
+            exec 200> "$lock_file"
             if flock -n 200; then
                 echo "Process $i acquired lock" >> "$TEST_DIR/lock_results.txt"
                 sleep 0.5

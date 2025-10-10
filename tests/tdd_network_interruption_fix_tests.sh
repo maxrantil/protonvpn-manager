@@ -78,9 +78,9 @@ test_automatic_cleanup_on_multiple_processes_detected() {
 
     # Cleanup test processes
     for pid in "${test_pids[@]}"; do
-        kill "$pid" 2>/dev/null || true
+        kill "$pid" 2> /dev/null || true
     done
-    pkill -f "openvpn.*test" 2>/dev/null || true
+    pkill -f "openvpn.*test" 2> /dev/null || true
 }
 
 # RED: Test for hierarchical cleanup escalation - should fail initially
@@ -259,9 +259,9 @@ test_network_interruption_scenario_integration() {
 
     # Cleanup
     for pid in "${test_pids[@]}"; do
-        kill "$pid" 2>/dev/null || true
+        kill "$pid" 2> /dev/null || true
     done
-    pkill -f "openvpn.*interrupted" 2>/dev/null || true
+    pkill -f "openvpn.*interrupted" 2> /dev/null || true
 }
 
 # Run all TDD tests - these should mostly FAIL initially

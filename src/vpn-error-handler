@@ -81,11 +81,26 @@ vpn_error() {
     # Map severity to display properties
     local level_text color_code
     case "$severity" in
-        "$ERROR_CRITICAL") level_text="CRITICAL"; color_code="$RED" ;;
-        "$ERROR_HIGH")     level_text="ERROR";    color_code="$RED" ;;
-        "$ERROR_MEDIUM")   level_text="WARNING";  color_code="$YELLOW" ;;
-        "$ERROR_INFO")     level_text="INFO";     color_code="$BLUE" ;;
-        *) level_text="ERROR"; color_code="$RED" ;;
+        "$ERROR_CRITICAL")
+            level_text="CRITICAL"
+            color_code="$RED"
+            ;;
+        "$ERROR_HIGH")
+            level_text="ERROR"
+            color_code="$RED"
+            ;;
+        "$ERROR_MEDIUM")
+            level_text="WARNING"
+            color_code="$YELLOW"
+            ;;
+        "$ERROR_INFO")
+            level_text="INFO"
+            color_code="$BLUE"
+            ;;
+        *)
+            level_text="ERROR"
+            color_code="$RED"
+            ;;
     esac
 
     # Accessible error format (screen reader friendly)
@@ -113,7 +128,7 @@ vpn_error() {
 
     # Return appropriate exit code
     case "$severity" in
-        "$ERROR_CRITICAL"|"$ERROR_HIGH") return 1 ;;
+        "$ERROR_CRITICAL" | "$ERROR_HIGH") return 1 ;;
         "$ERROR_MEDIUM") return 2 ;;
         "$ERROR_INFO") return 0 ;;
     esac
@@ -244,8 +259,8 @@ log_error() {
     [[ -n "$context" ]] && log_entry="$log_entry | Context: $context"
 
     # Ensure log directory exists and is writable
-    if [[ -w "$VPN_LOG_DIR" ]] || mkdir -p "$VPN_LOG_DIR" 2>/dev/null; then
-        echo "$log_entry" >> "$ERROR_LOG" 2>/dev/null || true
+    if [[ -w "$VPN_LOG_DIR" ]] || mkdir -p "$VPN_LOG_DIR" 2> /dev/null; then
+        echo "$log_entry" >> "$ERROR_LOG" 2> /dev/null || true
     fi
 }
 
