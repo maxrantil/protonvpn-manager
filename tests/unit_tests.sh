@@ -118,7 +118,7 @@ profile3.ovpn|100|$(date +%s)"
 
     # Test cache age calculation
     local cache_age
-    cache_age=$(($(date +%s) - $(stat -c %Y "$test_cache" 2>/dev/null || echo 0)))
+    cache_age=$(($(date +%s) - $(stat -c %Y "$test_cache" 2> /dev/null || echo 0)))
 
     # Cache should be very recent (less than 10 seconds)
     if [[ $cache_age -lt 10 ]]; then
@@ -139,7 +139,7 @@ test_command_availability() {
     local required_commands=("find" "grep" "awk" "sed" "sort" "wc" "head" "tail" "bc" "ping")
 
     for cmd in "${required_commands[@]}"; do
-        if command -v "$cmd" >/dev/null 2>&1; then
+        if command -v "$cmd" > /dev/null 2>&1; then
             log_test "PASS" "$CURRENT_TEST: Command '$cmd' is available"
             ((TESTS_PASSED++))
         else

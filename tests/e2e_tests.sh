@@ -24,12 +24,12 @@ test_complete_workflow_dry_run() {
     # Test the complete workflow
     log_test "INFO" "$CURRENT_TEST: Testing help command"
     local help_result
-    help_result=$("$vpn_script" help 2>/dev/null)
+    help_result=$("$vpn_script" help 2> /dev/null)
     assert_contains "$help_result" "Usage:" "Help command should work"
 
     log_test "INFO" "$CURRENT_TEST: Testing list command"
     local list_result
-    list_result=$("$vpn_script" list 2>/dev/null)
+    list_result=$("$vpn_script" list 2> /dev/null)
     # The list command should work even if no profiles found
     if [[ -n "$list_result" ]]; then
         log_test "PASS" "$CURRENT_TEST: List command produces output"
@@ -40,7 +40,7 @@ test_complete_workflow_dry_run() {
 
     log_test "INFO" "$CURRENT_TEST: Testing status command"
     local status_result
-    status_result=$("$vpn_script" status 2>/dev/null)
+    status_result=$("$vpn_script" status 2> /dev/null)
     # Status should work even if VPN is not connected
     if [[ -n "$status_result" ]]; then
         log_test "PASS" "$CURRENT_TEST: Status command produces output"
@@ -60,7 +60,7 @@ test_profile_management_workflow() {
     local connector_script="$PROJECT_DIR/src/vpn-connector"
 
     # Test profile listing
-    LOCATIONS_DIR="$TEST_LOCATIONS_DIR" "$connector_script" list > /tmp/profile_list 2>/dev/null || true
+    LOCATIONS_DIR="$TEST_LOCATIONS_DIR" "$connector_script" list > /tmp/profile_list 2> /dev/null || true
 
     if [[ -f /tmp/profile_list ]]; then
         local profile_output
@@ -74,7 +74,7 @@ test_profile_management_workflow() {
     fi
 
     # Test country-specific listing
-    LOCATIONS_DIR="$TEST_LOCATIONS_DIR" "$connector_script" list se > /tmp/se_profiles 2>/dev/null || true
+    LOCATIONS_DIR="$TEST_LOCATIONS_DIR" "$connector_script" list se > /tmp/se_profiles 2> /dev/null || true
 
     if [[ -f /tmp/se_profiles ]]; then
         local se_output
@@ -86,7 +86,7 @@ test_profile_management_workflow() {
     fi
 
     # Test countries command
-    LOCATIONS_DIR="$TEST_LOCATIONS_DIR" "$connector_script" countries > /tmp/countries 2>/dev/null || true
+    LOCATIONS_DIR="$TEST_LOCATIONS_DIR" "$connector_script" countries > /tmp/countries 2> /dev/null || true
 
     if [[ -f /tmp/countries ]]; then
         local countries_output
@@ -105,7 +105,7 @@ test_cache_management_workflow() {
 
     # Test cache info when no cache exists
     local cache_info
-    cache_info=$("$connector_script" cache info 2>/dev/null)
+    cache_info=$("$connector_script" cache info 2> /dev/null)
 
     assert_contains "$cache_info" "No performance cache found" "Should handle missing cache"
 
@@ -114,7 +114,7 @@ test_cache_management_workflow() {
     echo "test.ovpn|50|$(date +%s)" > "$test_cache"
 
     # Test cache info with existing cache
-    PERFORMANCE_CACHE="$test_cache" cache_info=$("$connector_script" cache info 2>/dev/null)
+    PERFORMANCE_CACHE="$test_cache" cache_info=$("$connector_script" cache info 2> /dev/null)
 
     if [[ -n "$cache_info" ]]; then
         assert_contains "$cache_info" "Performance Cache Information" "Should show cache info"
@@ -123,7 +123,7 @@ test_cache_management_workflow() {
     fi
 
     # Test cache clearing
-    PERFORMANCE_CACHE="$test_cache" "$connector_script" cache clear >/dev/null 2>&1 || true
+    PERFORMANCE_CACHE="$test_cache" "$connector_script" cache clear > /dev/null 2>&1 || true
 
     if [[ ! -f "$test_cache" ]]; then
         log_test "PASS" "$CURRENT_TEST: Cache clearing works"
@@ -180,7 +180,7 @@ EOF
     chmod +x "$test_script"
 
     local security_output
-    security_output=$("$test_script" 2>/dev/null)
+    security_output=$("$test_script" 2> /dev/null)
 
     # There should be no credentials in process output
     if [[ -z "$security_output" ]]; then
@@ -236,7 +236,7 @@ EOF
     local start_time
     start_time=$(date +%s)
 
-    LOCATIONS_DIR="$TEST_LOCATIONS_DIR" "$connector_script" list >/dev/null 2>&1 || true
+    LOCATIONS_DIR="$TEST_LOCATIONS_DIR" "$connector_script" list > /dev/null 2>&1 || true
 
     local end_time
     end_time=$(date +%s)
@@ -265,15 +265,15 @@ test_concurrent_operations() {
     echo "$$" > "/tmp/vpn_connect.lock"
 
     # Try to run a command that should be blocked by lock
-    LOCATIONS_DIR="$TEST_LOCATIONS_DIR" timeout 5 "$connector_script" connect se >/dev/null 2>&1 &
+    LOCATIONS_DIR="$TEST_LOCATIONS_DIR" timeout 5 "$connector_script" connect se > /dev/null 2>&1 &
     local cmd_pid=$!
 
     # Wait a moment
     sleep 1
 
     # Kill the background process
-    kill $cmd_pid 2>/dev/null || true
-    wait $cmd_pid 2>/dev/null || true
+    kill $cmd_pid 2> /dev/null || true
+    wait $cmd_pid 2> /dev/null || true
 
     # Clean up lock file
     rm -f "/tmp/vpn_connect.lock"

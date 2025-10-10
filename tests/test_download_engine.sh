@@ -58,8 +58,8 @@ setup_test_environment() {
 cleanup_test_environment() {
     log "INFO" "Cleaning up download engine test environment"
     # Remove test files
-    rm -rf "$PROJECT_ROOT/locations/.test-downloads" 2>/dev/null || true
-    rm -f "$PROJECT_ROOT/locations/.download-metadata/test-"* 2>/dev/null || true
+    rm -rf "$PROJECT_ROOT/locations/.test-downloads" 2> /dev/null || true
+    rm -f "$PROJECT_ROOT/locations/.download-metadata/test-"* 2> /dev/null || true
 }
 
 # Test 1: Module existence and help functionality
@@ -76,7 +76,7 @@ test_download_engine_exists() {
     fi
 
     # Test help command
-    if ! "$DOWNLOAD_ENGINE" help >/dev/null 2>&1; then
+    if ! "$DOWNLOAD_ENGINE" help > /dev/null 2>&1; then
         log "FAIL" "Download engine help command failed"
         return 1
     fi
@@ -151,7 +151,7 @@ test_downloads_page_scraping() {
     # RED: Should fail initially - scraping not implemented
 
     # Test mock scraping (should work without real authentication)
-    if ! "$DOWNLOAD_ENGINE" list-available --dry-run 2>/dev/null; then
+    if ! "$DOWNLOAD_ENGINE" list-available --dry-run 2> /dev/null; then
         log "FAIL" "Download engine cannot list available configs"
         cleanup_test_environment
         return 1
@@ -159,7 +159,7 @@ test_downloads_page_scraping() {
 
     # Verify it can parse country codes and server names
     local available_list
-    available_list=$("$DOWNLOAD_ENGINE" list-available --dry-run 2>/dev/null)
+    available_list=$("$DOWNLOAD_ENGINE" list-available --dry-run 2> /dev/null)
 
     if ! echo "$available_list" | grep -q "dk-"; then
         log "FAIL" "Cannot parse Danish server configs"
@@ -187,7 +187,7 @@ test_config_downloading() {
     # RED: Should fail initially - downloading not implemented
 
     # Test single country download (using test mode)
-    if ! "$DOWNLOAD_ENGINE" download-country dk --test-mode 2>/dev/null; then
+    if ! "$DOWNLOAD_ENGINE" download-country dk --test-mode 2> /dev/null; then
         log "FAIL" "Cannot download specific country configs"
         cleanup_test_environment
         return 1
@@ -211,7 +211,7 @@ test_config_downloading() {
 
     # Test real mode graceful fallback (with timeout to prevent hanging)
     # Clear rate limit for this test
-    rm -f "$PROJECT_ROOT/locations/.download-metadata/rate-limit.lock" 2>/dev/null || true
+    rm -f "$PROJECT_ROOT/locations/.download-metadata/rate-limit.lock" 2> /dev/null || true
 
     # Real mode should either work or provide meaningful output (with timeout)
     local real_download_output
@@ -236,13 +236,13 @@ test_change_detection() {
     # RED: Should fail initially - change detection not implemented
 
     # Clear rate limiting for this test
-    rm -f "$PROJECT_ROOT/locations/.download-metadata/rate-limit.lock" 2>/dev/null || true
+    rm -f "$PROJECT_ROOT/locations/.download-metadata/rate-limit.lock" 2> /dev/null || true
 
     # Create initial download state
-    "$DOWNLOAD_ENGINE" download-country dk --test-mode 2>/dev/null || true
+    "$DOWNLOAD_ENGINE" download-country dk --test-mode 2> /dev/null || true
 
     # Test hash generation and comparison
-    if ! "$DOWNLOAD_ENGINE" generate-hashes "$PROJECT_ROOT/locations/.test-downloads/dk" 2>/dev/null; then
+    if ! "$DOWNLOAD_ENGINE" generate-hashes "$PROJECT_ROOT/locations/.test-downloads/dk" 2> /dev/null; then
         log "FAIL" "Cannot generate config hashes"
         cleanup_test_environment
         return 1
@@ -256,7 +256,7 @@ test_change_detection() {
     fi
 
     # Test change detection
-    if ! "$DOWNLOAD_ENGINE" check-changes dk --test-mode 2>/dev/null; then
+    if ! "$DOWNLOAD_ENGINE" check-changes dk --test-mode 2> /dev/null; then
         log "FAIL" "Change detection not working"
         cleanup_test_environment
         return 1
@@ -272,14 +272,14 @@ test_rate_limiting() {
     # RED: Should fail initially - rate limiting not implemented
 
     # Test rate limit status
-    if ! "$DOWNLOAD_ENGINE" rate-limit-status 2>/dev/null | grep -q "Rate limit"; then
+    if ! "$DOWNLOAD_ENGINE" rate-limit-status 2> /dev/null | grep -q "Rate limit"; then
         log "FAIL" "Rate limiting status not available"
         return 1
     fi
 
     # Test rate limit enforcement (should prevent rapid requests)
-    "$DOWNLOAD_ENGINE" download-country dk --test-mode 2>/dev/null || true
-    if "$DOWNLOAD_ENGINE" download-country dk --test-mode 2>/dev/null; then
+    "$DOWNLOAD_ENGINE" download-country dk --test-mode 2> /dev/null || true
+    if "$DOWNLOAD_ENGINE" download-country dk --test-mode 2> /dev/null; then
         log "FAIL" "Rate limiting not enforced - second request allowed immediately"
         return 1
     fi
@@ -295,14 +295,14 @@ test_network_error_handling() {
     # RED: Should fail initially - error handling not implemented
 
     # Test network error simulation
-    if "$DOWNLOAD_ENGINE" download-country invalid --test-mode 2>/dev/null; then
+    if "$DOWNLOAD_ENGINE" download-country invalid --test-mode 2> /dev/null; then
         log "FAIL" "Network error handling not implemented"
         cleanup_test_environment
         return 1
     fi
 
     # Test retry mechanism
-    if ! "$DOWNLOAD_ENGINE" retry-failed 2>/dev/null; then
+    if ! "$DOWNLOAD_ENGINE" retry-failed 2> /dev/null; then
         log "FAIL" "Retry mechanism not available"
         cleanup_test_environment
         return 1
@@ -320,7 +320,7 @@ test_file_structure_integration() {
     # RED: Should fail initially - integration not implemented
 
     # Test integration with existing locations directory
-    if ! "$DOWNLOAD_ENGINE" sync-with-existing 2>/dev/null; then
+    if ! "$DOWNLOAD_ENGINE" sync-with-existing 2> /dev/null; then
         log "FAIL" "Cannot sync with existing file structure"
         cleanup_test_environment
         return 1
@@ -328,7 +328,7 @@ test_file_structure_integration() {
 
     # Verify existing configs are preserved
     if [[ -f "$PROJECT_ROOT/locations/dk-134.protonvpn.udp.ovpn" ]]; then
-        if ! "$DOWNLOAD_ENGINE" verify-existing "$PROJECT_ROOT/locations/dk-134.protonvpn.udp.ovpn" 2>/dev/null; then
+        if ! "$DOWNLOAD_ENGINE" verify-existing "$PROJECT_ROOT/locations/dk-134.protonvpn.udp.ovpn" 2> /dev/null; then
             log "FAIL" "Cannot verify existing config files"
             cleanup_test_environment
             return 1

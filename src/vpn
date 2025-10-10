@@ -6,13 +6,14 @@
 CONFIG_DIR="${VPN_CONFIG_DIR:-$HOME/.config/vpn}"
 LOCATIONS_DIR="$CONFIG_DIR/locations"
 
-# Script locations (when installed to /usr/local/bin)
-if [[ -f "/usr/local/bin/vpn-manager" ]]; then
-    VPN_MANAGER="/usr/local/bin/vpn-manager"
-    VPN_CONNECTOR="/usr/local/bin/vpn-connector"
+# Script locations - robust detection for installed vs development mode
+if [[ -f "/usr/local/bin/vpn-manager" ]] && [[ -f "/usr/local/bin/vpn-error-handler" ]]; then
+    # Installed mode - all components in /usr/local/bin
     VPN_DIR="/usr/local/bin"
+    VPN_MANAGER="$VPN_DIR/vpn-manager"
+    VPN_CONNECTOR="$VPN_DIR/vpn-connector"
 else
-    # Development mode - use local paths
+    # Development mode - use local paths relative to script location
     VPN_DIR="$(dirname "$(realpath "$0")")"
     VPN_MANAGER="$VPN_DIR/vpn-manager"
     VPN_CONNECTOR="$VPN_DIR/vpn-connector"
@@ -69,11 +70,11 @@ show_help() {
 }
 
 case "$1" in
-    "connect"|"c")
+    "connect" | "c")
         if [[ -x "$VPN_CONNECTOR" ]]; then
             # Check for process health issues before connecting
             if [[ -x "$VPN_MANAGER" ]]; then
-                "$VPN_MANAGER" health >/dev/null 2>&1
+                "$VPN_MANAGER" health > /dev/null 2>&1
                 if [[ $? -eq 1 ]]; then
                     echo -e "\033[1;31m⚠️  CRITICAL: Multiple OpenVPN processes detected!\033[0m"
                     echo -e "\033[1;33m   Performing automatic cleanup to prevent system issues...\033[0m"
@@ -90,7 +91,7 @@ case "$1" in
             exit 1
         fi
         ;;
-    "disconnect"|"d")
+    "disconnect" | "d")
         if [[ -x "$VPN_MANAGER" ]]; then
             "$VPN_MANAGER" stop
         else
@@ -98,7 +99,7 @@ case "$1" in
             exit 1
         fi
         ;;
-    "reconnect"|"r")
+    "reconnect" | "r")
         if [[ -x "$VPN_MANAGER" ]]; then
             "$VPN_MANAGER" stop
             sleep 2
@@ -108,7 +109,7 @@ case "$1" in
             exit 1
         fi
         ;;
-    "status"|"s")
+    "status" | "s")
         if [[ -x "$VPN_MANAGER" ]]; then
             if [[ "$2" == "--accessible" ]]; then
                 VPN_ACCESSIBLE_MODE=1 "$VPN_MANAGER" status
@@ -120,7 +121,7 @@ case "$1" in
             exit 1
         fi
         ;;
-    "best"|"b")
+    "best" | "b")
         if [[ -x "$VPN_CONNECTOR" ]]; then
             "$VPN_CONNECTOR" best
         else
@@ -128,7 +129,7 @@ case "$1" in
             exit 1
         fi
         ;;
-    "fast"|"f")
+    "fast" | "f")
         if [[ -x "$VPN_CONNECTOR" ]]; then
             "$VPN_CONNECTOR" fast "$2"
         else
@@ -152,16 +153,16 @@ case "$1" in
             exit 1
         fi
         ;;
-    "list"|"l")
+    "list" | "l")
         if [[ -d "$LOCATIONS_DIR" ]]; then
             echo -e "\033[1;33mAvailable VPN Profiles:\033[0m"
-            find "$LOCATIONS_DIR" \( -name "*.ovpn" -o -name "*.conf" \) 2>/dev/null | sed 's|.*/||; s|\.ovpn$||; s|\.conf$||' | sort
+            find "$LOCATIONS_DIR" \( -name "*.ovpn" -o -name "*.conf" \) 2> /dev/null | sed 's|.*/||; s|\.ovpn$||; s|\.conf$||' | sort
         else
             file_not_found_error "$COMP_VPN_MAIN" "$LOCATIONS_DIR" "Create locations directory and add VPN profile files"
             exit 1
         fi
         ;;
-    "kill"|"k")
+    "kill" | "k")
         if [[ -x "$VPN_MANAGER" ]]; then
             "$VPN_MANAGER" kill-all
         else
@@ -193,7 +194,7 @@ case "$1" in
             exit 1
         fi
         ;;
-    "logs"|"log")
+    "logs" | "log")
         if [[ -x "$VPN_MANAGER" ]]; then
             "$VPN_MANAGER" logs "${2:-50}"
         else
@@ -201,7 +202,7 @@ case "$1" in
             exit 1
         fi
         ;;
-    "test"|"t")
+    "test" | "t")
         if [[ -x "$VPN_CONNECTOR" ]]; then
             "$VPN_CONNECTOR" test
         else
@@ -226,10 +227,10 @@ case "$1" in
         DOWNLOAD_ENGINE="$VPN_DIR/download-engine"
         if [[ -x "$DOWNLOAD_ENGINE" ]]; then
             case "${2:-status}" in
-                "help"|"h")
+                "help" | "h")
                     "$DOWNLOAD_ENGINE" help
                     ;;
-                "status"|"s")
+                "status" | "s")
                     "$DOWNLOAD_ENGINE" status
                     ;;
                 "country")
@@ -266,10 +267,10 @@ case "$1" in
         SERVICE_MANAGER="$VPN_DIR/proton-service"
         if [[ -x "$SERVICE_MANAGER" ]]; then
             case "${2:-help}" in
-                "help"|"h")
+                "help" | "h")
                     "$SERVICE_MANAGER" help
                     ;;
-                "start"|"stop"|"restart"|"status"|"logs"|"install"|"uninstall"|"update-now")
+                "start" | "stop" | "restart" | "status" | "logs" | "install" | "uninstall" | "update-now")
                     "$SERVICE_MANAGER" "$2" "${@:3}"
                     ;;
                 "config")
@@ -292,7 +293,7 @@ case "$1" in
             exit 1
         fi
         ;;
-    "help"|"h"|"")
+    "help" | "h" | "")
         show_help
         ;;
     *)

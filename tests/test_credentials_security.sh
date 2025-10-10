@@ -75,7 +75,7 @@ EOF
 chmod 666 "$CREDS_FILE"
 
 # Run validation (should fix permissions)
-../src/vpn-manager validate_credentials "$CREDS_FILE" >/dev/null 2>&1
+../src/vpn-manager validate_credentials "$CREDS_FILE" > /dev/null 2>&1
 
 PERMS=$(stat -c "%a" "$CREDS_FILE")
 if [[ "$PERMS" == "600" ]]; then

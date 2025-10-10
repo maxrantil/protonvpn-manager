@@ -32,7 +32,7 @@ test_help_command_shows_usage() {
     fi
 
     local output
-    output=$("$EXPECTED_SCRIPT_PATH" help 2>/dev/null || true)
+    output=$("$EXPECTED_SCRIPT_PATH" help 2> /dev/null || true)
 
     if echo "$output" | grep -q "Usage:" && echo "$output" | grep -q "test"; then
         log_test "PASS" "$CURRENT_TEST"
@@ -53,7 +53,7 @@ test_cache_command_works() {
     fi
 
     # Cache command should work even if no cache exists
-    if timeout 10 "$EXPECTED_SCRIPT_PATH" cache >/dev/null 2>&1; then
+    if timeout 10 "$EXPECTED_SCRIPT_PATH" cache > /dev/null 2>&1; then
         log_test "PASS" "$CURRENT_TEST"
         ((TESTS_PASSED++))
     else
@@ -78,7 +78,7 @@ test_best_command_returns_profile_name() {
     fi
 
     local result
-    result=$(timeout 30 "$EXPECTED_SCRIPT_PATH" best 2>/dev/null | tail -n1 || echo "")
+    result=$(timeout 30 "$EXPECTED_SCRIPT_PATH" best 2> /dev/null | tail -n1 || echo "")
 
     if [[ -n "$result" ]] && [[ "$result" != "" ]]; then
         log_test "PASS" "$CURRENT_TEST: got result '$result'"

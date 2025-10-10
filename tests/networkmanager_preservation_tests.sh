@@ -19,7 +19,7 @@ test_cleanup_preserves_networkmanager() {
     fi
 
     # Run cleanup
-    "$PROJECT_DIR/src/vpn" cleanup >/dev/null 2>&1
+    "$PROJECT_DIR/src/vpn" cleanup > /dev/null 2>&1
 
     # Get NetworkManager PID after cleanup
     local nm_pid_after
@@ -49,7 +49,7 @@ test_kill_preserves_networkmanager() {
     fi
 
     # Run kill command
-    "$PROJECT_DIR/src/vpn" kill >/dev/null 2>&1
+    "$PROJECT_DIR/src/vpn" kill > /dev/null 2>&1
 
     # Get NetworkManager PID after kill
     local nm_pid_after

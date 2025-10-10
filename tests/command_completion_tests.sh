@@ -13,7 +13,7 @@ test_cleanup_completes_within_timeout() {
     start_time=$(date +%s)
 
     # Run cleanup with timeout to prevent infinite hanging
-    if timeout 30s "$PROJECT_DIR/src/vpn" cleanup >/dev/null 2>&1; then
+    if timeout 30s "$PROJECT_DIR/src/vpn" cleanup > /dev/null 2>&1; then
         end_time=$(date +%s)
         duration=$((end_time - start_time))
 
@@ -39,7 +39,7 @@ test_kill_completes_within_timeout() {
     start_time=$(date +%s)
 
     # Run kill with timeout to prevent infinite hanging
-    if timeout 30s "$PROJECT_DIR/src/vpn" kill >/dev/null 2>&1; then
+    if timeout 30s "$PROJECT_DIR/src/vpn" kill > /dev/null 2>&1; then
         end_time=$(date +%s)
         duration=$((end_time - start_time))
 
@@ -65,7 +65,7 @@ test_health_completes_within_timeout() {
     start_time=$(date +%s)
 
     # Run health check with timeout
-    if timeout 10s "$PROJECT_DIR/src/vpn" health >/dev/null 2>&1; then
+    if timeout 10s "$PROJECT_DIR/src/vpn" health > /dev/null 2>&1; then
         end_time=$(date +%s)
         duration=$((end_time - start_time))
 
@@ -91,7 +91,7 @@ test_status_completes_within_timeout() {
     start_time=$(date +%s)
 
     # Run status check with timeout
-    if timeout 15s "$PROJECT_DIR/src/vpn" status >/dev/null 2>&1; then
+    if timeout 15s "$PROJECT_DIR/src/vpn" status > /dev/null 2>&1; then
         end_time=$(date +%s)
         duration=$((end_time - start_time))
 
