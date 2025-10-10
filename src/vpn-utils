@@ -20,7 +20,7 @@ log_message() {
     local log_file="$2"
 
     # Try to write to log file
-    if echo "[$(date '+%Y-%m-%d %H:%M:%S')] $message" >> "$log_file" 2>/dev/null; then
+    if echo "[$(date '+%Y-%m-%d %H:%M:%S')] $message" >> "$log_file" 2> /dev/null; then
         return 0
     else
         # Fallback to stderr if log file not writable

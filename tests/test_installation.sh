@@ -17,8 +17,8 @@ TEST_GROUP="test-protonvpn-$$"
 cleanup_test() {
     echo "Cleaning up test environment..."
     sudo rm -rf "$TEST_PREFIX" || true
-    sudo userdel "$TEST_USER" 2>/dev/null || true
-    sudo groupdel "$TEST_GROUP" 2>/dev/null || true
+    sudo userdel "$TEST_USER" 2> /dev/null || true
+    sudo groupdel "$TEST_GROUP" 2> /dev/null || true
 }
 
 # Trap cleanup on exit
@@ -59,7 +59,7 @@ include $PROJECT_DIR/Makefile
 EOF
 
     # Test installation with custom paths
-    if sudo -E make -f /tmp/test-makefile install-dirs 2>/dev/null; then
+    if sudo -E make -f /tmp/test-makefile install-dirs 2> /dev/null; then
         # Verify directories were created
         if [[ -d "$TEST_PREFIX/etc/protonvpn" && -d "$TEST_PREFIX/var/log/protonvpn" ]]; then
             log_test "PASS" "Basic installation directories created"
@@ -99,10 +99,10 @@ test_user_creation() {
     echo "=== Test: User Creation Edge Cases ==="
 
     # Test creating user that already exists
-    sudo useradd --system "$TEST_USER" 2>/dev/null || true
+    sudo useradd --system "$TEST_USER" 2> /dev/null || true
 
     # Try to create again (should not fail)
-    if sudo useradd --system "$TEST_USER" 2>/dev/null; then
+    if sudo useradd --system "$TEST_USER" 2> /dev/null; then
         log_test "FAIL" "Should handle existing user gracefully"
     else
         log_test "PASS" "Existing user handled correctly"

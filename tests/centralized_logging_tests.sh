@@ -150,7 +150,7 @@ test_logger_accessibility() {
     start_test "vpn-logger tool exists and is executable"
 
     assert_file_exists "$VPN_LOGGER" "vpn-logger script exists" &&
-    assert_executable "$VPN_LOGGER" "vpn-logger is executable"
+        assert_executable "$VPN_LOGGER" "vpn-logger is executable"
     record_result
 }
 
@@ -161,9 +161,9 @@ test_help_functionality() {
     help_output=$("$VPN_LOGGER" --help 2>&1) || true
 
     assert_contains "$help_output" "Usage:" "Help shows usage information" &&
-    assert_contains "$help_output" "--log" "Help mentions log option" &&
-    assert_contains "$help_output" "--rotate" "Help mentions rotate option" &&
-    assert_contains "$help_output" "--level" "Help mentions level option"
+        assert_contains "$help_output" "--log" "Help mentions log option" &&
+        assert_contains "$help_output" "--rotate" "Help mentions rotate option" &&
+        assert_contains "$help_output" "--level" "Help mentions level option"
     record_result
 }
 
@@ -171,10 +171,10 @@ test_basic_logging_functionality() {
     start_test "vpn-logger performs basic logging operations"
 
     # Test INFO level logging
-    "$VPN_LOGGER" --log "Test message" --level INFO --component TEST 2>/dev/null || true
+    "$VPN_LOGGER" --log "Test message" --level INFO --component TEST 2> /dev/null || true
 
     assert_file_exists "$CENTRAL_LOG" "Central log file created" &&
-    assert_log_format "$CENTRAL_LOG" "^\[[0-9-]+ [0-9:]+\] \[INFO\] \[TEST\] Test message$" "Log format correct"
+        assert_log_format "$CENTRAL_LOG" "^\[[0-9-]+ [0-9:]+\] \[INFO\] \[TEST\] Test message$" "Log format correct"
     record_result
 }
 
@@ -182,18 +182,18 @@ test_log_levels() {
     start_test "vpn-logger supports different log levels"
 
     # Test different log levels
-    "$VPN_LOGGER" --log "Debug message" --level DEBUG --component TEST 2>/dev/null || true
-    "$VPN_LOGGER" --log "Info message" --level INFO --component TEST 2>/dev/null || true
-    "$VPN_LOGGER" --log "Warning message" --level WARN --component TEST 2>/dev/null || true
-    "$VPN_LOGGER" --log "Error message" --level ERROR --component TEST 2>/dev/null || true
+    "$VPN_LOGGER" --log "Debug message" --level DEBUG --component TEST 2> /dev/null || true
+    "$VPN_LOGGER" --log "Info message" --level INFO --component TEST 2> /dev/null || true
+    "$VPN_LOGGER" --log "Warning message" --level WARN --component TEST 2> /dev/null || true
+    "$VPN_LOGGER" --log "Error message" --level ERROR --component TEST 2> /dev/null || true
 
     local log_content
-    log_content=$(cat "$CENTRAL_LOG" 2>/dev/null || echo "")
+    log_content=$(cat "$CENTRAL_LOG" 2> /dev/null || echo "")
 
     assert_contains "$log_content" "\[DEBUG\]" "DEBUG level logged" &&
-    assert_contains "$log_content" "\[INFO\]" "INFO level logged" &&
-    assert_contains "$log_content" "\[WARN\]" "WARN level logged" &&
-    assert_contains "$log_content" "\[ERROR\]" "ERROR level logged"
+        assert_contains "$log_content" "\[INFO\]" "INFO level logged" &&
+        assert_contains "$log_content" "\[WARN\]" "WARN level logged" &&
+        assert_contains "$log_content" "\[ERROR\]" "ERROR level logged"
     record_result
 }
 
@@ -201,17 +201,17 @@ test_credential_sanitization() {
     start_test "vpn-logger sanitizes sensitive information"
 
     # Test credential sanitization
-    "$VPN_LOGGER" --log "User password=secret123 logged in" --level INFO --component AUTH 2>/dev/null || true
-    "$VPN_LOGGER" --log "Connection with username=testuser password=secret456" --level INFO --component VPN 2>/dev/null || true
-    "$VPN_LOGGER" --log "auth-user-pass /path/to/credentials" --level INFO --component CONFIG 2>/dev/null || true
+    "$VPN_LOGGER" --log "User password=secret123 logged in" --level INFO --component AUTH 2> /dev/null || true
+    "$VPN_LOGGER" --log "Connection with username=testuser password=secret456" --level INFO --component VPN 2> /dev/null || true
+    "$VPN_LOGGER" --log "auth-user-pass /path/to/credentials" --level INFO --component CONFIG 2> /dev/null || true
 
     local log_content
-    log_content=$(cat "$CENTRAL_LOG" 2>/dev/null || echo "")
+    log_content=$(cat "$CENTRAL_LOG" 2> /dev/null || echo "")
 
     assert_not_contains "$log_content" "secret123" "Password 1 sanitized" &&
-    assert_not_contains "$log_content" "secret456" "Password 2 sanitized" &&
-    assert_not_contains "$log_content" "testuser" "Username sanitized" &&
-    assert_contains "$log_content" "\[REDACTED\]" "Redaction markers present"
+        assert_not_contains "$log_content" "secret456" "Password 2 sanitized" &&
+        assert_not_contains "$log_content" "testuser" "Username sanitized" &&
+        assert_contains "$log_content" "\[REDACTED\]" "Redaction markers present"
     record_result
 }
 
@@ -219,16 +219,16 @@ test_component_logging() {
     start_test "vpn-logger supports component-specific logging"
 
     # Test different components
-    "$VPN_LOGGER" --log "Connection established" --level INFO --component VPN-CONNECTOR 2>/dev/null || true
-    "$VPN_LOGGER" --log "Process status checked" --level INFO --component VPN-MANAGER 2>/dev/null || true
-    "$VPN_LOGGER" --log "Status updated" --level INFO --component VPN-STATUSBAR 2>/dev/null || true
+    "$VPN_LOGGER" --log "Connection established" --level INFO --component VPN-CONNECTOR 2> /dev/null || true
+    "$VPN_LOGGER" --log "Process status checked" --level INFO --component VPN-MANAGER 2> /dev/null || true
+    "$VPN_LOGGER" --log "Status updated" --level INFO --component VPN-STATUSBAR 2> /dev/null || true
 
     local log_content
-    log_content=$(cat "$CENTRAL_LOG" 2>/dev/null || echo "")
+    log_content=$(cat "$CENTRAL_LOG" 2> /dev/null || echo "")
 
     assert_contains "$log_content" "\[VPN-CONNECTOR\]" "VPN-CONNECTOR component logged" &&
-    assert_contains "$log_content" "\[VPN-MANAGER\]" "VPN-MANAGER component logged" &&
-    assert_contains "$log_content" "\[VPN-STATUSBAR\]" "VPN-STATUSBAR component logged"
+        assert_contains "$log_content" "\[VPN-MANAGER\]" "VPN-MANAGER component logged" &&
+        assert_contains "$log_content" "\[VPN-STATUSBAR\]" "VPN-STATUSBAR component logged"
     record_result
 }
 
@@ -241,7 +241,7 @@ test_log_rotation() {
     done
 
     # Test rotation
-    "$VPN_LOGGER" --rotate --max-size 1024 --keep 3 2>/dev/null || true
+    "$VPN_LOGGER" --rotate --max-size 1024 --keep 3 2> /dev/null || true
 
     # Check if rotation occurred
     local rotated_files
@@ -256,11 +256,11 @@ test_test_logging() {
     start_test "vpn-logger supports test-specific logging (/tmp/vpn_tester.log)"
 
     # Test the mysterious /tmp/vpn_tester.log requirement
-    "$VPN_LOGGER" --test-log "Test execution started" --test-id "TEST-001" 2>/dev/null || true
-    "$VPN_LOGGER" --test-log "Test case passed" --test-id "TEST-001" 2>/dev/null || true
+    "$VPN_LOGGER" --test-log "Test execution started" --test-id "TEST-001" 2> /dev/null || true
+    "$VPN_LOGGER" --test-log "Test case passed" --test-id "TEST-001" 2> /dev/null || true
 
     assert_file_exists "$TEST_LOG" "Test log file created" &&
-    assert_contains "$(cat "$TEST_LOG" 2>/dev/null || echo "")" "TEST-001" "Test ID logged"
+        assert_contains "$(cat "$TEST_LOG" 2> /dev/null || echo "")" "TEST-001" "Test ID logged"
     record_result
 }
 
@@ -270,21 +270,21 @@ test_integration_compatibility() {
     # Test that it can be called from existing components
     # Simulate existing log_message pattern
     local component_log="$TEST_LOG_DIR/vpn_connector.log"
-    "$VPN_LOGGER" --log "Connection attempt" --level INFO --component VPN-CONNECTOR --component-log "$component_log" 2>/dev/null || true
+    "$VPN_LOGGER" --log "Connection attempt" --level INFO --component VPN-CONNECTOR --component-log "$component_log" 2> /dev/null || true
 
     assert_file_exists "$CENTRAL_LOG" "Central log updated" &&
-    assert_file_exists "$component_log" "Component-specific log maintained"
+        assert_file_exists "$component_log" "Component-specific log maintained"
     record_result
 }
 
 test_security_permissions() {
     start_test "vpn-logger creates logs with secure permissions"
 
-    "$VPN_LOGGER" --log "Security test" --level INFO --component SECURITY 2>/dev/null || true
+    "$VPN_LOGGER" --log "Security test" --level INFO --component SECURITY 2> /dev/null || true
 
     if [[ -f "$CENTRAL_LOG" ]]; then
         local perms
-        perms=$(stat -c %a "$CENTRAL_LOG" 2>/dev/null || echo "000")
+        perms=$(stat -c %a "$CENTRAL_LOG" 2> /dev/null || echo "000")
         if [[ "$perms" == "640" ]] || [[ "$perms" == "600" ]]; then
             echo -e "  ${GREEN}✓ PASS: Log file has secure permissions ($perms)${NC}"
         else
@@ -305,8 +305,8 @@ test_error_handling() {
 
     assert_contains "$error_output" "Error\|Invalid\|Unknown" "Reports invalid options" &&
 
-    # Test with unwritable directory
-    local readonly_output
+        # Test with unwritable directory
+        local readonly_output
     readonly_output=$(VPN_CENTRAL_LOG="/root/unwritable.log" "$VPN_LOGGER" --log "test" --level INFO 2>&1) || true
 
     assert_contains "$readonly_output" "Error\|Permission\|Failed" "Reports permission errors"

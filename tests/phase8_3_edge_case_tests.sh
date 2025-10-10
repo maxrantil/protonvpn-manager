@@ -151,7 +151,7 @@ test_high_system_load_stability() {
     # Cleanup stress processes immediately
     log_test "INFO" "$CURRENT_TEST: Cleaning up stress processes"
     for pid in "${stress_pids[@]}"; do
-        kill -9 "$pid" 2>/dev/null || true
+        kill -9 "$pid" 2> /dev/null || true
     done
 
     # Wait a moment for cleanup
@@ -171,7 +171,7 @@ test_multiple_rapid_connection_attempts() {
     start_test "Handles multiple rapid connection attempts gracefully"
 
     # Clean up any existing connections first
-    timeout 10 "$PROJECT_DIR/src/vpn" cleanup >/dev/null 2>&1 || true
+    timeout 10 "$PROJECT_DIR/src/vpn" cleanup > /dev/null 2>&1 || true
 
     # Test rapid connection attempts (simulate user clicking connect multiple times)
     local pids=() log_files=()
@@ -181,7 +181,7 @@ test_multiple_rapid_connection_attempts() {
         log_files+=("$log_file")
 
         # Use timeout to prevent hanging and run in background
-        timeout $TEST_TIMEOUT "$PROJECT_DIR/src/vpn" connect se >"$log_file" 2>&1 &
+        timeout $TEST_TIMEOUT "$PROJECT_DIR/src/vpn" connect se > "$log_file" 2>&1 &
         pids+=($!)
     done
 
@@ -190,7 +190,7 @@ test_multiple_rapid_connection_attempts() {
 
     # Wait for all attempts to complete
     for pid in "${pids[@]}"; do
-        wait "$pid" 2>/dev/null || true
+        wait "$pid" 2> /dev/null || true
     done
 
     # Analyze results
@@ -198,7 +198,7 @@ test_multiple_rapid_connection_attempts() {
 
     for log_file in "${log_files[@]}"; do
         local output
-        output=$(cat "$log_file" 2>/dev/null || echo "")
+        output=$(cat "$log_file" 2> /dev/null || echo "")
 
         if echo "$output" | grep -qi "connected\|established\|successfully"; then
             ((successful_connections++))
@@ -213,7 +213,7 @@ test_multiple_rapid_connection_attempts() {
     done
 
     # Force cleanup after test
-    timeout 10 "$PROJECT_DIR/src/vpn" cleanup >/dev/null 2>&1 || true
+    timeout 10 "$PROJECT_DIR/src/vpn" cleanup > /dev/null 2>&1 || true
 
     # Evaluate results - we want either proper blocking or at most one success
     if [[ $successful_connections -le 1 && $blocked_connections -ge 1 ]]; then
@@ -233,7 +233,7 @@ test_cleanup_after_process_termination() {
     start_test "Proper cleanup after process termination simulation"
 
     # First clean up any existing state
-    timeout 10 "$PROJECT_DIR/src/vpn" cleanup >/dev/null 2>&1 || true
+    timeout 10 "$PROJECT_DIR/src/vpn" cleanup > /dev/null 2>&1 || true
 
     # Check if cleanup command exists and works
     local cleanup_output exit_code=0
@@ -251,12 +251,12 @@ test_cleanup_after_process_termination() {
 
     # Test that multiple cleanup calls don't cause issues
     for i in {1..3}; do
-        timeout 10 "$PROJECT_DIR/src/vpn" cleanup >/dev/null 2>&1 || true
+        timeout 10 "$PROJECT_DIR/src/vpn" cleanup > /dev/null 2>&1 || true
     done
 
     # Verify no process accumulation
     local openvpn_count
-    openvpn_count=$(pgrep -f "openvpn.*config" 2>/dev/null | wc -l)
+    openvpn_count=$(pgrep -f "openvpn.*config" 2> /dev/null | wc -l)
 
     if [[ $openvpn_count -eq 0 ]]; then
         log_test "PASS" "$CURRENT_TEST: No OpenVPN processes remain after cleanup"
@@ -319,7 +319,7 @@ test_disk_space_exhaustion_handling() {
     local available_space
     available_space=$(df /tmp | awk 'NR==2 {print $4}')
 
-    if [[ $available_space -lt 100000 ]]; then  # Less than ~100MB
+    if [[ $available_space -lt 100000 ]]; then # Less than ~100MB
         log_test "WARNING" "$CURRENT_TEST: Low disk space detected - actual low disk scenario"
 
         # Test behavior with genuinely low disk space
@@ -338,9 +338,9 @@ test_disk_space_exhaustion_handling() {
         local temp_large_file="/tmp/disk_space_test_large_file"
 
         # Try to create a file that uses most available space (but safely)
-        local safe_size=$((available_space / 10))  # Use 10% of available space
+        local safe_size=$((available_space / 10)) # Use 10% of available space
 
-        if dd if=/dev/zero of="$temp_large_file" bs=1K count=$safe_size 2>/dev/null; then
+        if dd if=/dev/zero of="$temp_large_file" bs=1K count=$safe_size 2> /dev/null; then
             # Test system behavior with reduced disk space
             local output exit_code=0
             output=$("$PROJECT_DIR/src/vpn" status 2>&1) || exit_code=$?
@@ -383,8 +383,8 @@ main() {
     show_test_summary
 
     # Cleanup any residual stress processes or files
-    pkill -f "while true; do echo" 2>/dev/null || true
-    rm -f /tmp/stress_memory /tmp/connect_test_*.log 2>/dev/null || true
+    pkill -f "while true; do echo" 2> /dev/null || true
+    rm -f /tmp/stress_memory /tmp/connect_test_*.log 2> /dev/null || true
 
     if [[ ${#FAILED_TESTS[@]} -gt 0 ]]; then
         log_test "WARNING" "Some edge cases may need attention - review failures above"
