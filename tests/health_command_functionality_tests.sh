@@ -44,7 +44,7 @@ test_health_reports_no_processes() {
     start_test "Health command correctly reports no processes when none running"
 
     # Ensure no VPN processes are running first
-    "$PROJECT_DIR/src/vpn" kill >/dev/null 2>&1
+    "$PROJECT_DIR/src/vpn" kill > /dev/null 2>&1
     sleep 1
 
     local health_output
@@ -73,8 +73,8 @@ test_health_detects_single_process() {
     health_output=$("$PROJECT_DIR/src/vpn" health 2>&1)
 
     # Clean up the fake process
-    kill $fake_pid 2>/dev/null || true
-    wait $fake_pid 2>/dev/null || true
+    kill $fake_pid 2> /dev/null || true
+    wait $fake_pid 2> /dev/null || true
 
     if echo "$health_output" | grep -q "GOOD.*1 process running"; then
         log_test "PASS" "$CURRENT_TEST: Health correctly detects single process"
@@ -102,8 +102,8 @@ test_health_detects_multiple_processes() {
     local exit_code=$?
 
     # Clean up the fake processes
-    kill $fake_pid1 $fake_pid2 2>/dev/null || true
-    wait $fake_pid1 $fake_pid2 2>/dev/null || true
+    kill $fake_pid1 $fake_pid2 2> /dev/null || true
+    wait $fake_pid1 $fake_pid2 2> /dev/null || true
 
     if [[ $exit_code -eq 1 ]] && echo "$health_output" | grep -q "CRITICAL.*multiple processes"; then
         log_test "PASS" "$CURRENT_TEST: Health correctly detects multiple processes as critical"
@@ -136,10 +136,10 @@ test_health_returns_correct_exit_codes() {
     start_test "Health command returns correct exit codes for different states"
 
     # Test no processes (should return 0)
-    "$PROJECT_DIR/src/vpn" kill >/dev/null 2>&1
+    "$PROJECT_DIR/src/vpn" kill > /dev/null 2>&1
     sleep 1
 
-    "$PROJECT_DIR/src/vpn" health >/dev/null 2>&1
+    "$PROJECT_DIR/src/vpn" health > /dev/null 2>&1
     local no_proc_exit=$?
 
     # Create single process and test (should return 0)
@@ -147,7 +147,7 @@ test_health_returns_correct_exit_codes() {
     local fake_pid1=$!
     sleep 1
 
-    "$PROJECT_DIR/src/vpn" health >/dev/null 2>&1
+    "$PROJECT_DIR/src/vpn" health > /dev/null 2>&1
     local single_proc_exit=$?
 
     # Create multiple processes and test (should return 1)
@@ -155,12 +155,12 @@ test_health_returns_correct_exit_codes() {
     local fake_pid2=$!
     sleep 1
 
-    "$PROJECT_DIR/src/vpn" health >/dev/null 2>&1
+    "$PROJECT_DIR/src/vpn" health > /dev/null 2>&1
     local multi_proc_exit=$?
 
     # Cleanup
-    kill $fake_pid1 $fake_pid2 2>/dev/null || true
-    wait $fake_pid1 $fake_pid2 2>/dev/null || true
+    kill $fake_pid1 $fake_pid2 2> /dev/null || true
+    wait $fake_pid1 $fake_pid2 2> /dev/null || true
 
     if [[ $no_proc_exit -eq 0 && $single_proc_exit -eq 0 && $multi_proc_exit -eq 1 ]]; then
         log_test "PASS" "$CURRENT_TEST: Health returns correct exit codes (0,0,1)"
@@ -178,13 +178,13 @@ test_health_performance() {
     local start_time end_time duration
     start_time=$(date +%s.%3N)
 
-    "$PROJECT_DIR/src/vpn" health >/dev/null 2>&1
+    "$PROJECT_DIR/src/vpn" health > /dev/null 2>&1
 
     end_time=$(date +%s.%3N)
-    duration=$(echo "$end_time - $start_time" | bc 2>/dev/null || echo "0.5")
+    duration=$(echo "$end_time - $start_time" | bc 2> /dev/null || echo "0.5")
 
     # Should complete in under 2 seconds
-    if (( $(echo "$duration < 2.0" | bc -l 2>/dev/null || echo 1) )); then
+    if (($(echo "$duration < 2.0" | bc -l 2> /dev/null || echo 1))); then
         log_test "PASS" "$CURRENT_TEST: Health command completed in ${duration}s"
         ((TESTS_PASSED++))
     else

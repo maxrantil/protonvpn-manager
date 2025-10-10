@@ -60,7 +60,7 @@ test_command_injection_prevention() {
         echo "Testing malicious input: $input"
 
         # Test service name validation function
-        if bash -c "source '$service_manager'; validate_service_name '$input'" 2>/dev/null; then
+        if bash -c "source '$service_manager'; validate_service_name '$input'" 2> /dev/null; then
             echo "  WARNING: Malicious input accepted: $input"
             injection_prevented=false
         else
@@ -96,7 +96,7 @@ test_path_traversal_protection() {
     )
 
     # Create a symbolic link test case
-    ln -sf "/etc/passwd" "$test_config_dir/symlink-to-sensitive-file" 2>/dev/null || true
+    ln -sf "/etc/passwd" "$test_config_dir/symlink-to-sensitive-file" 2> /dev/null || true
 
     local traversal_prevented=true
 
@@ -106,7 +106,7 @@ test_path_traversal_protection() {
         # Test path validation (simulate the realpath check)
         local full_path="$test_config_dir/$path"
         local resolved_path
-        resolved_path=$(realpath "$full_path" 2>/dev/null || echo "")
+        resolved_path=$(realpath "$full_path" 2> /dev/null || echo "")
 
         if [[ -n "$resolved_path" && ! "$resolved_path" =~ ^/tmp/ ]]; then
             echo "  WARNING: Path traversal possible: $path -> $resolved_path"
@@ -118,7 +118,7 @@ test_path_traversal_protection() {
 
     # Test the actual config manager validation
     export CONFIG_FILE="$test_config_dir/../../../etc/passwd"
-    if bash -c "source '$config_manager'; load_secure_config" 2>/dev/null; then
+    if bash -c "source '$config_manager'; load_secure_config" 2> /dev/null; then
         echo "  WARNING: Config manager accepted traversal path"
         traversal_prevented=false
     else
@@ -186,10 +186,10 @@ test_permission_enforcement() {
 
     # Test different permission scenarios
     local permission_tests=(
-        "644:FAIL"  # Too permissive
-        "640:PASS"  # Correct
-        "600:PASS"  # More restrictive, acceptable
-        "755:FAIL"  # World readable
+        "644:FAIL" # Too permissive
+        "640:PASS" # Correct
+        "600:PASS" # More restrictive, acceptable
+        "755:FAIL" # World readable
     )
 
     local permission_checks_working=true
@@ -258,7 +258,7 @@ test_service_name_validation() {
 
     echo "Testing valid service names:"
     for name in "${valid_names[@]}"; do
-        if bash -c "source '$service_manager'; validate_service_name '$name'" 2>/dev/null; then
+        if bash -c "source '$service_manager'; validate_service_name '$name'" 2> /dev/null; then
             echo "  GOOD: Valid name accepted: $name"
         else
             echo "  WARNING: Valid name rejected: $name"
@@ -268,7 +268,7 @@ test_service_name_validation() {
 
     echo "Testing invalid service names:"
     for name in "${invalid_names[@]}"; do
-        if bash -c "source '$service_manager'; validate_service_name '$name'" 2>/dev/null; then
+        if bash -c "source '$service_manager'; validate_service_name '$name'" 2> /dev/null; then
             echo "  WARNING: Invalid name accepted: $name"
             validation_working=false
         else

@@ -23,7 +23,7 @@ test_health_check_command_exists() {
 
     # Test health command actually runs
     local health_output
-    health_output=$("$manager_script" health 2>/dev/null) || true
+    health_output=$("$manager_script" health 2> /dev/null) || true
 
     # Should produce some output (either good, critical, or no processes)
     if [[ -n "$health_output" ]]; then
@@ -72,12 +72,12 @@ test_artix_network_restart_detection() {
     local has_sv=0
     local has_systemctl=0
 
-    if command -v sv >/dev/null 2>&1; then
+    if command -v sv > /dev/null 2>&1; then
         has_sv=1
         log_test "INFO" "$CURRENT_TEST: sv command available (Artix runit)"
     fi
 
-    if command -v systemctl >/dev/null 2>&1; then
+    if command -v systemctl > /dev/null 2>&1; then
         has_systemctl=1
         log_test "INFO" "$CURRENT_TEST: systemctl command available"
     fi
@@ -100,7 +100,7 @@ test_pre_connection_safety_integration() {
 
     # Test that help shows all safety-related commands
     local help_output
-    help_output=$("$vpn_script" help 2>/dev/null) || true
+    help_output=$("$vpn_script" help 2> /dev/null) || true
 
     assert_contains "$help_output" "cleanup" "Should show cleanup command"
     assert_contains "$help_output" "status" "Should show status command"
@@ -110,12 +110,12 @@ test_pre_connection_safety_integration() {
     local commands_work=0
 
     # Test status command
-    if "$vpn_script" status >/dev/null 2>&1; then
+    if "$vpn_script" status > /dev/null 2>&1; then
         ((commands_work++))
     fi
 
     # Test cleanup command
-    if "$vpn_script" cleanup >/dev/null 2>&1; then
+    if "$vpn_script" cleanup > /dev/null 2>&1; then
         ((commands_work++))
     fi
 
@@ -159,7 +159,7 @@ test_process_detection_functionality() {
 
     # Test that we can detect current OpenVPN process state
     local current_processes
-    current_processes=$(pgrep -f "openvpn" 2>/dev/null | wc -l)
+    current_processes=$(pgrep -f "openvpn" 2> /dev/null | wc -l)
 
     log_test "INFO" "$CURRENT_TEST: Currently $current_processes OpenVPN processes detected"
 
@@ -197,12 +197,12 @@ test_lock_file_handling() {
 
     # Create test lock files
     for lock in "${test_locks[@]}"; do
-        touch "$lock" 2>/dev/null || true
+        touch "$lock" 2> /dev/null || true
     done
 
     # Run cleanup
     local manager_script="$PROJECT_DIR/src/vpn-manager"
-    "$manager_script" cleanup >/dev/null 2>&1 || true
+    "$manager_script" cleanup > /dev/null 2>&1 || true
 
     # Check if lock files were cleaned up
     local locks_cleaned=0
@@ -223,7 +223,7 @@ test_lock_file_handling() {
 
     # Clean up any remaining test files
     for lock in "${test_locks[@]}"; do
-        rm -f "$lock" 2>/dev/null || true
+        rm -f "$lock" 2> /dev/null || true
     done
 }
 
@@ -301,7 +301,7 @@ test_real_process_prevention_system() {
     local manager_script="$PROJECT_DIR/src/vpn-manager"
 
     # Ensure clean start
-    "$manager_script" cleanup >/dev/null 2>&1 || true
+    "$manager_script" cleanup > /dev/null 2>&1 || true
     sleep 1
 
     # Create multiple persistent test processes to ensure critical state
@@ -311,7 +311,7 @@ test_real_process_prevention_system() {
         test_pids+=($!)
     done
 
-    sleep 3  # Give processes time to start properly
+    sleep 3 # Give processes time to start properly
 
     # Verify processes are detected
     local current_processes
@@ -341,14 +341,14 @@ test_real_process_prevention_system() {
 
     # Cleanup test processes
     for pid in "${test_pids[@]}"; do
-        kill "$pid" 2>/dev/null || true
+        kill "$pid" 2> /dev/null || true
     done
     for pid in "${test_pids[@]}"; do
-        wait "$pid" 2>/dev/null || true
+        wait "$pid" 2> /dev/null || true
     done
 
     # Final cleanup
-    "$manager_script" cleanup >/dev/null 2>&1 || true
+    "$manager_script" cleanup > /dev/null 2>&1 || true
 }
 
 test_aggressive_cleanup_effectiveness() {
@@ -361,7 +361,7 @@ test_aggressive_cleanup_effectiveness() {
         bash -c "exec -a 'openvpn --config /test/config$i.ovpn' sleep 30" &
     done
 
-    sleep 2  # Let processes start
+    sleep 2 # Let processes start
 
     local processes_before
     processes_before=$(pgrep -f "openvpn.*config" | wc -l)
@@ -373,7 +373,7 @@ test_aggressive_cleanup_effectiveness() {
         local cleanup_output
         cleanup_output=$("$manager_script" cleanup 2>&1)
 
-        sleep 3  # Give cleanup time to work
+        sleep 3 # Give cleanup time to work
 
         local processes_after
         processes_after=$(pgrep -f "openvpn.*config" | wc -l)
@@ -387,7 +387,7 @@ test_aggressive_cleanup_effectiveness() {
             ((TESTS_FAILED++))
 
             # Force cleanup any remaining test processes
-            pkill -f "openvpn.*config.*test" 2>/dev/null || true
+            pkill -f "openvpn.*config.*test" 2> /dev/null || true
         fi
 
         # Test that cleanup shows appropriate warnings for multiple processes

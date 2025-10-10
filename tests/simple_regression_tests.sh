@@ -19,7 +19,7 @@ test_cleanup_preserves_networkmanager() {
     fi
 
     # Run cleanup
-    "$PROJECT_DIR/src/vpn" cleanup >/dev/null 2>&1
+    "$PROJECT_DIR/src/vpn" cleanup > /dev/null 2>&1
 
     # Check PID after
     local nm_pid_after
@@ -45,7 +45,7 @@ test_commands_complete_without_hanging() {
         local cmd="${commands[$i]}"
         local timeout_val="${timeouts[$i]}"
 
-        if timeout "${timeout_val}s" "$PROJECT_DIR/src/vpn" "$cmd" >/dev/null 2>&1; then
+        if timeout "${timeout_val}s" "$PROJECT_DIR/src/vpn" "$cmd" > /dev/null 2>&1; then
             log_test "PASS" "$CURRENT_TEST: '$cmd' completed within ${timeout_val}s"
             ((TESTS_PASSED++))
         else

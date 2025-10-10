@@ -11,23 +11,23 @@ source "$TEST_DIR/test_framework.sh"
 readonly PERFORMANCE_BASELINE_FILE="/tmp/vpn_performance_baseline.txt"
 readonly CONNECTION_TIMEOUT=35
 readonly FAST_SWITCHING_TIMEOUT=25
-readonly MEMORY_GROWTH_LIMIT=10000  # 10MB in KB
+readonly MEMORY_GROWTH_LIMIT=10000 # 10MB in KB
 
 test_connection_speed_under_30_seconds() {
     start_test "Connection establishment completes under 30 seconds"
 
     # Clean up any existing connections
-    timeout 10 "$PROJECT_DIR/src/vpn" cleanup >/dev/null 2>&1 || true
+    timeout 10 "$PROJECT_DIR/src/vpn" cleanup > /dev/null 2>&1 || true
 
     local start_time end_time duration
     start_time=$(date +%s.%N)
 
     # Test actual connection to best available server
-    if timeout $CONNECTION_TIMEOUT "$PROJECT_DIR/src/vpn" best >/dev/null 2>&1; then
+    if timeout $CONNECTION_TIMEOUT "$PROJECT_DIR/src/vpn" best > /dev/null 2>&1; then
         end_time=$(date +%s.%N)
-        duration=$(echo "$end_time - $start_time" | bc 2>/dev/null || echo "30.1")
+        duration=$(echo "$end_time - $start_time" | bc 2> /dev/null || echo "30.1")
 
-        if (( $(echo "$duration < 30.0" | bc -l 2>/dev/null || echo 0) )); then
+        if (($(echo "$duration < 30.0" | bc -l 2> /dev/null || echo 0))); then
             log_test "PASS" "$CURRENT_TEST: Connection established in ${duration}s (< 30s requirement)"
             ((TESTS_PASSED++))
         else
@@ -42,28 +42,28 @@ test_connection_speed_under_30_seconds() {
     fi
 
     # Cleanup after test
-    timeout 10 "$PROJECT_DIR/src/vpn" cleanup >/dev/null 2>&1 || true
+    timeout 10 "$PROJECT_DIR/src/vpn" cleanup > /dev/null 2>&1 || true
 }
 
 test_fast_switching_performance() {
     start_test "Fast switching uses cache and completes under 20 seconds"
 
     # Clean up first
-    timeout 10 "$PROJECT_DIR/src/vpn" cleanup >/dev/null 2>&1 || true
+    timeout 10 "$PROJECT_DIR/src/vpn" cleanup > /dev/null 2>&1 || true
 
     # Pre-populate cache if best-vpn-profile exists
     if [[ -f "$PROJECT_DIR/src/best-vpn-profile" ]]; then
-        timeout 30 "$PROJECT_DIR/src/best-vpn-profile" test >/dev/null 2>&1 || true
+        timeout 30 "$PROJECT_DIR/src/best-vpn-profile" test > /dev/null 2>&1 || true
     fi
 
     local start_time end_time duration
     start_time=$(date +%s.%N)
 
-    if timeout $FAST_SWITCHING_TIMEOUT "$PROJECT_DIR/src/vpn" fast >/dev/null 2>&1; then
+    if timeout $FAST_SWITCHING_TIMEOUT "$PROJECT_DIR/src/vpn" fast > /dev/null 2>&1; then
         end_time=$(date +%s.%N)
-        duration=$(echo "$end_time - $start_time" | bc 2>/dev/null || echo "25.0")
+        duration=$(echo "$end_time - $start_time" | bc 2> /dev/null || echo "25.0")
 
-        if (( $(echo "$duration < 20.0" | bc -l 2>/dev/null || echo 0) )); then
+        if (($(echo "$duration < 20.0" | bc -l 2> /dev/null || echo 0))); then
             log_test "PASS" "$CURRENT_TEST: Fast switching completed in ${duration}s"
             ((TESTS_PASSED++))
         else
@@ -78,7 +78,7 @@ test_fast_switching_performance() {
     fi
 
     # Cleanup
-    timeout 10 "$PROJECT_DIR/src/vpn" cleanup >/dev/null 2>&1 || true
+    timeout 10 "$PROJECT_DIR/src/vpn" cleanup > /dev/null 2>&1 || true
 }
 
 test_memory_usage_stability() {
@@ -86,29 +86,29 @@ test_memory_usage_stability() {
 
     # Get initial memory usage of our shell
     local initial_mem final_mem mem_diff
-    initial_mem=$(ps -o rss= -p $$ 2>/dev/null | tr -d ' ' || echo "1000")
+    initial_mem=$(ps -o rss= -p $$ 2> /dev/null | tr -d ' ' || echo "1000")
 
     # Clean start
-    timeout 10 "$PROJECT_DIR/src/vpn" cleanup >/dev/null 2>&1 || true
+    timeout 10 "$PROJECT_DIR/src/vpn" cleanup > /dev/null 2>&1 || true
 
     # Perform multiple connection cycles
     for i in {1..3}; do
         log_test "INFO" "$CURRENT_TEST: Running connection cycle $i/3"
 
         # Attempt connection (don't fail test if individual connection fails)
-        timeout 15 "$PROJECT_DIR/src/vpn" connect se >/dev/null 2>&1 || true
+        timeout 15 "$PROJECT_DIR/src/vpn" connect se > /dev/null 2>&1 || true
         sleep 2
 
         # Always try to disconnect cleanly
-        timeout 15 "$PROJECT_DIR/src/vpn" disconnect >/dev/null 2>&1 || true
+        timeout 15 "$PROJECT_DIR/src/vpn" disconnect > /dev/null 2>&1 || true
         sleep 1
 
         # Force cleanup between cycles
-        timeout 10 "$PROJECT_DIR/src/vpn" cleanup >/dev/null 2>&1 || true
+        timeout 10 "$PROJECT_DIR/src/vpn" cleanup > /dev/null 2>&1 || true
         sleep 1
     done
 
-    final_mem=$(ps -o rss= -p $$ 2>/dev/null | tr -d ' ' || echo "$initial_mem")
+    final_mem=$(ps -o rss= -p $$ 2> /dev/null | tr -d ' ' || echo "$initial_mem")
     mem_diff=$((final_mem - initial_mem))
 
     if [[ $mem_diff -lt $MEMORY_GROWTH_LIMIT ]]; then
@@ -132,40 +132,40 @@ test_performance_regression_detection() {
 
     # Fix unrealistic baselines (if baseline is under 1 second, reset to 5.0)
     local baseline_check
-    baseline_check=$(cat "$PERFORMANCE_BASELINE_FILE" 2>/dev/null || echo "5.0")
-    if (( $(echo "$baseline_check < 1.0" | bc -l 2>/dev/null || echo 1) )); then
+    baseline_check=$(cat "$PERFORMANCE_BASELINE_FILE" 2> /dev/null || echo "5.0")
+    if (($(echo "$baseline_check < 1.0" | bc -l 2> /dev/null || echo 1))); then
         echo "5.0" > "$PERFORMANCE_BASELINE_FILE"
         log_test "INFO" "$CURRENT_TEST: Reset unrealistic baseline to 5.0s"
     fi
 
     local baseline current_perf
-    baseline=$(cat "$PERFORMANCE_BASELINE_FILE" 2>/dev/null || echo "30.0")
+    baseline=$(cat "$PERFORMANCE_BASELINE_FILE" 2> /dev/null || echo "30.0")
 
     # Clean up before measurement
-    timeout 10 "$PROJECT_DIR/src/vpn" cleanup >/dev/null 2>&1 || true
+    timeout 10 "$PROJECT_DIR/src/vpn" cleanup > /dev/null 2>&1 || true
 
     # Measure current performance with best command
     local start_time end_time
     start_time=$(date +%s.%N)
 
     # Run performance test (allow failure - we're measuring time)
-    timeout $CONNECTION_TIMEOUT "$PROJECT_DIR/src/vpn" best >/dev/null 2>&1 || true
+    timeout $CONNECTION_TIMEOUT "$PROJECT_DIR/src/vpn" best > /dev/null 2>&1 || true
 
     end_time=$(date +%s.%N)
-    current_perf=$(echo "$end_time - $start_time" | bc 2>/dev/null || echo "$baseline")
+    current_perf=$(echo "$end_time - $start_time" | bc 2> /dev/null || echo "$baseline")
 
     # Check for regression (> 10% slower than baseline)
     local regression_threshold
-    regression_threshold=$(echo "$baseline * 1.10" | bc -l 2>/dev/null || echo "33.0")
+    regression_threshold=$(echo "$baseline * 1.10" | bc -l 2> /dev/null || echo "33.0")
 
-    if (( $(echo "$current_perf < $regression_threshold" | bc -l 2>/dev/null || echo 1) )); then
+    if (($(echo "$current_perf < $regression_threshold" | bc -l 2> /dev/null || echo 1))); then
         log_test "PASS" "$CURRENT_TEST: No performance regression (${current_perf}s vs ${baseline}s baseline)"
         ((TESTS_PASSED++))
 
         # Update baseline if we're significantly faster (> 5% improvement)
         local improvement_threshold
-        improvement_threshold=$(echo "$baseline * 0.95" | bc -l 2>/dev/null || echo "28.5")
-        if (( $(echo "$current_perf < $improvement_threshold" | bc -l 2>/dev/null || echo 0) )); then
+        improvement_threshold=$(echo "$baseline * 0.95" | bc -l 2> /dev/null || echo "28.5")
+        if (($(echo "$current_perf < $improvement_threshold" | bc -l 2> /dev/null || echo 0))); then
             echo "$current_perf" > "$PERFORMANCE_BASELINE_FILE"
             log_test "INFO" "$CURRENT_TEST: Updated baseline to ${current_perf}s (performance improvement)"
         fi
@@ -176,14 +176,14 @@ test_performance_regression_detection() {
     fi
 
     # Cleanup after test
-    timeout 10 "$PROJECT_DIR/src/vpn" cleanup >/dev/null 2>&1 || true
+    timeout 10 "$PROJECT_DIR/src/vpn" cleanup > /dev/null 2>&1 || true
 }
 
 test_concurrent_operation_performance() {
     start_test "Performance remains stable with concurrent status checks"
 
     # Clean start
-    timeout 10 "$PROJECT_DIR/src/vpn" cleanup >/dev/null 2>&1 || true
+    timeout 10 "$PROJECT_DIR/src/vpn" cleanup > /dev/null 2>&1 || true
 
     local start_time end_time duration
     start_time=$(date +%s.%N)
@@ -191,20 +191,20 @@ test_concurrent_operation_performance() {
     # Run multiple status checks concurrently
     local pids=()
     for i in {1..5}; do
-        timeout 10 "$PROJECT_DIR/src/vpn" status >/dev/null 2>&1 &
+        timeout 10 "$PROJECT_DIR/src/vpn" status > /dev/null 2>&1 &
         pids+=($!)
     done
 
     # Wait for all to complete
     for pid in "${pids[@]}"; do
-        wait "$pid" 2>/dev/null || true
+        wait "$pid" 2> /dev/null || true
     done
 
     end_time=$(date +%s.%N)
-    duration=$(echo "$end_time - $start_time" | bc 2>/dev/null || echo "15.0")
+    duration=$(echo "$end_time - $start_time" | bc 2> /dev/null || echo "15.0")
 
     # Should complete all 5 status checks in under 15 seconds
-    if (( $(echo "$duration < 15.0" | bc -l 2>/dev/null || echo 0) )); then
+    if (($(echo "$duration < 15.0" | bc -l 2> /dev/null || echo 0))); then
         log_test "PASS" "$CURRENT_TEST: Concurrent operations completed in ${duration}s"
         ((TESTS_PASSED++))
     else
@@ -220,7 +220,7 @@ main() {
     log_test "INFO" "Testing 30-second connection requirement and performance regression detection"
 
     # Check for required dependencies
-    if ! command -v bc >/dev/null 2>&1; then
+    if ! command -v bc > /dev/null 2>&1; then
         log_test "ERROR" "bc calculator not found - required for performance timing"
         exit 1
     fi
