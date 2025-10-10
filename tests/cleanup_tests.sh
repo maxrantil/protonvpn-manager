@@ -12,7 +12,7 @@ test_cleanup_removes_stale_pid() {
 
     # Create a fake stale PID file (need sudo since real one is created by root)
     local fake_pid_file="/tmp/test_openvpn_$$.pid"
-    echo "99999" | sudo tee "$fake_pid_file" >/dev/null
+    echo "99999" | sudo tee "$fake_pid_file" > /dev/null
 
     # Temporarily modify the vpn-manager to use our test file
     local original_vpn_manager="$PROJECT_DIR/src/vpn-manager"
@@ -23,7 +23,7 @@ test_cleanup_removes_stale_pid() {
     chmod +x "$test_vpn_manager"
 
     # Run cleanup with test version
-    "$test_vpn_manager" cleanup >/dev/null 2>&1
+    "$test_vpn_manager" cleanup > /dev/null 2>&1
 
     # Check if fake PID file was removed
     if [[ ! -f "$fake_pid_file" ]]; then
@@ -36,15 +36,15 @@ test_cleanup_removes_stale_pid() {
     fi
 
     # Cleanup
-    rm -f "$test_vpn_manager" "$fake_pid_file" 2>/dev/null
-    sudo rm -f "$fake_pid_file" 2>/dev/null || true
+    rm -f "$test_vpn_manager" "$fake_pid_file" 2> /dev/null
+    sudo rm -f "$fake_pid_file" 2> /dev/null || true
 }
 
 test_status_shows_clean_after_cleanup() {
     start_test "Status shows clean state after cleanup"
 
     # Run cleanup
-    "$PROJECT_DIR/src/vpn" cleanup >/dev/null 2>&1
+    "$PROJECT_DIR/src/vpn" cleanup > /dev/null 2>&1
 
     # Check status output doesn't contain stale file warnings
     local status_output
@@ -64,7 +64,7 @@ test_cleanup_handles_missing_files() {
     start_test "Cleanup handles missing files gracefully"
 
     # Make sure no PID file exists
-    sudo rm -f /var/run/openvpn.pid 2>/dev/null || true
+    sudo rm -f /var/run/openvpn.pid 2> /dev/null || true
 
     # Run cleanup (should not error even with missing files)
     local cleanup_output
@@ -99,7 +99,7 @@ test_cleanup_comprehensive() {
     start_test "Cleanup is comprehensive (removes all VPN artifacts)"
 
     # Run cleanup
-    "$PROJECT_DIR/src/vpn" cleanup >/dev/null 2>&1
+    "$PROJECT_DIR/src/vpn" cleanup > /dev/null 2>&1
 
     # Check various cleanup aspects
     local issues=0
@@ -118,7 +118,7 @@ test_cleanup_comprehensive() {
 
     # Check for running VPN processes
     local vpn_processes
-    vpn_processes=$(pgrep -f "openvpn.*config" 2>/dev/null | wc -l)
+    vpn_processes=$(pgrep -f "openvpn.*config" 2> /dev/null | wc -l)
     if [[ $vpn_processes -gt 0 ]]; then
         ((issues++))
         log_test "INFO" "$CURRENT_TEST: VPN processes still running"

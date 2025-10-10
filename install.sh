@@ -11,8 +11,9 @@ COMPONENTS=(
     "vpn-manager"
     "vpn-connector"
     "vpn-error-handler"
+    "vpn-utils"
+    "vpn-colors"
     "best-vpn-profile"
-    "fix-ovpn-configs"
 )
 
 # Colors for output

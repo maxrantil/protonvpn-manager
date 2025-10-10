@@ -17,11 +17,11 @@ test_pgrep_pattern_specificity() {
     bash -c 'grep -r "openvpn.*config" /dev/null 2>/dev/null; sleep 1' &
     local grep_pid=$!
 
-    sleep 1  # Let processes start
+    sleep 1 # Let processes start
 
     # Test the new specific pattern
     local detected_pids
-    detected_pids=$(pgrep -f "^openvpn.*--config" 2>/dev/null || true)
+    detected_pids=$(pgrep -f "^openvpn.*--config" 2> /dev/null || true)
 
     # Should find NO processes since none are actual OpenVPN
     if [[ -z "$detected_pids" ]]; then
@@ -34,9 +34,9 @@ test_pgrep_pattern_specificity() {
     fi
 
     # Cleanup
-    kill $fake_pid1 $grep_pid 2>/dev/null || true
+    kill $fake_pid1 $grep_pid 2> /dev/null || true
     rm -f /tmp/fake_openvpn_config_process.pid
-    wait 2>/dev/null || true
+    wait 2> /dev/null || true
 }
 
 test_old_pattern_would_fail() {
@@ -50,11 +50,11 @@ test_old_pattern_would_fail() {
 
     # Test old problematic pattern (should find false positives)
     local old_pattern_matches
-    old_pattern_matches=$(pgrep -f "openvpn.*config" 2>/dev/null | wc -l || echo "0")
+    old_pattern_matches=$(pgrep -f "openvpn.*config" 2> /dev/null | wc -l || echo "0")
 
     # Test new specific pattern (should find nothing)
     local new_pattern_matches
-    new_pattern_matches=$(pgrep -f "^openvpn.*--config" 2>/dev/null | wc -l || echo "0")
+    new_pattern_matches=$(pgrep -f "^openvpn.*--config" 2> /dev/null | wc -l || echo "0")
 
     if [[ $old_pattern_matches -gt 0 && $new_pattern_matches -eq 0 ]]; then
         log_test "PASS" "$CURRENT_TEST: New pattern correctly avoids false positives"
@@ -66,8 +66,8 @@ test_old_pattern_would_fail() {
     fi
 
     # Cleanup
-    kill $fake_pid 2>/dev/null || true
-    wait 2>/dev/null || true
+    kill $fake_pid 2> /dev/null || true
+    wait 2> /dev/null || true
 }
 
 test_health_check_no_false_positives() {
@@ -120,7 +120,7 @@ test_pattern_matches_real_openvpn() {
 
     # Test that our pattern finds it
     local detected_pids
-    detected_pids=$(pgrep -f "^openvpn.*--config" 2>/dev/null || true)
+    detected_pids=$(pgrep -f "^openvpn.*--config" 2> /dev/null || true)
 
     if echo "$detected_pids" | grep -q "$fake_openvpn_pid"; then
         log_test "PASS" "$CURRENT_TEST: Pattern correctly matches real OpenVPN process"
@@ -132,8 +132,8 @@ test_pattern_matches_real_openvpn() {
     fi
 
     # Cleanup
-    kill $fake_openvpn_pid 2>/dev/null || true
-    wait 2>/dev/null || true
+    kill $fake_openvpn_pid 2> /dev/null || true
+    wait 2> /dev/null || true
 }
 
 # Run all process detection tests

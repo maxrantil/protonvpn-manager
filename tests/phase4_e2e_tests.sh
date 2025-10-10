@@ -37,7 +37,7 @@ setup_e2e_environment() {
     fi
 
     # Clean up any existing VPN connections
-    sudo pkill -f openvpn 2>/dev/null || true
+    sudo pkill -f openvpn 2> /dev/null || true
     sleep 2
 
     return 0
@@ -47,7 +47,7 @@ test_vpn_help_shows_best_command() {
     start_test "vpn help command shows best option"
 
     local help_output
-    help_output=$("$VPN_SCRIPT_PATH" help 2>/dev/null || true)
+    help_output=$("$VPN_SCRIPT_PATH" help 2> /dev/null || true)
 
     if echo "$help_output" | grep -q "best.*Connect to best"; then
         log_test "PASS" "$CURRENT_TEST"
@@ -66,10 +66,10 @@ test_best_vpn_profile_performance_workflow() {
     local cache_before cache_after best_result
 
     # Clear cache first
-    "$BEST_VPN_PROFILE_PATH" clear >/dev/null 2>&1 || true
+    "$BEST_VPN_PROFILE_PATH" clear > /dev/null 2>&1 || true
 
     # Check cache is empty
-    cache_before=$("$BEST_VPN_PROFILE_PATH" cache 2>/dev/null || echo "No cache")
+    cache_before=$("$BEST_VPN_PROFILE_PATH" cache 2> /dev/null || echo "No cache")
 
     if echo "$cache_before" | grep -q "No.*cache"; then
         log_test "INFO" "$CURRENT_TEST: Cache cleared successfully"
@@ -78,7 +78,7 @@ test_best_vpn_profile_performance_workflow() {
     fi
 
     # Run best command (should trigger performance testing)
-    if best_result=$("$BEST_VPN_PROFILE_PATH" best 2>/dev/null); then
+    if best_result=$("$BEST_VPN_PROFILE_PATH" best 2> /dev/null); then
         if [[ -n "$best_result" ]] && [[ "$best_result" != "No profiles found" ]]; then
             log_test "PASS" "$CURRENT_TEST: got best profile '$best_result'"
             ((TESTS_PASSED++))
@@ -112,7 +112,7 @@ test_vpn_connector_integration_workflow() {
 
     # Test vpn-connector help includes best command
     local help_output
-    help_output=$("$VPN_CONNECTOR_PATH" help 2>/dev/null || true)
+    help_output=$("$VPN_CONNECTOR_PATH" help 2> /dev/null || true)
 
     if echo "$help_output" | grep -q "best"; then
         log_test "PASS" "$CURRENT_TEST: vpn-connector has best command in help"
@@ -133,7 +133,7 @@ test_complete_performance_command_chain() {
     local vpn_help vpn_connector_help best_profile_help
 
     # Test vpn main script
-    vpn_help=$("$VPN_SCRIPT_PATH" help 2>/dev/null || echo "FAILED")
+    vpn_help=$("$VPN_SCRIPT_PATH" help 2> /dev/null || echo "FAILED")
     if [[ "$vpn_help" == "FAILED" ]]; then
         log_test "FAIL" "$CURRENT_TEST: vpn main script help failed"
         FAILED_TESTS+=("$CURRENT_TEST")
@@ -142,7 +142,7 @@ test_complete_performance_command_chain() {
     fi
 
     # Test vpn-connector
-    vpn_connector_help=$("$VPN_CONNECTOR_PATH" help 2>/dev/null || echo "FAILED")
+    vpn_connector_help=$("$VPN_CONNECTOR_PATH" help 2> /dev/null || echo "FAILED")
     if [[ "$vpn_connector_help" == "FAILED" ]]; then
         log_test "FAIL" "$CURRENT_TEST: vpn-connector help failed"
         FAILED_TESTS+=("$CURRENT_TEST")
@@ -151,7 +151,7 @@ test_complete_performance_command_chain() {
     fi
 
     # Test best-vpn-profile
-    best_profile_help=$("$BEST_VPN_PROFILE_PATH" help 2>/dev/null || echo "FAILED")
+    best_profile_help=$("$BEST_VPN_PROFILE_PATH" help 2> /dev/null || echo "FAILED")
     if [[ "$best_profile_help" == "FAILED" ]]; then
         log_test "FAIL" "$CURRENT_TEST: best-vpn-profile help failed"
         FAILED_TESTS+=("$CURRENT_TEST")
@@ -168,7 +168,7 @@ test_error_handling_in_performance_workflow() {
 
     # Test with non-existent country code
     local result_invalid
-    result_invalid=$("$BEST_VPN_PROFILE_PATH" best "INVALID" 2>/dev/null || echo "ERROR_HANDLED")
+    result_invalid=$("$BEST_VPN_PROFILE_PATH" best "INVALID" 2> /dev/null || echo "ERROR_HANDLED")
 
     # Should either return a result or handle error gracefully
     if [[ "$result_invalid" != "" ]]; then
@@ -183,9 +183,9 @@ test_error_handling_in_performance_workflow() {
 
 cleanup_e2e_environment() {
     # Clean up any test artifacts
-    sudo pkill -f openvpn 2>/dev/null || true
-    rm -f /tmp/vpn_*.lock 2>/dev/null || true
-    rm -f /tmp/vpn_performance.cache 2>/dev/null || true
+    sudo pkill -f openvpn 2> /dev/null || true
+    rm -f /tmp/vpn_*.lock 2> /dev/null || true
+    rm -f /tmp/vpn_performance.cache 2> /dev/null || true
 }
 
 # Run Phase 4 E2E tests

@@ -33,7 +33,7 @@ test_connectivity_command_works() {
     fi
 
     # Test that connectivity command returns success (0) for working internet
-    if timeout 10 "$EXPECTED_SCRIPT_PATH" connectivity >/dev/null 2>&1; then
+    if timeout 10 "$EXPECTED_SCRIPT_PATH" connectivity > /dev/null 2>&1; then
         log_test "PASS" "$CURRENT_TEST"
         ((TESTS_PASSED++))
     else
@@ -52,7 +52,7 @@ test_latency_command_returns_number() {
     fi
 
     local result
-    result=$(timeout 10 "$EXPECTED_SCRIPT_PATH" latency 8.8.8.8 2>/dev/null | tail -n1)
+    result=$(timeout 10 "$EXPECTED_SCRIPT_PATH" latency 8.8.8.8 2> /dev/null | tail -n1)
 
     # Check if result is numeric
     if [[ "$result" =~ ^[0-9]+\.?[0-9]*$ ]]; then

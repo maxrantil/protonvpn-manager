@@ -128,7 +128,7 @@ test_error_logging() {
     export VPN_LOG_DIR="$temp_log_dir"
 
     # Generate test error
-    file_not_found_error "TEST_COMPONENT" "/test/file" "test suggestion" 2>/dev/null
+    file_not_found_error "TEST_COMPONENT" "/test/file" "test suggestion" 2> /dev/null
 
     # Check if error was logged
     local log_file="$temp_log_dir/vpn_errors.log"
@@ -152,7 +152,7 @@ test_message_templates() {
 
     # Should contain both the template message and context
     if echo "$error_output" | grep -q "Configuration file not found" &&
-       echo "$error_output" | grep -q "/test/path"; then
+        echo "$error_output" | grep -q "/test/path"; then
         log_test "PASS" "$test_name: Error templates provide meaningful context"
     else
         log_test "FAIL" "$test_name: Error templates lack context - $error_output"
@@ -169,8 +169,8 @@ test_progressive_disclosure() {
     export VPN_LOG_DIR="$temp_log_dir"
 
     # Generate multiple test errors
-    file_not_found_error "TEST1" "/file1" "" 2>/dev/null
-    permission_error "TEST2" "write" "/file2" 2>/dev/null
+    file_not_found_error "TEST1" "/file1" "" 2> /dev/null
+    permission_error "TEST2" "write" "/file2" 2> /dev/null
 
     # Test summary display
     local summary_output
@@ -194,7 +194,7 @@ test_exit_codes() {
     local exit_code
 
     # Critical errors should return 1
-    file_not_found_error "TEST" "/file" "" 2>/dev/null
+    file_not_found_error "TEST" "/file" "" 2> /dev/null
     exit_code=$?
     if [[ $exit_code -eq 1 ]]; then
         log_test "PASS" "$test_name: Critical errors return exit code 1"
@@ -204,7 +204,7 @@ test_exit_codes() {
     fi
 
     # Info messages should return 0
-    vpn_info "TEST" "test info message" 2>/dev/null
+    vpn_info "TEST" "test info message" 2> /dev/null
     exit_code=$?
     if [[ $exit_code -eq 0 ]]; then
         log_test "PASS" "$test_name: Info messages return exit code 0"
