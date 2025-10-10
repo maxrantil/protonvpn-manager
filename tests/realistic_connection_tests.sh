@@ -17,14 +17,14 @@ test_script_path_resolution() {
 
     # Test help command (should work without network)
     local help_output
-    help_output=$("$vpn_script" help 2>/dev/null)
+    help_output=$("$vpn_script" help 2> /dev/null)
 
     assert_contains "$help_output" "Usage:" "VPN script should show usage"
     assert_contains "$help_output" "Connection Commands:" "Should show command categories"
 
     # Test list command (should find locations directory)
     local list_output
-    list_output=$("$vpn_script" list 2>/dev/null)
+    list_output=$("$vpn_script" list 2> /dev/null)
 
     if [[ -n "$list_output" ]]; then
         log_test "PASS" "$CURRENT_TEST: List command works from reorganized structure"
@@ -45,7 +45,7 @@ test_ovpn_file_validation() {
 
     # Test that connector can read test .ovpn files
     local profile_output
-    profile_output=$(LOCATIONS_DIR="$TEST_LOCATIONS_DIR" "$connector_script" list 2>/dev/null)
+    profile_output=$(LOCATIONS_DIR="$TEST_LOCATIONS_DIR" "$connector_script" list 2> /dev/null)
 
     assert_contains "$profile_output" "se-test" "Should find SE test profile"
     assert_contains "$profile_output" "dk-test" "Should find DK test profile"
@@ -55,7 +55,7 @@ test_ovpn_file_validation() {
 
     if [[ -f "$se_profile" ]]; then
         local remote_line
-        remote_line=$(grep "^remote" "$se_profile" 2>/dev/null)
+        remote_line=$(grep "^remote" "$se_profile" 2> /dev/null)
 
         if [[ -n "$remote_line" ]]; then
             log_test "PASS" "$CURRENT_TEST: Can read remote directive from .ovpn file"
@@ -84,7 +84,7 @@ test_dry_run_connection_attempt() {
     LOCATIONS_DIR="$TEST_LOCATIONS_DIR" connect_output=$("$connector_script" connect se 2>&1) || true
 
     # Should attempt to process the connection even if mocked
-    if echo "$connect_output" | grep -q "se-test\|connecting\|profile" 2>/dev/null; then
+    if echo "$connect_output" | grep -q "se-test\|connecting\|profile" 2> /dev/null; then
         log_test "PASS" "$CURRENT_TEST: Connection attempt processes correctly"
         ((TESTS_PASSED++))
     else
@@ -158,7 +158,7 @@ test_cleanup_and_reconnection() {
 
     # Mock process management
     mock_command "pkill" "openvpn processes terminated" 0
-    mock_command "pgrep" "" 1  # No processes found
+    mock_command "pgrep" "" 1 # No processes found
     mock_command "ip" "route table updated" 0
 
     local vpn_script="$PROJECT_DIR/src/vpn"
@@ -204,7 +204,7 @@ test_working_directory_independence() {
 
     # Test that script works from different working directory
     local help_output
-    help_output=$("$vpn_script" help 2>/dev/null)
+    help_output=$("$vpn_script" help 2> /dev/null)
 
     if [[ -n "$help_output" ]] && echo "$help_output" | grep -q "Usage:"; then
         log_test "PASS" "$CURRENT_TEST: Script works from different working directory"
@@ -229,7 +229,7 @@ test_multiple_connection_prevention_regression() {
     local vpn_script="$PROJECT_DIR/src/vpn"
 
     # Mock a clean state first
-    mock_command "pgrep" "" 1  # No processes initially
+    mock_command "pgrep" "" 1 # No processes initially
     mock_command "openvpn" "Mock OpenVPN started" 0
     mock_command "sudo" "Mock sudo" 0
 
@@ -239,7 +239,7 @@ test_multiple_connection_prevention_regression() {
 
     # Now mock that a process exists
     cleanup_mocks
-    mock_command "pgrep" "12345" 0  # One process exists
+    mock_command "pgrep" "12345" 0 # One process exists
 
     # Attempt second connection (should be blocked)
     local second_connection

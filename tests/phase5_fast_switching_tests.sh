@@ -15,7 +15,7 @@ test_vpn_fast_command_exists() {
     start_test "vpn fast command exists in help"
 
     local help_output
-    help_output=$("$VPN_SCRIPT_PATH" help 2>/dev/null || true)
+    help_output=$("$VPN_SCRIPT_PATH" help 2> /dev/null || true)
 
     if echo "$help_output" | grep -q "fast.*Quick connect"; then
         log_test "PASS" "$CURRENT_TEST"
@@ -45,7 +45,7 @@ test_vpn_connector_has_fast_mode() {
     start_test "vpn-connector supports fast mode"
 
     local help_output
-    help_output=$("$VPN_CONNECTOR_PATH" help 2>/dev/null || true)
+    help_output=$("$VPN_CONNECTOR_PATH" help 2> /dev/null || true)
 
     if echo "$help_output" | grep -q "fast"; then
         log_test "PASS" "$CURRENT_TEST"
@@ -63,8 +63,8 @@ test_best_vpn_profile_supports_reduced_testing() {
     # Test that best-vpn-profile can be called with cache preference
     # This should work differently from regular 'best' command
     local result_cached result_fresh
-    result_cached=$("$BEST_VPN_PROFILE_PATH" best 2>/dev/null || echo "FAILED")
-    result_fresh=$("$BEST_VPN_PROFILE_PATH" fresh 2>/dev/null || echo "FAILED")
+    result_cached=$("$BEST_VPN_PROFILE_PATH" best 2> /dev/null || echo "FAILED")
+    result_fresh=$("$BEST_VPN_PROFILE_PATH" fresh 2> /dev/null || echo "FAILED")
 
     if [[ "$result_cached" != "FAILED" ]] && [[ "$result_fresh" != "FAILED" ]]; then
         log_test "PASS" "$CURRENT_TEST: supports both cached and fresh modes"
@@ -86,7 +86,7 @@ test_fast_switching_with_country_filter() {
 
     # Check that vpn-connector fast mode accepts country parameter
     local help_output
-    help_output=$("$VPN_CONNECTOR_PATH" help 2>/dev/null || true)
+    help_output=$("$VPN_CONNECTOR_PATH" help 2> /dev/null || true)
 
     if echo "$help_output" | grep -q "fast.*country" || echo "$help_output" | grep -q "fast.*\[country\]"; then
         log_test "PASS" "$CURRENT_TEST"
@@ -102,11 +102,11 @@ test_cache_fallback_mechanism() {
     start_test "fast switching falls back to full testing when cache empty"
 
     # Clear cache first
-    "$BEST_VPN_PROFILE_PATH" clear >/dev/null 2>&1 || true
+    "$BEST_VPN_PROFILE_PATH" clear > /dev/null 2>&1 || true
 
     # Test that best command with empty cache works (should fall back)
     local result
-    result=$("$BEST_VPN_PROFILE_PATH" best 2>/dev/null || echo "FAILED")
+    result=$("$BEST_VPN_PROFILE_PATH" best 2> /dev/null || echo "FAILED")
 
     if [[ "$result" != "FAILED" ]] && [[ -n "$result" ]]; then
         log_test "PASS" "$CURRENT_TEST: fallback mechanism works"

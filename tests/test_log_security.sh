@@ -32,7 +32,7 @@ echo "=== Test 2: Log file permissions ==="
 # shellcheck disable=SC2030
 (
     export XDG_STATE_HOME="$TEST_DIR/.local/state"
-    source ../src/vpn-manager 2>/dev/null || true
+    source ../src/vpn-manager 2> /dev/null || true
 )
 
 LOG_FILE="$LOG_DIR/vpn_manager.log"
@@ -61,7 +61,7 @@ echo "SENSITIVE" > "$ATTACKER_FILE"
 # shellcheck disable=SC2031
 (
     export XDG_STATE_HOME="$TEST_DIR/.local/state"
-    source ../src/vpn-manager 2>/dev/null || true
+    source ../src/vpn-manager 2> /dev/null || true
 )
 
 if [[ -L "$LOG_FILE" ]]; then
@@ -77,9 +77,9 @@ fi
 echo ""
 echo "=== Test 4: Log location (not in /tmp) ==="
 # Check that logs are NOT in /tmp
-if grep -q "/tmp.*log" ../src/vpn-manager ../src/vpn-connector 2>/dev/null; then
+if grep -q "/tmp.*log" ../src/vpn-manager ../src/vpn-connector 2> /dev/null; then
     # Check if it's just in comments or actually used
-    if grep -E "^[^#]*LOG.*=.*/tmp" ../src/vpn-manager ../src/vpn-connector 2>/dev/null; then
+    if grep -E "^[^#]*LOG.*=.*/tmp" ../src/vpn-manager ../src/vpn-connector 2> /dev/null; then
         echo -e "${RED}FAIL${NC} - Logs still using /tmp directory"
         exit 1
     fi
