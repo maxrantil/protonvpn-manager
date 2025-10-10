@@ -55,7 +55,7 @@ setup_test_environment() {
 
 cleanup_test_environment() {
     log "INFO" "Cleaning up config validator test environment"
-    rm -rf "$PROJECT_ROOT/test-configs" 2>/dev/null || true
+    rm -rf "$PROJECT_ROOT/test-configs" 2> /dev/null || true
 }
 
 # Test config creation helpers
@@ -159,7 +159,7 @@ test_config_validator_exists() {
     fi
 
     # Test help command
-    if ! "$CONFIG_VALIDATOR" help >/dev/null 2>&1; then
+    if ! "$CONFIG_VALIDATOR" help > /dev/null 2>&1; then
         log "FAIL" "Config validator help command failed"
         return 1
     fi
@@ -196,7 +196,7 @@ test_valid_config_validation() {
     create_valid_ovpn_config "$valid_config"
 
     # RED: Should fail initially - validation not implemented
-    if ! "$CONFIG_VALIDATOR" validate-file "$valid_config" 2>/dev/null; then
+    if ! "$CONFIG_VALIDATOR" validate-file "$valid_config" 2> /dev/null; then
         log "FAIL" "Cannot validate valid OpenVPN config"
         cleanup_test_environment
         return 1
@@ -226,7 +226,7 @@ test_required_fields_checking() {
     create_malformed_ovpn_config "$malformed_config"
 
     # RED: Should fail initially - field checking not implemented
-    if "$CONFIG_VALIDATOR" validate-file "$malformed_config" 2>/dev/null; then
+    if "$CONFIG_VALIDATOR" validate-file "$malformed_config" 2> /dev/null; then
         log "FAIL" "Malformed config incorrectly validated as valid"
         cleanup_test_environment
         return 1
@@ -262,7 +262,7 @@ test_certificate_validation() {
     create_invalid_certificate_config "$invalid_cert_config"
 
     # RED: Should fail initially - certificate validation not implemented
-    if "$CONFIG_VALIDATOR" validate-file "$invalid_cert_config" 2>/dev/null; then
+    if "$CONFIG_VALIDATOR" validate-file "$invalid_cert_config" 2> /dev/null; then
         log "FAIL" "Invalid certificate config incorrectly validated"
         cleanup_test_environment
         return 1
@@ -293,7 +293,7 @@ test_directory_batch_validation() {
     create_malformed_ovpn_config "$PROJECT_ROOT/test-configs/invalid1.ovpn"
 
     # RED: Should fail initially - directory validation not implemented
-    if ! "$CONFIG_VALIDATOR" validate-dir "$PROJECT_ROOT/test-configs" 2>/dev/null; then
+    if ! "$CONFIG_VALIDATOR" validate-dir "$PROJECT_ROOT/test-configs" 2> /dev/null; then
         log "FAIL" "Cannot validate directory of configs"
         cleanup_test_environment
         return 1
@@ -329,14 +329,14 @@ test_hash_integrity_verification() {
     create_valid_ovpn_config "$valid_config"
 
     # RED: Should fail initially - hash checking not implemented
-    if ! "$CONFIG_VALIDATOR" check-integrity "$PROJECT_ROOT/test-configs" 2>/dev/null; then
+    if ! "$CONFIG_VALIDATOR" check-integrity "$PROJECT_ROOT/test-configs" 2> /dev/null; then
         log "FAIL" "Cannot perform integrity checking"
         cleanup_test_environment
         return 1
     fi
 
     # Verify hash database is created/updated
-    if ! "$CONFIG_VALIDATOR" generate-hashes "$PROJECT_ROOT/test-configs" 2>/dev/null; then
+    if ! "$CONFIG_VALIDATOR" generate-hashes "$PROJECT_ROOT/test-configs" 2> /dev/null; then
         log "FAIL" "Cannot generate config hashes"
         cleanup_test_environment
         return 1

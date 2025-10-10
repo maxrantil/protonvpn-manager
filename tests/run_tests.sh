@@ -39,7 +39,7 @@ usage() {
 parse_arguments() {
     while [[ $# -gt 0 ]]; do
         case $1 in
-            -u|--unit-only)
+            -u | --unit-only)
                 ENABLE_UNIT_TESTS=1
                 ENABLE_INTEGRATION_TESTS=0
                 ENABLE_E2E_TESTS=0
@@ -47,7 +47,7 @@ parse_arguments() {
                 ENABLE_SAFETY_TESTS=0
                 shift
                 ;;
-            -i|--integration-only)
+            -i | --integration-only)
                 ENABLE_UNIT_TESTS=0
                 ENABLE_INTEGRATION_TESTS=1
                 ENABLE_E2E_TESTS=0
@@ -55,7 +55,7 @@ parse_arguments() {
                 ENABLE_SAFETY_TESTS=0
                 shift
                 ;;
-            -e|--e2e-only)
+            -e | --e2e-only)
                 ENABLE_UNIT_TESTS=0
                 ENABLE_INTEGRATION_TESTS=0
                 ENABLE_E2E_TESTS=1
@@ -63,7 +63,7 @@ parse_arguments() {
                 ENABLE_SAFETY_TESTS=0
                 shift
                 ;;
-            -r|--realistic-only)
+            -r | --realistic-only)
                 ENABLE_UNIT_TESTS=0
                 ENABLE_INTEGRATION_TESTS=0
                 ENABLE_E2E_TESTS=0
@@ -71,7 +71,7 @@ parse_arguments() {
                 ENABLE_SAFETY_TESTS=0
                 shift
                 ;;
-            -s|--safety-only)
+            -s | --safety-only)
                 ENABLE_UNIT_TESTS=0
                 ENABLE_INTEGRATION_TESTS=0
                 ENABLE_E2E_TESTS=0
@@ -79,15 +79,15 @@ parse_arguments() {
                 ENABLE_SAFETY_TESTS=1
                 shift
                 ;;
-            -v|--verbose)
+            -v | --verbose)
                 VERBOSE=1
                 shift
                 ;;
-            -f|--fail-fast)
+            -f | --fail-fast)
                 FAIL_FAST=1
                 shift
                 ;;
-            -h|--help)
+            -h | --help)
                 usage
                 exit 0
                 ;;
@@ -108,7 +108,7 @@ check_prerequisites() {
     local required_commands=("bash" "grep" "awk" "find" "wc" "sort")
 
     for cmd in "${required_commands[@]}"; do
-        if ! command -v "$cmd" >/dev/null 2>&1; then
+        if ! command -v "$cmd" > /dev/null 2>&1; then
             missing_commands+=("$cmd")
         fi
     done
@@ -158,7 +158,7 @@ run_test_suite() {
         if [[ $VERBOSE -eq 1 ]]; then
             bash "$test_script"
         else
-            bash "$test_script" 2>/dev/null
+            bash "$test_script" 2> /dev/null
         fi
         local suite_exit_code=$?
 
@@ -189,7 +189,7 @@ generate_test_report() {
     local success_rate=0
 
     if [[ $total_tests -gt 0 ]]; then
-        success_rate=$(( (TESTS_PASSED * 100) / total_tests ))
+        success_rate=$(((TESTS_PASSED * 100) / total_tests))
     fi
 
     echo ""

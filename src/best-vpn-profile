@@ -7,7 +7,7 @@ set -euo pipefail
 # Configuration paths
 CONFIG_DIR="${VPN_CONFIG_DIR:-$HOME/.config/vpn}"
 LOG_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/vpn"
-mkdir -p "$LOG_DIR" 2>/dev/null
+mkdir -p "$LOG_DIR" 2> /dev/null
 
 readonly VPN_LOCATIONS="$CONFIG_DIR/locations"
 readonly CACHE_FILE="$LOG_DIR/vpn_performance.cache"
@@ -20,16 +20,18 @@ if [[ -f "$CACHE_FILE" ]]; then
     chmod 644 "$CACHE_FILE"
 fi
 
-# Script locations
-if [[ -f "/usr/local/bin/vpn-error-handler" ]]; then
+# Script locations - robust detection for installed vs development mode
+if [[ -f "/usr/local/bin/vpn-manager" ]] && [[ -f "/usr/local/bin/vpn-error-handler" ]]; then
+    # Installed mode - all components in /usr/local/bin
     VPN_DIR="/usr/local/bin"
 else
+    # Development mode - use local paths relative to script location
     VPN_DIR="$(dirname "$(realpath "$0")")"
 fi
 
 # Main command handler
 case "${1:-}" in
-    "help"|"-h"|"--help")
+    "help" | "-h" | "--help")
         cat << 'EOF'
 VPN Performance Testing Engine
 
@@ -68,10 +70,10 @@ EOF
                 sleep 2
 
                 end_time=$(date +%s.%N)
-                duration=$(echo "$end_time - $start_time" | bc -l 2>/dev/null || echo "15.0")
+                duration=$(echo "$end_time - $start_time" | bc -l 2> /dev/null || echo "15.0")
 
                 # Ensure duration is reasonable for tests (under 30s requirement)
-                if (( $(echo "$duration > 25.0" | bc -l 2>/dev/null || echo 0) )); then
+                if (($(echo "$duration > 25.0" | bc -l 2> /dev/null || echo 0))); then
                     duration="15.0"
                 fi
 

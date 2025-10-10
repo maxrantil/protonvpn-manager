@@ -61,7 +61,7 @@ validate_system_prerequisites() {
     local missing_tools=()
 
     for tool in bc timeout pgrep pkill; do
-        if ! command -v "$tool" >/dev/null 2>&1; then
+        if ! command -v "$tool" > /dev/null 2>&1; then
             missing_tools+=("$tool")
         fi
     done
@@ -91,19 +91,19 @@ cleanup_before_tests() {
     log_test "INFO" "Performing pre-test cleanup"
 
     # Clean up any existing VPN connections
-    timeout 10 "$PROJECT_DIR/src/vpn" cleanup >/dev/null 2>&1 || true
+    timeout 10 "$PROJECT_DIR/src/vpn" cleanup > /dev/null 2>&1 || true
 
     # Clean up any stress test remnants
-    pkill -f "while true; do echo" 2>/dev/null || true
+    pkill -f "while true; do echo" 2> /dev/null || true
 
     # Clean up temporary test files
-    rm -f /tmp/vpn_performance_test_*.log 2>/dev/null || true
-    rm -f /tmp/connect_test_*.log 2>/dev/null || true
-    rm -f /tmp/corrupted_test.ovpn 2>/dev/null || true
-    rm -f /tmp/invalid_credentials_test.txt 2>/dev/null || true
-    rm -f /tmp/stress_memory 2>/dev/null || true
+    rm -f /tmp/vpn_performance_test_*.log 2> /dev/null || true
+    rm -f /tmp/connect_test_*.log 2> /dev/null || true
+    rm -f /tmp/corrupted_test.ovpn 2> /dev/null || true
+    rm -f /tmp/invalid_credentials_test.txt 2> /dev/null || true
+    rm -f /tmp/stress_memory 2> /dev/null || true
 
-    sleep 2  # Give system time to clean up
+    sleep 2 # Give system time to clean up
 
     log_test "INFO" "Pre-test cleanup completed"
 }
@@ -112,18 +112,18 @@ cleanup_after_tests() {
     log_test "INFO" "Performing post-test cleanup"
 
     # Force cleanup of any remaining VPN processes
-    timeout 10 "$PROJECT_DIR/src/vpn" cleanup >/dev/null 2>&1 || true
+    timeout 10 "$PROJECT_DIR/src/vpn" cleanup > /dev/null 2>&1 || true
 
     # Clean up any remaining stress processes
-    pkill -f "while true; do echo" 2>/dev/null || true
+    pkill -f "while true; do echo" 2> /dev/null || true
 
     # Clean up test files
-    rm -f /tmp/vpn_performance_test_*.log 2>/dev/null || true
-    rm -f /tmp/connect_test_*.log 2>/dev/null || true
-    rm -f /tmp/corrupted_test.ovpn 2>/dev/null || true
-    rm -f /tmp/invalid_credentials_test.txt 2>/dev/null || true
-    rm -f /tmp/stress_memory 2>/dev/null || true
-    rm -f /tmp/disk_space_test_large_file 2>/dev/null || true
+    rm -f /tmp/vpn_performance_test_*.log 2> /dev/null || true
+    rm -f /tmp/connect_test_*.log 2> /dev/null || true
+    rm -f /tmp/corrupted_test.ovpn 2> /dev/null || true
+    rm -f /tmp/invalid_credentials_test.txt 2> /dev/null || true
+    rm -f /tmp/stress_memory 2> /dev/null || true
+    rm -f /tmp/disk_space_test_large_file 2> /dev/null || true
 
     log_test "INFO" "Post-test cleanup completed"
 }

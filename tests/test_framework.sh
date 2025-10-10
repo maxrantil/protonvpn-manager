@@ -134,7 +134,7 @@ assert_command_succeeds() {
     local command="$1"
     local message="${2:-Command should succeed}"
 
-    if eval "$command" >/dev/null 2>&1; then
+    if eval "$command" > /dev/null 2>&1; then
         log_test "PASS" "$CURRENT_TEST: $message - '$command'"
         ((TESTS_PASSED++))
         return 0
@@ -150,7 +150,7 @@ assert_command_fails() {
     local command="$1"
     local message="${2:-Command should fail}"
 
-    if ! eval "$command" >/dev/null 2>&1; then
+    if ! eval "$command" > /dev/null 2>&1; then
         log_test "PASS" "$CURRENT_TEST: $message - '$command'"
         ((TESTS_PASSED++))
         return 0
@@ -183,7 +183,7 @@ EOF
 }
 
 cleanup_mocks() {
-    rm -f /tmp/mock_* 2>/dev/null || true
+    rm -f /tmp/mock_* 2> /dev/null || true
     log_test "INFO" "Cleaned up mock commands"
 }
 
@@ -252,7 +252,7 @@ show_test_summary() {
     echo "=================================="
     echo -e "Tests Passed: ${GREEN}$TESTS_PASSED${NC}"
     echo -e "Tests Failed: ${RED}$TESTS_FAILED${NC}"
-    echo -e "Total Tests:  $(( TESTS_PASSED + TESTS_FAILED ))"
+    echo -e "Total Tests:  $((TESTS_PASSED + TESTS_FAILED))"
 
     if [[ $TESTS_FAILED -gt 0 ]]; then
         echo

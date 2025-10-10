@@ -155,7 +155,7 @@ EOF
 
 cleanup_test_configs() {
     # Remove test configs
-    rm -rf "$TEST_DIR" 2>/dev/null || true
+    rm -rf "$TEST_DIR" 2> /dev/null || true
 }
 
 # TEST 1: Fix tool executable and accessible
@@ -178,7 +178,7 @@ test_check_command_functionality() {
     setup_test_configs
 
     # Run check command on test directory using environment override
-    if env env LOCATIONS_DIR="$TEST_DIR" "$FIX_TOOL" --check >/dev/null 2>&1; then
+    if env env LOCATIONS_DIR="$TEST_DIR" "$FIX_TOOL" --check > /dev/null 2>&1; then
         log "SUCCESS: Check command runs without errors"
         cleanup_test_configs
         return 0
@@ -197,7 +197,7 @@ test_detect_broken_config() {
 
     # Check that broken config is detected as needing fix
     local check_output
-    check_output=$(env env LOCATIONS_DIR="$TEST_DIR" "$FIX_TOOL" --check 2>/dev/null)
+    check_output=$(env env LOCATIONS_DIR="$TEST_DIR" "$FIX_TOOL" --check 2> /dev/null)
 
     if echo "$check_output" | grep -q "test-broken.ovpn" && echo "$check_output" | grep -q "NEEDS FIX"; then
         log "SUCCESS: Broken config correctly detected as needing fix"
@@ -218,7 +218,7 @@ test_detect_complete_config() {
 
     # Check that complete config is detected as already OK
     local check_output
-    check_output=$(env LOCATIONS_DIR="$TEST_DIR" "$FIX_TOOL" --check 2>/dev/null)
+    check_output=$(env LOCATIONS_DIR="$TEST_DIR" "$FIX_TOOL" --check 2> /dev/null)
 
     if echo "$check_output" | grep -q "test-complete.ovpn" && echo "$check_output" | grep -q "ALREADY OK"; then
         log "SUCCESS: Complete config correctly detected as already OK"
@@ -238,7 +238,7 @@ test_fix_broken_config() {
     setup_test_configs
 
     # Fix the configs
-    if env LOCATIONS_DIR="$TEST_DIR" "$FIX_TOOL" --no-backup >/dev/null 2>&1; then
+    if env LOCATIONS_DIR="$TEST_DIR" "$FIX_TOOL" --no-backup > /dev/null 2>&1; then
         # Check that all required settings are now present in broken config
         local all_present=true
         for setting in "${REQUIRED_SETTINGS[@]}"; do
@@ -275,7 +275,7 @@ test_preserve_complete_config() {
     original_content=$(cat "$TEST_DIR/test-complete.ovpn")
 
     # Run fix command
-    if env LOCATIONS_DIR="$TEST_DIR" "$FIX_TOOL" --no-backup >/dev/null 2>&1; then
+    if env LOCATIONS_DIR="$TEST_DIR" "$FIX_TOOL" --no-backup > /dev/null 2>&1; then
         # Check that complete config wasn't modified
         local new_content
         new_content=$(cat "$TEST_DIR/test-complete.ovpn")
@@ -314,14 +314,14 @@ test_real_config_patterns() {
 
     # Check if any real configs exist
     local config_count
-    config_count=$(find "$REAL_LOCATIONS" -name "*.ovpn" 2>/dev/null | wc -l)
+    config_count=$(find "$REAL_LOCATIONS" -name "*.ovpn" 2> /dev/null | wc -l)
     if [[ "$config_count" -eq 0 ]]; then
         log "SKIP: No .ovpn files found in $REAL_LOCATIONS"
         return 0
     fi
 
     local check_output
-    check_output=$(env LOCATIONS_DIR="$REAL_LOCATIONS" "$FIX_TOOL" --check 2>/dev/null)
+    check_output=$(env LOCATIONS_DIR="$REAL_LOCATIONS" "$FIX_TOOL" --check 2> /dev/null)
 
     local all_detected=true
     for config in "${working_configs[@]}"; do
@@ -357,10 +357,10 @@ test_backup_functionality() {
     setup_test_configs
 
     # Run fix with backup enabled (default)
-    if env LOCATIONS_DIR="$TEST_DIR" "$FIX_TOOL" >/dev/null 2>&1; then
+    if env LOCATIONS_DIR="$TEST_DIR" "$FIX_TOOL" > /dev/null 2>&1; then
         # Check if backup directory was created
         local backup_dir="$TEST_DIR/backups"
-        if [[ -d "$backup_dir" ]] && [[ -n "$(find "$backup_dir" -name "*.backup.*" 2>/dev/null)" ]]; then
+        if [[ -d "$backup_dir" ]] && [[ -n "$(find "$backup_dir" -name "*.backup.*" 2> /dev/null)" ]]; then
             log "SUCCESS: Backup files created successfully"
             cleanup_test_configs
             return 0

@@ -20,7 +20,7 @@ test_vpn_connector_has_best_command() {
     fi
 
     local help_output
-    help_output=$("$VPN_CONNECTOR_PATH" help 2>/dev/null || true)
+    help_output=$("$VPN_CONNECTOR_PATH" help 2> /dev/null || true)
 
     if echo "$help_output" | grep -q "best.*Find and connect to best"; then
         log_test "PASS" "$CURRENT_TEST"
@@ -66,8 +66,8 @@ test_country_prioritization_exists() {
 
     # Test that best command accepts country parameter
     local result1 result2
-    result1=$("$BEST_VPN_PROFILE_PATH" best 2>/dev/null || echo "failed")
-    result2=$("$BEST_VPN_PROFILE_PATH" best SE 2>/dev/null || echo "failed")
+    result1=$("$BEST_VPN_PROFILE_PATH" best 2> /dev/null || echo "failed")
+    result2=$("$BEST_VPN_PROFILE_PATH" best SE 2> /dev/null || echo "failed")
 
     if [[ "$result1" != "failed" ]] && [[ "$result2" != "failed" ]]; then
         log_test "PASS" "$CURRENT_TEST: accepts country parameter"
