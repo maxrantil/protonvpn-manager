@@ -24,7 +24,7 @@ test_script_path_resolution() {
 
     # Test list command (should find locations directory)
     local list_output
-    list_output=$("$vpn_script" list 2> /dev/null)
+    list_output=$(LOCATIONS_DIR="$TEST_LOCATIONS_DIR" "$vpn_script" list 2> /dev/null)
 
     if [[ -n "$list_output" ]]; then
         log_test "PASS" "$CURRENT_TEST: List command works from reorganized structure"
@@ -108,7 +108,7 @@ test_multiple_location_switching() {
     # Test switching between different countries
     for country in se dk nl; do
         local connect_output
-        connect_output=$("$vpn_script" connect "$country" 2>&1) || true
+        connect_output=$(LOCATIONS_DIR="$TEST_LOCATIONS_DIR" "$vpn_script" connect "$country" 2>&1) || true
 
         if echo "$connect_output" | grep -q -E "$country|connecting|profile"; then
             log_test "PASS" "$CURRENT_TEST: Can attempt connection to $country"
@@ -235,7 +235,7 @@ test_multiple_connection_prevention_regression() {
 
     # Start first connection (should work)
     local first_connection
-    first_connection=$(timeout 10 "$vpn_script" connect se 2>&1) || true
+    first_connection=$(LOCATIONS_DIR="$TEST_LOCATIONS_DIR" timeout 10 "$vpn_script" connect se 2>&1) || true
 
     # Now mock that a process exists
     cleanup_mocks
@@ -243,7 +243,7 @@ test_multiple_connection_prevention_regression() {
 
     # Attempt second connection (should be blocked)
     local second_connection
-    second_connection=$(timeout 5 "$vpn_script" connect dk 2>&1) || true
+    second_connection=$(LOCATIONS_DIR="$TEST_LOCATIONS_DIR" timeout 5 "$vpn_script" connect dk 2>&1) || true
 
     # Verify second connection was blocked
     assert_contains "$second_connection" "BLOCKED" "Second connection should be blocked"
