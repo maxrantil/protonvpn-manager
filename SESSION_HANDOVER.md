@@ -61,14 +61,14 @@ Fixed 5 pre-existing test failures that were blocking CI:
 
 ## ⚠️ Current Issues
 
-### CI Failures (2 checks failing)
+### CI Failures (1 check failing)
 
-#### 1. Session Handoff Documentation Check - FAILING
+#### 1. Session Handoff Documentation Check - ✅ FIXED
 **Problem:** SESSION_HANDOVER.md not updated in PR #100
-**Fix:** Update this file and add to commit (DOING NOW)
-**Impact:** Blocks PR merge per CLAUDE.md requirements
+**Fix:** Updated and committed (edd2fa6)
+**Status:** NOW PASSING ✅
 
-#### 2. Run Test Suite - FAILING (6 failures in CI)
+#### 2. Run Test Suite - STILL FAILING (CI environment issue)
 **Problem:** CI environment missing dependencies (`libnotify`, `wireguard-tools`)
 **Failing tests:**
 1. Script Path Resolution After Reorganization
@@ -107,34 +107,41 @@ Fixed 5 pre-existing test failures that were blocking CI:
 
 ## 🚀 Next Steps
 
-### Immediate (This Session)
+### Completed This Session
 1. ✅ **Update SESSION_HANDOVER.md** (this file)
-2. ⏳ **Add missing dependencies to CI workflow**
-3. ⏳ **Commit and push updates**
-4. ⏳ **Verify CI passes**
+2. ✅ **Add missing dependencies to CI workflow**
+3. ✅ **Commit and push updates** (edd2fa6)
+4. ⚠️ **CI tests still failing** (deeper investigation needed)
 
-### After CI Green
-1. **Merge PR #100** - Test suite fixes land
-2. **Continue P0 roadmap** - Issue #60 (TOCTOU tests, 6h)
+### Next Session (Per Doctor Hubert)
+**Decision:** Merge PR #100 with failing tests, fix CI in next session
+
+1. **Merge PR #100 despite CI failure** - Test fixes are correct locally
+2. **Create new issue for CI test failures** - Track separately
+3. **Continue P0 roadmap** - Issue #60 (TOCTOU tests, 6h)
 
 ---
 
 ## 📝 Startup Prompt for Next Session
 
-Read CLAUDE.md to understand our workflow, then fix CI dependency issues for PR #100.
+Read CLAUDE.md to understand our workflow, then investigate CI test failures and continue P0 roadmap.
 
-**Immediate priority:** Add `libnotify` and `wireguard-tools` to CI workflow (30 min)
-**Context:** Test suite fixes complete locally (21/21 passing), CI needs dependency updates
-**Reference docs:** SESSION_HANDOVER.md, PR #100, .github/workflows/run-tests.yml
-**Ready state:** fix/test-suite-failures branch, waiting for CI dependency fix
+**Immediate priority:** Investigate CI test suite failures (1-2 hours), then continue P0 work
+**Context:** Test suite fixes complete locally (21/21 passing ✅), but CI still failing despite dependency installation
+**Reference docs:** SESSION_HANDOVER.md, PR #100 (merged), CI logs
+**Ready state:** PR #100 merged (per Doctor Hubert decision), test fixes in master, CI investigation needed
 
 **Expected scope:**
-1. Edit `.github/workflows/run-tests.yml` to install missing dependencies
-2. Commit SESSION_HANDOVER.md update
-3. Push changes
-4. Verify all CI checks pass
-5. Merge PR #100
-6. Continue with P0 roadmap (Issue #60)
+1. Investigate why CI tests still fail after dependency installation
+2. Check if tests need CI-specific mocking or environment handling
+3. Fix remaining CI issues OR document as known limitation
+4. Continue P0 roadmap: Issue #60 - TOCTOU race condition tests (6 hours)
+
+**CI Investigation Notes:**
+- Dependencies installed but tests still failing
+- May need to mock VPN operations in CI environment
+- Could be sudo/permission issues in CI
+- Local tests: 100% passing, CI tests: still failing
 
 ---
 
