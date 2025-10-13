@@ -1,0 +1,24 @@
+# ABOUTME: Issue validation workflows for protonvpn-manager (using centralized reusable workflows)
+
+name: Issue Validation
+
+on:
+  issues:
+    types: [opened, edited]
+
+jobs:
+  ai-attribution:
+    name: Block AI Attribution in Issues
+    uses: maxrantil/.github/.github/workflows/issue-ai-attribution-check-reusable.yml@master
+
+  format-check:
+    name: Check Issue Format
+    uses: maxrantil/.github/.github/workflows/issue-format-check-reusable.yml@master
+
+  prd-reminder:
+    name: PRD/PDR Reminder
+    uses: maxrantil/.github/.github/workflows/issue-prd-reminder-reusable.yml@master
+
+  auto-label:
+    name: Auto-label Issues
+    uses: maxrantil/.github/.github/workflows/issue-auto-label-reusable.yml@master
