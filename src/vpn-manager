@@ -44,7 +44,7 @@ source "$VPN_DIR/vpn-utils"
 log_vpn_event() {
     local level="$1"
     local message="$2"
-    local log_file="/tmp/vpn_simple.log"
+    local log_file="$VPN_LOG_FILE"
     local max_lines=1000
 
     # Create log entry
@@ -72,7 +72,7 @@ log_vpn_event() {
 # Usage: view_logs [lines]
 view_logs() {
     local num_lines="${1:-50}"
-    local log_file="/tmp/vpn_simple.log"
+    local log_file="$VPN_LOG_FILE"
 
     if [[ ! -f "$log_file" ]]; then
         echo "No log file found at $log_file"
@@ -720,7 +720,8 @@ full_cleanup() {
     # Use hierarchical process cleanup
     if hierarchical_process_cleanup "false"; then
         echo "Cleaning up temporary files..."
-        rm -f /tmp/vpn_*.log /tmp/vpn_*.cache /tmp/vpn_*.lock 2> /dev/null || true
+        # Only remove cache and lock files - preserve production logs in ~/.local/state/vpn/
+        rm -f /tmp/vpn_*.cache /tmp/vpn_*.lock 2> /dev/null || true
 
         cleanup_files
         cleanup_routes_light
