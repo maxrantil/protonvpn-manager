@@ -141,6 +141,7 @@ check_prerequisites() {
 run_test_suite() {
     local suite_name="$1"
     local test_script="$2"
+    local test_function="$3"
 
     log_test "INFO" "Running $suite_name"
     echo ""
@@ -154,15 +155,18 @@ run_test_suite() {
         # Make sure test script is executable
         chmod +x "$test_script"
 
-        # Run the test suite
+        # Source the test suite and run its function
+        # This allows TESTS_PASSED/TESTS_FAILED to accumulate in parent shell
         if [[ $VERBOSE -eq 1 ]]; then
-            bash "$test_script"
+            # shellcheck disable=SC1090
+            source "$test_script" && "$test_function" && show_test_summary
         else
-            bash "$test_script" 2> /dev/null
+            # shellcheck disable=SC1090
+            source "$test_script" > /dev/null 2>&1 && "$test_function" > /dev/null 2>&1 && show_test_summary > /dev/null 2>&1
         fi
         local suite_exit_code=$?
 
-        # Calculate suite statistics
+        # Calculate suite statistics (now accurate since variables accumulated)
         local suite_end_time=$(date +%s)
         local suite_duration=$((suite_end_time - suite_start_time))
         local suite_passed=$((TESTS_PASSED - suite_passed_before))
@@ -274,7 +278,7 @@ main() {
 
     # Run test suites based on configuration
     if [[ $ENABLE_UNIT_TESTS -eq 1 ]]; then
-        if ! run_test_suite "Unit Tests" "$TEST_DIR/unit_tests.sh"; then
+        if ! run_test_suite "Unit Tests" "$TEST_DIR/unit_tests.sh" "run_unit_tests"; then
             overall_exit_code=1
             if [[ $FAIL_FAST -eq 1 ]]; then
                 generate_test_report
@@ -284,7 +288,7 @@ main() {
     fi
 
     if [[ $ENABLE_INTEGRATION_TESTS -eq 1 ]]; then
-        if ! run_test_suite "Integration Tests" "$TEST_DIR/integration_tests.sh"; then
+        if ! run_test_suite "Integration Tests" "$TEST_DIR/integration_tests.sh" "run_integration_tests"; then
             overall_exit_code=1
             if [[ $FAIL_FAST -eq 1 ]]; then
                 generate_test_report
@@ -294,7 +298,7 @@ main() {
     fi
 
     if [[ $ENABLE_E2E_TESTS -eq 1 ]]; then
-        if ! run_test_suite "End-to-End Tests" "$TEST_DIR/e2e_tests.sh"; then
+        if ! run_test_suite "End-to-End Tests" "$TEST_DIR/e2e_tests.sh" "run_e2e_tests"; then
             overall_exit_code=1
             if [[ $FAIL_FAST -eq 1 ]]; then
                 generate_test_report
@@ -304,7 +308,7 @@ main() {
     fi
 
     if [[ $ENABLE_REALISTIC_TESTS -eq 1 ]]; then
-        if ! run_test_suite "Realistic Connection Tests" "$TEST_DIR/realistic_connection_tests.sh"; then
+        if ! run_test_suite "Realistic Connection Tests" "$TEST_DIR/realistic_connection_tests.sh" "run_realistic_connection_tests"; then
             overall_exit_code=1
             if [[ $FAIL_FAST -eq 1 ]]; then
                 generate_test_report
@@ -314,7 +318,7 @@ main() {
     fi
 
     if [[ $ENABLE_SAFETY_TESTS -eq 1 ]]; then
-        if ! run_test_suite "Process Safety Tests" "$TEST_DIR/process_safety_tests.sh"; then
+        if ! run_test_suite "Process Safety Tests" "$TEST_DIR/process_safety_tests.sh" "run_process_safety_tests"; then
             overall_exit_code=1
             if [[ $FAIL_FAST -eq 1 ]]; then
                 generate_test_report
