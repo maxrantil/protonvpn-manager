@@ -1,48 +1,260 @@
 # ABOUTME: Pre-commit hooks configuration for VPN manager project
 # ABOUTME: Ensures code quality and consistency before commits
+# Install: pre-commit install && pre-commit install --hook-type commit-msg
+# Run manually: pre-commit run --all-files
+# Docs: https://pre-commit.com/
 
 repos:
-  # General file checks
+  # =============================================================================
+  # GENERAL FILE QUALITY & SECURITY CHECKS
+  # =============================================================================
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.4.0
+    rev: v6.0.0
     hooks:
-      - id: trailing-whitespace
-      - id: end-of-file-fixer
-      - id: check-yaml
-      - id: check-added-large-files
-        args: ['--maxkb=500']
-      - id: check-case-conflict
-      - id: check-merge-conflict
-      - id: check-executables-have-shebangs
-      - id: check-shebang-scripts-are-executable
+      # Security
+      - id: detect-private-key
+        name: Detect private keys
+        description: Prevent committing SSH keys, API keys, certificates
+        exclude: '^(locations/.*\.ovpn|src_archive/download-engine|tests/.*\.sh)$'
 
-  # Shell script linting and formatting
+      - id: check-added-large-files
+        name: Check for large files
+        description: Prevent committing large binary files
+        args: ['--maxkb=1000']
+
+      # File quality
+      - id: trailing-whitespace
+        name: Trim trailing whitespace
+        description: Remove trailing whitespace from all files
+
+      - id: end-of-file-fixer
+        name: Fix end of files
+        description: Ensure files end with newline
+
+      - id: mixed-line-ending
+        name: Fix mixed line endings
+        description: Normalize line endings to LF
+        args: ['--fix=lf']
+
+      # Syntax validation
+      - id: check-yaml
+        name: Check YAML syntax
+        description: Validate YAML files are parseable
+
+      - id: check-json
+        name: Check JSON syntax
+        description: Validate JSON files are parseable
+
+      # Conflict detection
+      - id: check-merge-conflict
+        name: Check for merge conflicts
+        description: Detect merge conflict markers
+
+      - id: check-case-conflict
+        name: Check for case conflicts
+        description: Detect files with names that differ only in case
+
+      # Shell/Script checks
+      - id: check-executables-have-shebangs
+        name: Check shebangs on executables
+        description: Ensure executable files have proper shebangs
+
+      - id: check-shebang-scripts-are-executable
+        name: Check scripts are executable
+        description: Ensure scripts with shebangs are executable
+
+  # =============================================================================
+  # SHELL SCRIPT LINTING
+  # =============================================================================
   - repo: https://github.com/shellcheck-py/shellcheck-py
-    rev: v0.9.0.6
+    rev: v0.11.0.1
     hooks:
       - id: shellcheck
+        name: ShellCheck bash scripts
+        description: Lint bash scripts for common issues
         args: ['-e', 'SC1091', '-e', 'SC2034', '-e', 'SC2155', '-e', 'SC2016', '-e', 'SC2001', '-e', 'SC2126']
         types: [shell]
 
-  # Markdown linting
+  # =============================================================================
+  # MARKDOWN LINTING
+  # =============================================================================
   - repo: https://github.com/igorshubovych/markdownlint-cli
-    rev: v0.37.0
+    rev: v0.45.0
     hooks:
       - id: markdownlint
+        name: Markdown linting
+        description: Lint markdown files for style and consistency
         args: ['--disable', 'MD013', '--disable', 'MD041']
 
-  # File permissions and security checks
+  # =============================================================================
+  # LOCAL CUSTOM HOOKS (AI BLOCKING, COMMIT FORMAT, SECURITY, TESTS)
+  # =============================================================================
   - repo: local
     hooks:
+      # -------------------------------------------------------------------------
+      # AI/AGENT ATTRIBUTION BLOCKING (CLAUDE.md Policy Enforcement)
+      # -------------------------------------------------------------------------
+      - id: no-ai-attribution
+        name: Block AI/Agent Attribution in Commits
+        description: Enforce CLAUDE.md policy - no AI tool attribution in commits
+        entry: bash
+        language: system
+        stages: [pre-commit]
+        pass_filenames: false
+        exclude: '^\.pre-commit-config\.yaml$'
+        args:
+          - -c
+          - |
+            # Exclude common documentation and config files
+            EXCLUDES=":(exclude).pre-commit-config.yaml :(exclude).github/ :(exclude)tests/test_github_workflows.sh :(exclude)tests/test_github_workflows_extended.sh :(exclude)config/.pre-commit-config.yaml :(exclude).gitignore :(exclude)docs/ :(exclude)SESSION*.md :(exclude)*HANDOFF*.md"
+
+            if git diff --cached --diff-filter=ACMR -- $EXCLUDES | grep "^+" | grep -iE "(Co-authored-by:.*(Claude|GPT|ChatGPT|Copilot|Gemini|Bard|AI)|Generated with.*(Claude|AI|GPT|ChatGPT|Copilot)|claude\.com/claude-code|(reviewed by|validated by|approved by|checked by).*(agent|architecture-designer|security-validator|performance-optimizer|test-automation-qa|code-quality-analyzer|documentation-knowledge-manager|ux-accessibility-i18n-agent|devops-deployment-agent|general-purpose-agent)|agent (review|validation|approval|check))"; then
+              echo ""
+              echo "❌ ERROR: AI/agent attribution detected in staged changes"
+              echo ""
+              echo "Policy: Remove AI tool attributions from commits (per CLAUDE.md)"
+              echo "  ❌ Co-authored-by: Claude/GPT/AI"
+              echo "  ❌ Generated with [AI tool]"
+              echo "  ❌ Agent validation mentions"
+              echo ""
+              echo "✅ Document agent validations in:"
+              echo "  • Session handoff files (SESSION_HANDOFF.md)"
+              echo "  • Implementation documentation (docs/)"
+              echo "  • PRD/PDR documents"
+              echo ""
+              exit 1
+            fi
+
+      # -------------------------------------------------------------------------
+      # AI/AGENT ATTRIBUTION BLOCKING IN COMMIT MESSAGES
+      # -------------------------------------------------------------------------
+      - id: no-ai-attribution-commit-msg
+        name: Block AI Attribution in Commit Messages
+        description: Prevent AI/agent attribution in commit message body
+        entry: bash
+        language: system
+        stages: [commit-msg]
+        args:
+          - -c
+          - |
+            python3 - "$1" << 'PYEOF'
+            import sys, re
+
+            if len(sys.argv) < 2:
+                print("ERROR: No commit message file provided")
+                sys.exit(1)
+
+            with open(sys.argv[1]) as f:
+                msg = f.read()
+
+            # Check for AI attribution patterns
+            patterns = [
+                r'Co-authored-by:.*(?:Claude|GPT|ChatGPT|Copilot|Gemini|Bard|AI)',
+                r'Generated with.*(?:Claude|AI|GPT|ChatGPT|Copilot)',
+                r'claude\.com/claude-code',
+                r'(?:reviewed by|validated by|approved by|checked by).*(?:agent|architecture-designer|security-validator|performance-optimizer|test-automation-qa|code-quality-analyzer|documentation-knowledge-manager|ux-accessibility-i18n-agent|devops-deployment-agent|general-purpose-agent)',
+                r'agent (?:review|validation|approval|check)',
+                r'🤖.*(?:Claude|AI|GPT)'
+            ]
+
+            for pattern in patterns:
+                if re.search(pattern, msg, re.IGNORECASE):
+                    print('')
+                    print('❌ ERROR: AI/agent attribution detected in commit message')
+                    print('')
+                    print('Policy: Remove AI tool attributions from commits (per CLAUDE.md)')
+                    print('  ❌ Co-authored-by: Claude/GPT/AI')
+                    print('  ❌ Generated with [AI tool]')
+                    print('  ❌ Agent validation mentions')
+                    print('  ❌ 🤖 emoji with AI references')
+                    print('')
+                    print('✅ Document agent validations in:')
+                    print('  • Session handoff files (SESSION_HANDOFF.md)')
+                    print('  • Implementation documentation (docs/)')
+                    print('  • PRD/PDR documents')
+                    print('')
+                    sys.exit(1)
+            PYEOF
+          - bash
+
+      # -------------------------------------------------------------------------
+      # CONVENTIONAL COMMIT FORMAT VALIDATION
+      # -------------------------------------------------------------------------
+      - id: conventional-commit-msg
+        name: Enforce Conventional Commit Format
+        description: Validate commit messages follow conventional commit format
+        entry: bash
+        language: system
+        stages: [commit-msg]
+        args:
+          - -c
+          - |
+            python3 - "$1" << 'PYEOF'
+            import sys, re
+
+            if len(sys.argv) < 2:
+                print("ERROR: No commit message file provided")
+                sys.exit(1)
+
+            with open(sys.argv[1]) as f:
+                msg = f.read().strip()
+
+            pattern = r'^(feat|fix|docs|style|refactor|test|chore|perf|ci|build|revert)(\(.+\))?!?: .+'
+
+            if not re.match(pattern, msg):
+                print('❌ ERROR: Commit message must use conventional commit format')
+                print('')
+                print('Format: <type>[optional scope]: <description>')
+                print('')
+                print('Examples:')
+                print('  feat(vpn): add new connection method')
+                print('  fix(config): resolve parsing issue')
+                print('  docs: update README')
+                print('  refactor(db): optimize query performance')
+                print('')
+                print('Types: feat, fix, docs, style, refactor, test, chore, perf, ci, build, revert')
+                print('')
+                print('Breaking changes: Add ! after type/scope (e.g., feat!: remove old API)')
+                sys.exit(1)
+            PYEOF
+          - bash
+
+      # -------------------------------------------------------------------------
+      # CREDENTIALS/SECRETS DETECTION
+      # -------------------------------------------------------------------------
       - id: check-credentials
         name: Check for credentials in files
-        entry: bash -c 'if grep -r --include="*.sh" --include="*.bash" --include="*.txt" -i "password.*=" --exclude-dir=tests .; then echo "Potential credentials found!"; exit 1; fi'
+        description: Detect potential passwords, tokens, API keys
+        entry: bash
         language: system
         pass_filenames: false
+        args:
+          - -c
+          - |
+            if grep -r --include="*.sh" --include="*.bash" --include="*.py" --include="*.js" --include="*.ts" --include="*.txt" -iE "(password|api_key|secret|token).*=.*['\"\`]\S+" --exclude-dir=tests --exclude-dir=node_modules --exclude-dir=.git .; then
+              echo "⚠️  WARNING: Potential credentials found!"
+              echo "Review carefully before committing"
+              exit 1
+            fi
 
+      # -------------------------------------------------------------------------
+      # PROJECT-SPECIFIC VALIDATION HOOKS
+      # -------------------------------------------------------------------------
       - id: executable-scripts
         name: Ensure scripts are executable
         entry: bash -c 'for script in vpn vpn-manager vpn-connector tests/*.sh; do if [ -f "$script" ] && [ ! -x "$script" ]; then chmod +x "$script"; fi; done'
+        language: system
+        pass_filenames: false
+
+      - id: shell-syntax-check
+        name: Shell syntax validation
+        entry: bash -c 'for script in vpn vpn-manager vpn-connector tests/*.sh; do if [ -f "$script" ]; then bash -n "$script" || exit 1; fi; done'
+        language: system
+        pass_filenames: false
+
+      - id: test-framework-validation
+        name: Validate test framework
+        entry: bash -c 'if [ -f "tests/test_framework.sh" ]; then bash -n tests/test_framework.sh || exit 1; fi'
         language: system
         pass_filenames: false
 
@@ -59,40 +271,3 @@ repos:
         language: system
         pass_filenames: false
         stages: [pre-push]
-
-      - id: shell-syntax-check
-        name: Shell syntax validation
-        entry: bash -c 'for script in vpn vpn-manager vpn-connector tests/*.sh; do if [ -f "$script" ]; then bash -n "$script" || exit 1; fi; done'
-        language: system
-        pass_filenames: false
-
-      - id: test-framework-validation
-        name: Validate test framework
-        entry: bash -c 'if [ -f "tests/test_framework.sh" ]; then bash -n tests/test_framework.sh || exit 1; fi'
-        language: system
-        pass_filenames: false
-
-      - id: no-ai-attribution
-        name: Block AI/Agent Attribution in Commits
-        entry: bash -c 'if git diff --cached --diff-filter=ACMR -- ":(exclude).github/" ":(exclude)tests/test_github_workflows.sh" ":(exclude)tests/test_github_workflows_extended.sh" ":(exclude)config/.pre-commit-config.yaml" ":(exclude).gitignore" ":(exclude)docs/" ":(exclude)SESSION_HANDOFF.md" ":(exclude)*HANDOFF*.md" ":(exclude)*SESSION*.md" | grep "^+" | grep -iE "(Co-authored-by|Generated with|Claude|AI-generated|Created by Claude|(reviewed by|validated by|approved by|checked by).*(agent|architecture-designer|security-validator|performance-optimizer)|agent (review|validation|approval))"; then echo "❌ ERROR Remove AI/agent attribution from commits (per CLAUDE.md)"; exit 1; fi'
-        language: system
-        stages: [pre-commit]
-
-      - id: conventional-commit-msg
-        name: Enforce Conventional Commit Format
-        entry: python3 -c
-        language: system
-        stages: [commit-msg]
-        args:
-          - |
-            import sys, re
-            with open(sys.argv[1]) as f:
-                msg = f.read().strip()
-            pattern = r'^(feat|fix|docs|style|refactor|test|chore|perf|ci|build|revert)(\(.+\))?!?: .+'
-            if not re.match(pattern, msg):
-                print('❌ ERROR: Use conventional commit format')
-                print('Examples:')
-                print('  feat(vpn): add new connection method')
-                print('  fix(config): resolve parsing issue')
-                print('  docs: update README')
-                sys.exit(1)
