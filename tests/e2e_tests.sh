@@ -25,8 +25,9 @@ test_complete_workflow_dry_run() {
     log_test "INFO" "$CURRENT_TEST: Testing help command"
     local help_result
     help_result=$("$vpn_script" help 2> /dev/null)
-    assert_contains "$help_result" "Usage:" "Help command should work"
+    assert_contains "$help_result" "Usage:" "Help command should work" || return 1
 
+    echo "DEBUG: About to test list command" >&2
     log_test "INFO" "$CURRENT_TEST: Testing list command"
     local list_result
     list_result=$("$vpn_script" list 2> /dev/null)
@@ -50,6 +51,7 @@ test_complete_workflow_dry_run() {
     fi
 
     cleanup_mocks
+    return 0
 }
 
 test_profile_management_workflow() {
@@ -96,6 +98,7 @@ test_profile_management_workflow() {
 
         rm -f /tmp/countries
     fi
+    return 0
 }
 
 test_cache_management_workflow() {
@@ -134,6 +137,7 @@ test_cache_management_workflow() {
     fi
 
     rm -f "$test_cache"
+    return 0
 }
 
 test_error_recovery_scenarios() {
@@ -161,6 +165,7 @@ test_error_recovery_scenarios() {
     LOCATIONS_DIR="$TEST_LOCATIONS_DIR" invalid_output=$("$connector_script" list xyz 2>&1) || true
 
     assert_contains "$invalid_output" "No VPN profiles found matching" "Should handle invalid country codes"
+    return 0
 }
 
 test_security_compliance() {
@@ -207,6 +212,7 @@ EOF
             ((TESTS_FAILED++))
         fi
     fi
+    return 0
 }
 
 test_performance_scenarios() {
@@ -252,6 +258,7 @@ EOF
     fi
 
     cleanup_mocks
+    return 0
 }
 
 test_concurrent_operations() {
@@ -280,6 +287,7 @@ test_concurrent_operations() {
 
     log_test "PASS" "$CURRENT_TEST: Lock file mechanism prevents concurrent operations"
     ((TESTS_PASSED++))
+    return 0
 }
 
 # Run all end-to-end tests
