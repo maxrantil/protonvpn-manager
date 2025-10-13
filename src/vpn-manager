@@ -727,6 +727,7 @@ full_cleanup() {
         cleanup_routes_light
 
         echo -e "\033[1;32m✓ VPN cleanup completed\033[0m"
+        echo -e "\033[1;36mℹ NetworkManager left intact (safe cleanup)\033[0m"
         log_message "VPN cleanup completed" "$VPN_LOG_FILE"
         notify_event "process_health" "Cleanup completed"
         return 0
