@@ -1,5 +1,10 @@
 # Simple VPN Manager
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Tests](https://github.com/maxrantil/protonvpn-manager/workflows/Run%20Tests/badge.svg)](https://github.com/maxrantil/protonvpn-manager/actions)
+[![Shell](https://img.shields.io/badge/Shell-Bash-green.svg)](https://www.gnu.org/software/bash/)
+[![Platform](https://img.shields.io/badge/Platform-Arch%20Linux%20%7C%20Artix-blue.svg)](https://archlinux.org/)
+
 A focused, lightweight VPN management tool for Artix/Arch Linux systems. **Does one thing and does it right.**
 
 ## Philosophy
@@ -124,13 +129,26 @@ In September 2025, this project was simplified from a complex enterprise system 
 
 ## Development
 
-This project prioritizes simplicity and reliability. See `CLAUDE.md` for development guidelines that prevent feature creep and maintain focus.
+This project prioritizes simplicity and reliability over feature abundance.
 
 ### Core Principles
 1. **Simplicity First**: Prefer simple solutions over complex ones
 2. **Performance Over Features**: Fast, reliable connections matter most
 3. **No Feature Creep**: Resist adding "nice to have" features
 4. **Maintainability**: Keep code readable and debuggable
+
+### Testing
+
+All features require comprehensive tests before merging:
+- Unit tests for individual functions
+- Integration tests for component interactions
+- End-to-end tests for complete workflows
+
+Run the test suite:
+```bash
+cd tests
+./run_tests.sh
+```
 
 ## Branch Structure
 
@@ -140,11 +158,46 @@ The enterprise version (13K+ lines) was removed in October 2025. All development
 
 ## Contributing
 
-Contributions should align with the project's simplicity philosophy. New features must be:
-1. Essential for core VPN functionality
-2. Simple to implement and maintain
-3. Not duplicating existing functionality
+Contributions are welcome! This project values simplicity and quality over quantity.
+
+### Before Contributing
+
+New features must be:
+1. **Essential** for core VPN functionality (not "nice to have")
+2. **Simple** to implement and maintain
+3. **Tested** with comprehensive test coverage
+4. **Documented** with clear usage examples
+
+### How to Contribute
+
+1. **Fork** the repository
+2. **Create** a feature branch (`git checkout -b feat/your-feature`)
+3. **Write tests** for your changes (test-driven development required)
+4. **Implement** your feature/fix
+5. **Test** thoroughly (all tests must pass)
+6. **Commit** your changes with clear, descriptive messages
+7. **Push** to your fork
+8. **Submit** a pull request
+
+### Reporting Issues
+
+Found a bug or have a suggestion?
+- Check existing [issues](https://github.com/maxrantil/protonvpn-manager/issues) first
+- Create a new issue with clear description and reproduction steps
+- For security vulnerabilities, see [SECURITY.md](SECURITY.md)
+
+## Security
+
+Security is a top priority. Please review [SECURITY.md](SECURITY.md) for:
+- Reporting vulnerabilities responsibly
+- Understanding the security model
+- Known security practices
+- User security best practices
+
+**Never open a public issue for security vulnerabilities** - report them privately to rantil@pm.me.
 
 ## License
 
-This project is developed for educational and personal use on Artix/Arch Linux systems.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+Copyright (c) 2025 Max Rantil
