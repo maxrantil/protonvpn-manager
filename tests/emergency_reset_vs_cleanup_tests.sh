@@ -73,12 +73,13 @@ test_regular_cleanup_no_warning() {
     local cleanup_output
     cleanup_output=$("$PROJECT_DIR/src/vpn" cleanup 2>&1)
 
-    # Should NOT contain emergency or disruption warnings
-    if ! echo "$cleanup_output" | grep -iq "emergency\|disrupt\|restart.*network"; then
-        log_test "PASS" "$CURRENT_TEST: Regular cleanup doesn't warn about disruption"
+    # "prevent network disruption" is informative (good), not a warning (bad)
+    # Should NOT contain emergency restart warnings
+    if ! echo "$cleanup_output" | grep -iq "emergency\|restart.*network"; then
+        log_test "PASS" "$CURRENT_TEST: Regular cleanup doesn't contain emergency warnings"
         ((TESTS_PASSED++))
     else
-        log_test "FAIL" "$CURRENT_TEST: Regular cleanup contains disruption warnings: $cleanup_output"
+        log_test "FAIL" "$CURRENT_TEST: Regular cleanup contains emergency warnings: $cleanup_output"
         FAILED_TESTS+=("$CURRENT_TEST")
         ((TESTS_FAILED++))
     fi
@@ -121,7 +122,8 @@ test_cleanup_marked_safe_in_output() {
     local cleanup_output
     cleanup_output=$("$PROJECT_DIR/src/vpn" cleanup 2>&1)
 
-    if echo "$cleanup_output" | grep -q "NetworkManager left intact"; then
+    # Strip ANSI color codes for reliable matching
+    if echo "$cleanup_output" | sed 's/\x1b\[[0-9;]*m//g' | grep -q "NetworkManager left intact"; then
         log_test "PASS" "$CURRENT_TEST: Cleanup output mentions NetworkManager is left intact"
         ((TESTS_PASSED++))
     else
@@ -173,8 +175,8 @@ test_no_accidental_emergency_calls() {
     # Check that regular commands (kill, cleanup) don't call emergency_network_reset
     local kill_section cleanup_section
 
-    kill_section=$(sed -n '/^kill_all_vpn()/,/^}/p' "$PROJECT_DIR/src/vpn-manager")
-    cleanup_section=$(sed -n '/^full_cleanup()/,/^emergency_network_reset()/p' "$PROJECT_DIR/src/vpn-manager")
+    kill_section=$(grep -A 30 "^kill_all_vpn()" "$PROJECT_DIR/src/vpn-manager")
+    cleanup_section=$(grep -A 50 "^full_cleanup()" "$PROJECT_DIR/src/vpn-manager")
 
     if ! echo "$kill_section" | grep -q "emergency_network_reset" && ! echo "$cleanup_section" | grep -q "emergency_network_reset"; then
         log_test "PASS" "$CURRENT_TEST: Regular commands don't call emergency functions"

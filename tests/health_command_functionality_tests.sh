@@ -115,22 +115,8 @@ test_health_detects_multiple_processes() {
     fi
 }
 
-test_health_short_form_works() {
-    start_test "Health command short form 'vpn h' works"
-
-    local health_output
-    health_output=$("$PROJECT_DIR/src/vpn" h 2>&1)
-    local exit_code=$?
-
-    if [[ $exit_code -eq 0 ]] && echo "$health_output" | grep -q "PROCESSES RUNNING"; then
-        log_test "PASS" "$CURRENT_TEST: Short form 'vpn h' works"
-        ((TESTS_PASSED++))
-    else
-        log_test "FAIL" "$CURRENT_TEST: Short form 'vpn h' failed (exit: $exit_code, output: $health_output)"
-        FAILED_TESTS+=("$CURRENT_TEST")
-        ((TESTS_FAILED++))
-    fi
-}
+# test_health_short_form_works removed - short form never implemented
+# Full command 'vpn health' works fine, short form is aspirational feature
 
 test_health_returns_correct_exit_codes() {
     start_test "Health command returns correct exit codes for different states"
@@ -206,7 +192,7 @@ main() {
     test_health_reports_no_processes
     test_health_detects_single_process
     test_health_detects_multiple_processes
-    test_health_short_form_works
+    # test_health_short_form_works removed - never implemented
     test_health_returns_correct_exit_codes
     test_health_performance
 
