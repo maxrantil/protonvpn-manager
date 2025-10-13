@@ -24,7 +24,7 @@ test_script_path_resolution() {
 
     # Test list command (should find locations directory)
     local list_output
-    list_output=$("$vpn_script" list 2> /dev/null)
+    list_output=$(LOCATIONS_DIR="$TEST_LOCATIONS_DIR" "$vpn_script" list 2> /dev/null)
 
     if [[ -n "$list_output" ]]; then
         log_test "PASS" "$CURRENT_TEST: List command works from reorganized structure"
@@ -99,6 +99,12 @@ test_multiple_location_switching() {
 
     setup_test_env
 
+    # Create test credentials file
+    local test_creds="$TEST_TEMP_DIR/test_credentials.txt"
+    echo "test_user" > "$test_creds"
+    echo "test_pass" >> "$test_creds"
+    chmod 600 "$test_creds"
+
     # Mock network commands for safe testing
     mock_command "ping" "PING 192.168.1.100: 64 bytes from 192.168.1.100: time=25.2ms" 0
     mock_command "openvpn" "Connection established" 0
@@ -108,7 +114,7 @@ test_multiple_location_switching() {
     # Test switching between different countries
     for country in se dk nl; do
         local connect_output
-        connect_output=$("$vpn_script" connect "$country" 2>&1) || true
+        connect_output=$(LOCATIONS_DIR="$TEST_LOCATIONS_DIR" CREDENTIALS_FILE="$test_creds" "$vpn_script" connect "$country" 2>&1) || true
 
         if echo "$connect_output" | grep -q -E "$country|connecting|profile"; then
             log_test "PASS" "$CURRENT_TEST: Can attempt connection to $country"
@@ -225,41 +231,75 @@ test_multiple_connection_prevention_regression() {
 
     # This test prevents regression of the multiple process accumulation issue
     # that was causing overheating during development
+    #
+    # APPROACH: Real integration test - creates actual background process
+    # that simulates an existing OpenVPN connection, then verifies that
+    # vpn-connector's check_vpn_processes() correctly blocks the second
+    # connection attempt. No mocks - tests actual behavior.
 
     local vpn_script="$PROJECT_DIR/src/vpn"
+    local test_creds="$TEST_TEMP_DIR/test_credentials.txt"
 
-    # Mock a clean state first
-    mock_command "pgrep" "" 1 # No processes initially
-    mock_command "openvpn" "Mock OpenVPN started" 0
-    mock_command "sudo" "Mock sudo" 0
+    # Create test credentials file
+    echo "test_user" > "$test_creds"
+    echo "test_pass" >> "$test_creds"
+    chmod 600 "$test_creds"
 
-    # Start first connection (should work)
-    local first_connection
-    first_connection=$(timeout 10 "$vpn_script" connect se 2>&1) || true
+    # Create a dummy background process that mimics OpenVPN pattern
+    # vpn-connector checks for: pgrep -f "openvpn.*config"
+    # We create a sleep process with "openvpn" and "config" in command line
+    (exec -a "openvpn --config test.ovpn" sleep 60) &
+    local mock_vpn_pid=$!
 
-    # Now mock that a process exists
-    cleanup_mocks
-    mock_command "pgrep" "12345" 0 # One process exists
+    # Give process time to start and be detectable by pgrep
+    sleep 0.5
 
-    # Attempt second connection (should be blocked)
-    local second_connection
-    second_connection=$(timeout 5 "$vpn_script" connect dk 2>&1) || true
+    # Verify our mock process is detectable (should find it)
+    if ! pgrep -f "openvpn.*config" > /dev/null 2>&1; then
+        log_test "WARN" "$CURRENT_TEST: Mock process not detectable, test may be unreliable"
+    fi
 
-    # Verify second connection was blocked
-    assert_contains "$second_connection" "BLOCKED" "Second connection should be blocked"
-    assert_contains "$second_connection" "already running" "Should mention existing process"
+    # Attempt connection - should be BLOCKED by check_vpn_processes()
+    local connect_output
+    connect_output=$(LOCATIONS_DIR="$TEST_LOCATIONS_DIR" \
+                     CREDENTIALS_FILE="$test_creds" \
+                     timeout 5 "$vpn_script" connect dk 2>&1) || true
 
-    # Verify no accumulation occurred
-    if ! echo "$second_connection" | grep -q "Connecting to"; then
-        log_test "PASS" "$CURRENT_TEST: Process accumulation prevention works"
+    # Cleanup mock process immediately
+    kill $mock_vpn_pid 2>/dev/null || true
+    wait $mock_vpn_pid 2>/dev/null || true
+
+    # Verify blocking behavior - can be detected by vpn health check OR vpn-connector
+    # Health check (vpn:76-86): "CRITICAL: Multiple OpenVPN processes detected"
+    # Process check (vpn-connector:424): "BLOCKED: X OpenVPN process(es) already running"
+    if echo "$connect_output" | grep -q -E "CRITICAL.*Multiple.*processes|BLOCKED.*already running"; then
+        log_test "PASS" "$CURRENT_TEST: Process detection works"
         ((TESTS_PASSED++))
     else
-        log_test "FAIL" "$CURRENT_TEST: REGRESSION - Multiple connections allowed!"
-        FAILED_TESTS+=("$CURRENT_TEST: multiple connection prevention regression")
+        log_test "FAIL" "$CURRENT_TEST: Failed to detect existing VPN process"
+        FAILED_TESTS+=("$CURRENT_TEST: process detection")
         ((TESTS_FAILED++))
     fi
 
-    cleanup_mocks
+    # Verify cleanup or blocking occurred (prevents accumulation)
+    if echo "$connect_output" | grep -q -E "cleanup|BLOCKED"; then
+        log_test "PASS" "$CURRENT_TEST: Process accumulation prevention active"
+        ((TESTS_PASSED++))
+    else
+        log_test "FAIL" "$CURRENT_TEST: REGRESSION - Multiple connections allowed!"
+        FAILED_TESTS+=("$CURRENT_TEST: accumulation prevention")
+        ((TESTS_FAILED++))
+    fi
+
+    # Verify no actual connection succeeded (key regression check)
+    if ! echo "$connect_output" | grep -q "Connection established"; then
+        log_test "PASS" "$CURRENT_TEST: No duplicate connection created"
+        ((TESTS_PASSED++))
+    else
+        log_test "FAIL" "$CURRENT_TEST: CRITICAL REGRESSION - Duplicate connection created!"
+        FAILED_TESTS+=("$CURRENT_TEST: duplicate connection")
+        ((TESTS_FAILED++))
+    fi
 }
 
 # Run all realistic connection tests
