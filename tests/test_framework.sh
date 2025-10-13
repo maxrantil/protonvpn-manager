@@ -2,12 +2,16 @@
 # ABOUTME: Test framework for VPN management system
 # ABOUTME: Provides utilities for unit, integration, and end-to-end testing
 
-# Test framework variables
-TEST_DIR="$(dirname "$(realpath "$0")")"
-PROJECT_DIR="$(dirname "$TEST_DIR")"
-TESTS_PASSED=0
-TESTS_FAILED=0
-CURRENT_TEST=""
+# Test framework variables (with include guard to prevent re-initialization)
+if [[ -z "${TEST_FRAMEWORK_LOADED:-}" ]]; then
+    TEST_FRAMEWORK_LOADED=1
+    TEST_DIR="$(dirname "$(realpath "$0")")"
+    PROJECT_DIR="$(dirname "$TEST_DIR")"
+    TESTS_PASSED=0
+    TESTS_FAILED=0
+    CURRENT_TEST=""
+    FAILED_TESTS=()
+fi
 
 # Color codes for output
 RED='\033[0;31m'
@@ -15,9 +19,6 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
-
-# Test result tracking
-FAILED_TESTS=()
 
 log_test() {
     local level="$1"
