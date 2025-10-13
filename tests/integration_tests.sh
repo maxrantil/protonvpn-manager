@@ -148,7 +148,7 @@ test_dependency_checking() {
     # Restore PATH
     export PATH="$original_path"
 
-    assert_contains "$dep_output" "Missing dependencies" "Should detect missing dependencies"
+    assert_contains "$dep_output" "dependencies missing" "Should detect missing dependencies"
 }
 
 test_lock_file_mechanism() {
@@ -214,7 +214,7 @@ test_error_handling() {
         local error_output
         error_output=$(cat /tmp/error_output)
 
-        assert_contains "$error_output" "not found" "Should handle missing directory gracefully"
+        assert_contains "$error_output" "FILE_ACCESS" "Should handle missing directory gracefully"
 
         rm -f /tmp/error_output
     fi
