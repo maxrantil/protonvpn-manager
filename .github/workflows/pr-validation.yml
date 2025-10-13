@@ -1,0 +1,62 @@
+# ABOUTME: PR validation workflows for protonvpn-manager (using centralized reusable workflows)
+
+name: PR Validation
+
+on:
+  pull_request:
+    branches: [master]
+    types: [opened, edited, synchronize]
+
+jobs:
+  pr-title:
+    name: Check PR Title
+    uses: maxrantil/.github/.github/workflows/pr-title-check-reusable.yml@master
+    with:
+      allowed-types: 'feat,fix,docs,style,refactor,test,chore,perf,ci,build'
+
+  commit-format:
+    name: Check Commit Format
+    uses: maxrantil/.github/.github/workflows/conventional-commit-check-reusable.yml@master
+    with:
+      base-branch: 'master'
+      allowed-types: 'feat,fix,docs,style,refactor,test,chore,perf,ci,build'
+
+  ai-attribution:
+    name: Block AI Attribution
+    uses: maxrantil/.github/.github/workflows/block-ai-attribution-reusable.yml@master
+    with:
+      base-branch: 'master'
+
+  commit-quality:
+    name: Commit Quality Check
+    permissions:
+      pull-requests: write
+      contents: read
+    uses: maxrantil/.github/.github/workflows/commit-quality-check-reusable.yml@master
+    with:
+      base-branch: 'master'
+      fail-on-fixups: false
+      suggest-cleanup: true
+      cleanup-score-threshold: 'MEDIUM'
+
+  session-handoff:
+    name: Verify Session Handoff
+    uses: maxrantil/.github/.github/workflows/session-handoff-check-reusable.yml@master
+    with:
+      base-branch: 'master'
+
+  shell-quality:
+    name: Shell Quality Checks
+    uses: maxrantil/.github/.github/workflows/shell-quality-reusable.yml@master
+
+  pre-commit:
+    name: Pre-commit Validation
+    uses: maxrantil/.github/.github/workflows/pre-commit-validation-reusable.yml@master
+    with:
+      python-version: '3.11'
+
+  protect-master:
+    name: Protect Master Branch
+    uses: maxrantil/.github/.github/workflows/protect-master-reusable.yml@master
+    with:
+      protected-branch: 'master'
