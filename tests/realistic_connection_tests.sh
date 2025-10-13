@@ -99,6 +99,12 @@ test_multiple_location_switching() {
 
     setup_test_env
 
+    # Create test credentials file
+    local test_creds="$TEST_TEMP_DIR/test_credentials.txt"
+    echo "test_user" > "$test_creds"
+    echo "test_pass" >> "$test_creds"
+    chmod 600 "$test_creds"
+
     # Mock network commands for safe testing
     mock_command "ping" "PING 192.168.1.100: 64 bytes from 192.168.1.100: time=25.2ms" 0
     mock_command "openvpn" "Connection established" 0
@@ -108,7 +114,7 @@ test_multiple_location_switching() {
     # Test switching between different countries
     for country in se dk nl; do
         local connect_output
-        connect_output=$(LOCATIONS_DIR="$TEST_LOCATIONS_DIR" "$vpn_script" connect "$country" 2>&1) || true
+        connect_output=$(LOCATIONS_DIR="$TEST_LOCATIONS_DIR" CREDENTIALS_FILE="$test_creds" "$vpn_script" connect "$country" 2>&1) || true
 
         if echo "$connect_output" | grep -q -E "$country|connecting|profile"; then
             log_test "PASS" "$CURRENT_TEST: Can attempt connection to $country"
@@ -227,6 +233,12 @@ test_multiple_connection_prevention_regression() {
     # that was causing overheating during development
 
     local vpn_script="$PROJECT_DIR/src/vpn"
+    local test_creds="$TEST_TEMP_DIR/test_credentials.txt"
+
+    # Create test credentials file
+    echo "test_user" > "$test_creds"
+    echo "test_pass" >> "$test_creds"
+    chmod 600 "$test_creds"
 
     # Mock a clean state first
     mock_command "pgrep" "" 1 # No processes initially
@@ -235,7 +247,7 @@ test_multiple_connection_prevention_regression() {
 
     # Start first connection (should work)
     local first_connection
-    first_connection=$(LOCATIONS_DIR="$TEST_LOCATIONS_DIR" timeout 10 "$vpn_script" connect se 2>&1) || true
+    first_connection=$(LOCATIONS_DIR="$TEST_LOCATIONS_DIR" CREDENTIALS_FILE="$test_creds" timeout 10 "$vpn_script" connect se 2>&1) || true
 
     # Now mock that a process exists
     cleanup_mocks
@@ -243,7 +255,7 @@ test_multiple_connection_prevention_regression() {
 
     # Attempt second connection (should be blocked)
     local second_connection
-    second_connection=$(LOCATIONS_DIR="$TEST_LOCATIONS_DIR" timeout 5 "$vpn_script" connect dk 2>&1) || true
+    second_connection=$(LOCATIONS_DIR="$TEST_LOCATIONS_DIR" CREDENTIALS_FILE="$test_creds" timeout 5 "$vpn_script" connect dk 2>&1) || true
 
     # Verify second connection was blocked
     assert_contains "$second_connection" "BLOCKED" "Second connection should be blocked"
