@@ -4,7 +4,7 @@
 
 # Configuration paths
 CONFIG_DIR="${VPN_CONFIG_DIR:-$HOME/.config/vpn}"
-LOCATIONS_DIR="$CONFIG_DIR/locations"
+LOCATIONS_DIR="${LOCATIONS_DIR:-$CONFIG_DIR/locations}"
 
 # Script locations - robust detection for installed vs development mode
 if [[ -f "/usr/local/bin/vpn-manager" ]] && [[ -f "/usr/local/bin/vpn-error-handler" ]]; then
