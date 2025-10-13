@@ -72,7 +72,8 @@ test_cleanup_output_mentions_networkmanager_intact() {
     local cleanup_output
     cleanup_output=$("$PROJECT_DIR/src/vpn" cleanup 2>&1)
 
-    if echo "$cleanup_output" | grep -q "NetworkManager left intact"; then
+    # Strip ANSI color codes for reliable matching
+    if echo "$cleanup_output" | sed 's/\x1b\[[0-9;]*m//g' | grep -q "NetworkManager left intact"; then
         log_test "PASS" "$CURRENT_TEST: Cleanup output confirms NetworkManager preservation"
         ((TESTS_PASSED++))
     else
