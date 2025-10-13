@@ -176,7 +176,7 @@ Read CLAUDE.md to understand our workflow, then fix test runner accumulator bug.
 
 **Immediate priority**: Fix `tests/run_tests.sh` accumulator bug (1-2 hours)
 **Context**: Integration test fixes complete (21/21 + 17/17 passing), but test runner doesn't accumulate counts from subshells
-**Reference docs**: SESSION_HANDOVER.md, `tests/run_tests.sh:159-169`, GitHub issue #[TBD]
+**Reference docs**: SESSION_HANDOVER.md, `tests/run_tests.sh:159-169`, Issue #102
 **Ready state**: PR #101 ready (code complete, AI attribution clean), blocked by test runner bug
 
 **Expected scope**:
@@ -260,12 +260,13 @@ Read CLAUDE.md to understand our workflow, then fix test runner accumulator bug.
 
 ## 📚 Key Reference Documents
 
-- **PR #101**: https://github.com/maxrantil/protonvpn-manager/pull/101
+- **PR #101**: https://github.com/maxrantil/protonvpn-manager/pull/101 (integration test fixes, blocked by #102)
+- **Issue #102**: https://github.com/maxrantil/protonvpn-manager/issues/102 (test runner accumulator bug - NEXT SESSION)
 - **PR #100**: https://github.com/maxrantil/protonvpn-manager/pull/100 (merged)
 - **PR #99**: https://github.com/maxrantil/protonvpn-manager/pull/99 (merged)
-- **Issue #60**: TOCTOU race condition tests (next priority)
+- **Issue #60**: TOCTOU race condition tests (P0 roadmap - after #102)
 - **CLAUDE.md Section 3**: TDD principles and testing requirements
 
 ---
 
-**Doctor Hubert**: CI test investigation complete! All realistic connection tests passing (17/17). Real integration test approach eliminated mock complexity and provides permanent solution. Ready to continue P0 roadmap with Issue #60.
+**Doctor Hubert**: Integration test fixes complete! All tests passing individually (21/21 + 17/17 = 100%), AI attribution removed, history clean. Discovered pre-existing test runner bug (Issue #102) - next session will fix accumulator, then merge PR #101, then continue P0 roadmap with Issue #60. By the book. ✅
