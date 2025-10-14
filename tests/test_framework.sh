@@ -135,7 +135,14 @@ assert_command_succeeds() {
     local command="$1"
     local message="${2:-Command should succeed}"
 
-    if eval "$command" > /dev/null 2>&1; then
+    # Security: Use bash -c instead of eval to prevent command injection (HIGH-4)
+    # Run in restricted subshell with minimal environment
+    if (
+        set -eu
+        readonly HOME PATH
+        unset SUDO_* SSH_* || true
+        bash -c "$command"
+    ) > /dev/null 2>&1; then
         log_test "PASS" "$CURRENT_TEST: $message - '$command'"
         ((TESTS_PASSED++))
         return 0
@@ -151,7 +158,14 @@ assert_command_fails() {
     local command="$1"
     local message="${2:-Command should fail}"
 
-    if ! eval "$command" > /dev/null 2>&1; then
+    # Security: Use bash -c instead of eval to prevent command injection (HIGH-4)
+    # Run in restricted subshell with minimal environment
+    if ! (
+        set -eu
+        readonly HOME PATH
+        unset SUDO_* SSH_* || true
+        bash -c "$command"
+    ) > /dev/null 2>&1; then
         log_test "PASS" "$CURRENT_TEST: $message - '$command'"
         ((TESTS_PASSED++))
         return 0

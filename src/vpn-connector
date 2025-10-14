@@ -20,11 +20,28 @@ fi
 LOG_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/vpn"
 mkdir -p "$LOG_DIR" 2> /dev/null
 
+# Security: Use XDG runtime directory for lock files (prevents symlink attacks)
+LOCK_DIR="${XDG_RUNTIME_DIR:-/run/user/$UID}/vpn"
+if [[ ! -d "$LOCK_DIR" ]]; then
+    mkdir -p "$LOCK_DIR" 2> /dev/null || LOCK_DIR="/tmp/vpn_$$"
+    chmod 700 "$LOCK_DIR" 2> /dev/null || {
+        echo "ERROR: Cannot create secure lock directory" >&2
+        exit 1
+    }
+fi
+
+# Verify directory permissions after creation
+actual_perms=$(stat -c '%a' "$LOCK_DIR" 2> /dev/null)
+if [[ "$actual_perms" != "700" ]]; then
+    echo "ERROR: Lock directory has insecure permissions: $actual_perms" >&2
+    exit 1
+fi
+
 PERFORMANCE_CACHE="$LOG_DIR/vpn_performance.cache"
 CONNECTION_LOG="$LOG_DIR/vpn_connect.log"
-LOCK_FILE="/tmp/vpn_connect.lock"
+LOCK_FILE="$LOCK_DIR/vpn_connect.lock"
 
-# Ensure log files have secure permissions
+# Security: Ensure log files have secure permissions (600 - only owner can read/write)
 for logfile in "$CONNECTION_LOG" "$PERFORMANCE_CACHE"; do
     if [[ -L "$logfile" ]]; then
         rm -f "$logfile"
@@ -32,13 +49,14 @@ for logfile in "$CONNECTION_LOG" "$PERFORMANCE_CACHE"; do
     if [[ ! -f "$logfile" ]]; then
         touch "$logfile"
     fi
-    chmod 644 "$logfile"
+    chmod 600 "$logfile"
 done
 
-# Source centralized error handling and utilities
+# Source centralized error handling, utilities, and security validators
 source "$VPN_DIR/vpn-error-handler"
 source "$VPN_DIR/vpn-utils"
 source "$VPN_DIR/vpn-colors"
+source "$VPN_DIR/vpn-validators"
 
 detect_protocol() {
     local profile_path="$1"
@@ -101,18 +119,22 @@ check_dependencies() {
 }
 
 acquire_lock() {
-    if [[ -f "$LOCK_FILE" ]]; then
+    # Security: Use flock for atomic locking (prevents race conditions)
+    # File descriptor 200 is used for the lock
+    exec 200>"$LOCK_FILE"
+    if ! flock -n 200; then
         local lock_pid
         lock_pid=$(cat "$LOCK_FILE" 2> /dev/null)
         if [[ -n "$lock_pid" ]] && kill -0 "$lock_pid" 2> /dev/null; then
             echo -e "\033[1;33mAnother VPN connection is already in progress (PID: $lock_pid)\033[0m"
-            return 1
         else
-            rm -f "$LOCK_FILE"
+            echo -e "\033[1;33mAnother VPN connection is in progress\033[0m"
         fi
+        return 1
     fi
 
-    echo $$ > "$LOCK_FILE"
+    # Write PID to lock file after acquiring lock
+    echo $$ >&200
     return 0
 }
 
@@ -139,7 +161,8 @@ list_profiles() {
     if [[ -n "$filter" ]]; then
         profiles=$(find_profiles_by_country "$filter")
     else
-        profiles=$(find "$LOCATIONS_DIR" \( -name "*.ovpn" -o -name "*.conf" \) 2> /dev/null | sort)
+        # Security: Limit directory traversal depth and reject symlinks (MEDIUM-1)
+        profiles=$(find "$LOCATIONS_DIR" -maxdepth 3 -xtype f \( -name "*.ovpn" -o -name "*.conf" \) 2> /dev/null | sort)
     fi
 
     if [[ -z "$profiles" ]]; then
@@ -197,7 +220,8 @@ list_profiles() {
 }
 
 detect_secure_core_profiles() {
-    find "$LOCATIONS_DIR" \( -name "*.ovpn" -o -name "*.conf" \) 2> /dev/null | while IFS= read -r profile; do
+    # Security: Limit directory traversal depth and reject symlinks (MEDIUM-1)
+    find "$LOCATIONS_DIR" -maxdepth 3 -xtype f \( -name "*.ovpn" -o -name "*.conf" \) 2> /dev/null | while IFS= read -r profile; do
         local name
         # Handle both .ovpn and .conf extensions
         name=$(basename "$profile" | sed 's/\.\(ovpn\|conf\)$//')
@@ -223,7 +247,8 @@ interactive_profile_selection() {
         profiles=$(find_profiles_by_country "$filter")
         echo -e "\033[1;36mProfiles matching '$filter':\033[0m"
     else
-        profiles=$(find "$LOCATIONS_DIR" \( -name "*.ovpn" -o -name "*.conf" \) 2> /dev/null | sort)
+        # Security: Limit directory traversal depth and reject symlinks (MEDIUM-1)
+        profiles=$(find "$LOCATIONS_DIR" -maxdepth 3 -xtype f \( -name "*.ovpn" -o -name "*.conf" \) 2> /dev/null | sort)
         echo -e "\033[1;36mAll available profiles:\033[0m"
     fi
 
@@ -295,7 +320,8 @@ find_profiles_by_country() {
     local country_code="$1"
 
     if [[ -z "$country_code" ]]; then
-        find "$LOCATIONS_DIR" \( -name "*.ovpn" -o -name "*.conf" \) 2> /dev/null | sort
+        # Security: Limit directory traversal depth and reject symlinks (MEDIUM-1)
+        find "$LOCATIONS_DIR" -maxdepth 3 -xtype f \( -name "*.ovpn" -o -name "*.conf" \) 2> /dev/null | sort
         return
     fi
 
@@ -308,8 +334,8 @@ find_profiles_by_country() {
     country_code=$(echo "$country_code" | tr '[:upper:]' '[:lower:]')
     local results
 
-    # Primary pattern: country code prefix for both protocols
-    results=$(find "$LOCATIONS_DIR" \( -name "${country_code}-*.ovpn" -o -name "${country_code}-*.conf" \) 2> /dev/null)
+    # Security: Primary pattern with traversal limits (MEDIUM-1)
+    results=$(find "$LOCATIONS_DIR" -maxdepth 3 -xtype f \( -name "${country_code}-*.ovpn" -o -name "${country_code}-*.conf" \) 2> /dev/null)
 
     # Secondary pattern: try variations like *_se_*, *SE*, etc.
     if [[ -z "$results" ]]; then
@@ -326,7 +352,8 @@ find_profiles_by_country() {
 
         for pattern in "${patterns[@]}"; do
             local matches
-            matches=$(find "$LOCATIONS_DIR" -name "$pattern" 2> /dev/null)
+            # Security: Limit directory traversal depth and reject symlinks (MEDIUM-1)
+            matches=$(find "$LOCATIONS_DIR" -maxdepth 3 -xtype f -name "$pattern" 2> /dev/null)
             if [[ -n "$matches" ]]; then
                 results="$matches"
                 break
@@ -334,16 +361,17 @@ find_profiles_by_country() {
         done
     fi
 
-    # Fallback: case-insensitive search in filenames for both protocols
+    # Security: Fallback with traversal limits (MEDIUM-1)
     if [[ -z "$results" ]]; then
-        results=$(find "$LOCATIONS_DIR" \( -name "*.ovpn" -o -name "*.conf" \) 2> /dev/null | grep -i "$country_code")
+        results=$(find "$LOCATIONS_DIR" -maxdepth 3 -xtype f \( -name "*.ovpn" -o -name "*.conf" \) 2> /dev/null | grep -i "$country_code")
     fi
 
     echo "$results" | sort
 }
 
 get_available_countries() {
-    find "$LOCATIONS_DIR" \( -name "*.ovpn" -o -name "*.conf" \) 2> /dev/null | while IFS= read -r profile; do
+    # Security: Limit directory traversal depth and reject symlinks (MEDIUM-1)
+    find "$LOCATIONS_DIR" -maxdepth 3 -xtype f \( -name "*.ovpn" -o -name "*.conf" \) 2> /dev/null | while IFS= read -r profile; do
         local name
         # Handle both .ovpn and .conf extensions
         name=$(basename "$profile" | sed 's/\.\(ovpn\|conf\)$//')
@@ -446,25 +474,16 @@ connect_openvpn_profile() {
         return 1
     fi
 
-    # Security: Validate credentials file
-    if [[ -L "$CREDENTIALS_FILE" ]]; then
-        echo -e "\033[1;31mERROR: Credentials file is a symlink - security risk!\033[0m"
+    # Security: Comprehensive credential validation with HIGH-5 permission verification
+    if ! validate_and_secure_credentials "$CREDENTIALS_FILE"; then
+        log_message "SECURITY: Credentials file validation failed" "$CONNECTION_LOG"
         return 1
     fi
 
-    # Check ownership
-    local file_owner
-    file_owner=$(stat -c "%U" "$CREDENTIALS_FILE" 2> /dev/null)
-    if [[ "$file_owner" != "$(whoami)" ]]; then
-        echo -e "\033[1;31mERROR: Credentials file not owned by current user!\033[0m"
+    # Security: Validate profile path before sudo operation (HIGH-2)
+    if ! validate_profile_path "$profile_path" "$LOCATIONS_DIR"; then
+        log_message "SECURITY: Profile path validation failed: $profile_path" "$CONNECTION_LOG"
         return 1
-    fi
-
-    # Fix permissions if needed
-    local file_perms
-    file_perms=$(stat -c "%a" "$CREDENTIALS_FILE" 2> /dev/null)
-    if [[ "$file_perms" != "600" ]]; then
-        chmod 600 "$CREDENTIALS_FILE"
     fi
 
     # Check for existing VPN processes (any protocol)
@@ -712,12 +731,12 @@ get_cached_best_profile() {
     # Use our comprehensive performance cache system
     local best_profile_name
     if best_profile_name=$("$VPN_DIR/best-vpn-profile" best "$country_filter" 2> /dev/null); then
-        # Convert profile name back to full path
+        # Security: Convert profile name to full path with traversal limits (MEDIUM-1)
         local profile_path
         if [[ -n "$country_filter" ]]; then
-            profile_path=$(find "$LOCATIONS_DIR" \( -name "*${best_profile_name}*.ovpn" -o -name "*${best_profile_name}*.conf" \) | head -n1)
+            profile_path=$(find "$LOCATIONS_DIR" -maxdepth 3 -xtype f \( -name "*${best_profile_name}*.ovpn" -o -name "*${best_profile_name}*.conf" \) | head -n1)
         else
-            profile_path=$(find "$LOCATIONS_DIR" \( -name "${best_profile_name}.ovpn" -o -name "${best_profile_name}.conf" \) | head -n1)
+            profile_path=$(find "$LOCATIONS_DIR" -maxdepth 3 -xtype f \( -name "${best_profile_name}.ovpn" -o -name "${best_profile_name}.conf" \) | head -n1)
         fi
 
         if [[ -f "$profile_path" ]]; then
@@ -726,8 +745,8 @@ get_cached_best_profile() {
             return 0
         else
             echo -e "\033[1;33mCached profile path not found for: $best_profile_name\033[0m"
-            # Fallback to any matching profile
-            profile_path=$(find "$LOCATIONS_DIR" -name "*${best_profile_name}*" | head -n1)
+            # Security: Fallback with traversal limits (MEDIUM-1)
+            profile_path=$(find "$LOCATIONS_DIR" -maxdepth 3 -xtype f -name "*${best_profile_name}*" | head -n1)
             if [[ -f "$profile_path" ]]; then
                 echo -e "\033[1;32mUsing cached closest match: $(basename "$profile_path")\033[0m"
                 echo "$profile_path"
@@ -756,12 +775,12 @@ test_and_cache_performance() {
     # Use our comprehensive performance testing engine
     local best_profile_name
     if best_profile_name=$("$VPN_DIR/best-vpn-profile" fresh "$country_filter" 2> /dev/null); then
-        # Convert profile name back to full path
+        # Security: Convert profile name to full path with traversal limits (MEDIUM-1)
         local profile_path
         if [[ -n "$country_filter" ]]; then
-            profile_path=$(find "$LOCATIONS_DIR" \( -name "*${best_profile_name}*.ovpn" -o -name "*${best_profile_name}*.conf" \) | head -n1)
+            profile_path=$(find "$LOCATIONS_DIR" -maxdepth 3 -xtype f \( -name "*${best_profile_name}*.ovpn" -o -name "*${best_profile_name}*.conf" \) | head -n1)
         else
-            profile_path=$(find "$LOCATIONS_DIR" \( -name "${best_profile_name}.ovpn" -o -name "${best_profile_name}.conf" \) | head -n1)
+            profile_path=$(find "$LOCATIONS_DIR" -maxdepth 3 -xtype f \( -name "${best_profile_name}.ovpn" -o -name "${best_profile_name}.conf" \) | head -n1)
         fi
 
         if [[ -f "$profile_path" ]]; then
@@ -771,8 +790,8 @@ test_and_cache_performance() {
             return 0
         else
             echo -e "\033[1;33mProfile path not found for: $best_profile_name\033[0m"
-            # Fallback to any matching profile
-            profile_path=$(find "$LOCATIONS_DIR" -name "*${best_profile_name}*" | head -n1)
+            # Security: Fallback with traversal limits (MEDIUM-1)
+            profile_path=$(find "$LOCATIONS_DIR" -maxdepth 3 -xtype f -name "*${best_profile_name}*" | head -n1)
             if [[ -f "$profile_path" ]]; then
                 echo -e "\033[1;32mUsing closest match: $(basename "$profile_path")\033[0m"
                 echo "$profile_path"
