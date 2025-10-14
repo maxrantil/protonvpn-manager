@@ -1,15 +1,40 @@
-# Session Handoff: Pre-Commit Hook Fix & Test Preparation
+# Session Handoff: E2E Test Fixes Complete - 100% Pass Rate Achieved
 
-**Date**: 2025-10-13
+**Date**: 2025-10-14
 **Branch**: master
-**Commit**: 40f1251
-**Status**: ✅ READY FOR TEST FIXES - AI attribution blocked, 95% test success rate (109/114 passing)
+**Commit**: 500ba5e
+**Status**: ✅ ALL TESTS PASSING - 100% success rate (114/114 passing)
 
 ---
 
 ## ✅ Completed Work
 
-### Issue #103: Pre-Commit Hook AI Attribution Blocking
+### Issue #104: Fix Remaining E2E Test Failures
+
+**Problem**: E2E tests were failing (13/18 passing, 72% success rate) due to:
+1. Test script using `set -e` causing early exit on first failure
+2. Cache Management test expecting "No performance cache found" but finding actual cache
+3. Error Recovery tests not properly passing LOCATIONS_DIR environment variable
+4. Security test creating credentials file with wrong permissions
+
+**Solution**:
+1. Removed `set -e` from e2e_tests.sh line 5 to allow all tests to run
+2. Updated Cache Management test to handle auto-created empty cache files
+3. Fixed Error Recovery tests by passing environment variables inline with command execution
+4. Fixed Security test by setting correct 600 permissions on test credentials
+
+**Result**:
+- Issue #104 closed
+- PR #105 merged to master
+- ALL 114 tests passing (100% success rate)
+- Test suite breakdown:
+  - Unit Tests: 35/35 (100%)
+  - Integration Tests: 21/21 (100%)
+  - End-to-End Tests: 18/18 (100%) ← **FIXED from 13/18**
+  - Realistic Connection: 17/17 (100%)
+  - Process Safety: 23/23 (100%)
+
+### Issue #103: Pre-Commit Hook AI Attribution Blocking (Previous Session)
 
 **Problem**: The existing `no-ai-attribution` hook only checked file contents during pre-commit stage, not commit messages themselves. This allowed AI attribution to slip into git history.
 
@@ -96,15 +121,15 @@ Following "do it by the book, low time-preference" motto, systematically analyze
 
 ## 🎯 Current Project State
 
-**Tests**: ✅ 95% passing (109/114) - **UP FROM 91%**
+**Tests**: ✅ 100% passing (114/114) - **ALL TESTS PASSING!**
 **Branch**: ✅ Clean master branch (synced with origin)
-**Commits**: 40f1251 (Issue #103 - AI attribution blocking)
-**CI/CD**: ⚠️ Blocked by GitHub Actions billing
+**Commits**: 500ba5e (Merge PR #105 - E2E test fixes)
+**CI/CD**: ⚠️ Blocked by GitHub Actions billing (tests pass locally)
 
 ### Test Suite Breakdown
 - ✅ **Unit Tests**: 35/35 (100%)
-- ✅ **Integration Tests**: 21/21 (100%) ← **WAS 20/21**
-- ⚠️ **E2E Tests**: 13/18 (72%)
+- ✅ **Integration Tests**: 21/21 (100%)
+- ✅ **E2E Tests**: 18/18 (100%) ← **FIXED from 13/18**
 - ✅ **Realistic Connection**: 17/17 (100%)
 - ✅ **Process Safety**: 23/23 (100%)
 
@@ -118,48 +143,63 @@ Following "do it by the book, low time-preference" motto, systematically analyze
 
 ## 🚀 Next Session Priorities
 
-### Immediate (Remaining 5 E2E test failures)
+### Immediate: Phase 2 Security Improvements (PUBLIC_RELEASE_PLAN.md)
 
-**STATUS**: Down to ONLY E2E failures (regression and integration tests now 100%)
+**STATUS**: All tests passing, ready for security hardening phase
 
-**1-3. E2E Error/Cache Failures** (3 explicitly listed)
-- Cache Management Workflow: Should handle missing cache
-- Error Recovery: Should handle missing directory
-- Error Recovery: Should handle empty directory
-- Priority: MEDIUM (likely assertion issues)
+**HIGH Priority Security Fixes** (from PUBLIC_RELEASE_PLAN.md):
 
-**4-5. E2E Hidden Failures** (2 not explicitly listed)
-- E2E shows "13 passed, 5 failed" but only 3 failures listed in summary
-- Likely early test exit issue due to `set -e` in test file
-- May need to remove `set -e` or add more error handling
-- Priority: MEDIUM (structural test issue)
+1. **Fix Lock File Race Conditions** (2 hours)
+   - Files: `src/vpn-manager:20`, `src/vpn-connector:25`
+   - Use XDG runtime directory instead of predictable `/tmp` paths
+   - Implement atomic locking with flock
+
+2. **Harden Sudo Input Validation** (3 hours)
+   - Files: `src/vpn-manager:370+`, `src/vpn-connector:492+`
+   - Create validation library for profile paths
+   - Add comprehensive path validation before sudo operations
+
+3. **Secure Temporary File Handling** (2 hours)
+   - Files: `src/vpn-manager:102`, `src/vpn-connector:23-24`
+   - Use XDG cache directory instead of `/tmp`
+   - Use mktemp for temporary files
+
+4. **Replace eval in Test Framework** (1 hour)
+   - Files: `tests/test_framework.sh:138,154`
+   - Replace eval with direct execution or array expansion
+
+5. **Enhanced Credential File Validation** (1 hour)
+   - Files: `src/vpn-connector:464-468`, `src/vpn-manager:146-152`
+   - Verify chmod success and re-check permissions
 
 ### Strategic Context
-- **Phase 1 Day 1 Complete**: Git history cleanup, LICENSE, SECURITY.md, README
-- **PR #101**: Merged to master (test runner fix + Phase 1 docs)
-- **Next**: Phase 2 security improvements OR finish test fixes first
+- **All tests passing**: 114/114 (100% success rate)
+- **Ready for Phase 2**: Security improvements before public release
+- **Timeline**: 9-10 hours total for all HIGH priority fixes
 
 ---
 
 ## 📝 Startup Prompt for Next Session
 
-Read CLAUDE.md to understand our workflow, then fix remaining E2E test failures (Option 1 from public release plan).
+Read CLAUDE.md to understand our workflow, then start Phase 2 security improvements from PUBLIC_RELEASE_PLAN.md.
 
-**Immediate priority**: Fix final 5 E2E test failures (1-2 hours)
-**Context**: Issue #103 complete (AI attribution blocking), 95% test success (109/114)
-**Reference docs**: SESSION_HANDOVER.md, tests/e2e_tests.sh, docs/PUBLIC_RELEASE_PLAN.md
-**Ready state**: master branch clean and synced with origin, pre-commit hooks active
+**Immediate priority**: HIGH-priority security hardening (9-10 hours)
+**Context**: Issue #104 complete (E2E tests fixed), 100% test success (114/114)
+**Reference docs**: SESSION_HANDOVER.md, docs/PUBLIC_RELEASE_PLAN.md Phase 2
+**Ready state**: master branch clean, all tests passing, ready for security improvements
 
 **Expected scope**:
-1. Create feature branch for test fixes (feat/issue-TBD-e2e-test-fixes)
-2. Fix E2E test structural issue (may need to remove `set -e` from e2e_tests.sh line 5)
-3. Fix Cache Management test assertion (line 110: "No performance cache found")
-4. Fix Error Recovery tests (lines 147, 155: "not found", "No VPN profiles found")
-5. Run full E2E test suite directly to verify all 18 tests pass
-6. Run full test suite - achieve 100% pass rate (114/114)
-7. Create PR, merge to master
+1. Create GitHub issue for security improvements
+2. Create feature branch (feat/issue-XXX-security-hardening)
+3. Fix lock file race conditions (XDG runtime dir, atomic locking)
+4. Harden sudo input validation (validation library, path checks)
+5. Secure temporary file handling (XDG cache, mktemp)
+6. Replace eval in test framework (direct execution)
+7. Enhanced credential validation (verify chmod success)
+8. Ensure all tests still pass after changes
+9. Create PR, merge to master
 
-**Then**: Phase 2 security improvements (5 HIGH-priority fixes from PUBLIC_RELEASE_PLAN.md)
+**Then**: Phase 3 Documentation updates (SECURITY.md, LICENSE, README for public audience)
 
 ---
 
@@ -167,10 +207,10 @@ Read CLAUDE.md to understand our workflow, then fix remaining E2E test failures 
 
 - **This handoff**: SESSION_HANDOVER.md
 - **Clean repo**: /home/user/workspace/protonvpn-manager
-- **Old repo**: /home/user/workspace/protonvpn-manager.old-history (backup - can be deleted)
-- **Commits**: 40f1251 (Issue #103 - AI attribution blocking)
-- **Public release plan**: docs/PUBLIC_RELEASE_PLAN.md
-- **Issue #103**: Closed - pre-commit hook now blocks AI attribution
+- **Latest commit**: 500ba5e (Merge PR #105 - E2E test fixes)
+- **Public release plan**: docs/PUBLIC_RELEASE_PLAN.md (Phase 2 next)
+- **Issue #104**: ✅ Closed - E2E tests fixed, 100% pass rate achieved
+- **PR #105**: ✅ Merged - All tests passing
 - **CLAUDE.md**: Workflow guidelines
 
 ---
