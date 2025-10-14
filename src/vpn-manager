@@ -15,21 +15,43 @@ fi
 LOG_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/vpn"
 mkdir -p "$LOG_DIR" 2> /dev/null
 
+# Security: Use XDG cache directory for temporary files (prevents symlink attacks)
+CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/vpn"
+mkdir -p "$CACHE_DIR" 2> /dev/null
+chmod 700 "$CACHE_DIR" 2> /dev/null
+
+# Security: Use XDG runtime directory for lock files (prevents symlink attacks)
+LOCK_DIR="${XDG_RUNTIME_DIR:-/run/user/$UID}/vpn"
+if [[ ! -d "$LOCK_DIR" ]]; then
+    mkdir -p "$LOCK_DIR" 2> /dev/null || LOCK_DIR="/tmp/vpn_$$"
+    chmod 700 "$LOCK_DIR" 2> /dev/null || {
+        echo "ERROR: Cannot create secure lock directory" >&2
+        exit 1
+    }
+fi
+
+# Verify directory permissions after creation
+actual_perms=$(stat -c '%a' "$LOCK_DIR" 2> /dev/null)
+if [[ "$actual_perms" != "700" ]]; then
+    echo "ERROR: Lock directory has insecure permissions: $actual_perms" >&2
+    exit 1
+fi
+
 VPN_PID_FILE="/var/run/openvpn.pid"
 VPN_LOG_FILE="$LOG_DIR/vpn_manager.log"
-LOCK_FILE="/tmp/vpn_manager.lock"
+LOCK_FILE="$LOCK_DIR/vpn_manager.lock"
 
 # Security: Check for symlinks in log file path
 if [[ -L "$VPN_LOG_FILE" ]]; then
     rm -f "$VPN_LOG_FILE"
 fi
 
-# Ensure log file has secure permissions
+# Security: Ensure log file has secure permissions (600 - only owner can read/write)
 if [[ ! -f "$VPN_LOG_FILE" ]]; then
     touch "$VPN_LOG_FILE"
-    chmod 644 "$VPN_LOG_FILE"
-elif [[ "$(stat -c '%a' "$VPN_LOG_FILE" 2> /dev/null)" != "644" ]]; then
-    chmod 644 "$VPN_LOG_FILE"
+    chmod 600 "$VPN_LOG_FILE"
+elif [[ "$(stat -c '%a' "$VPN_LOG_FILE" 2> /dev/null)" != "600" ]]; then
+    chmod 600 "$VPN_LOG_FILE"
 fi
 
 # Source centralized utilities and color management
@@ -99,24 +121,38 @@ view_logs() {
 }
 
 get_cached_external_ip() {
-    local cache_file="/tmp/vpn_external_ip_cache"
+    # Security: Use XDG cache directory with atomic writes (HIGH-3)
+    local cache_file="$CACHE_DIR/external_ip.cache"
     local cache_age=30 # Cache for 30 seconds
 
     # Use cache if it exists and is recent
     if [[ -f "$cache_file" ]]; then
-        local cache_timestamp file_age
-        cache_timestamp=$(stat -c %Y "$cache_file" 2> /dev/null || echo "0")
-        file_age=$(($(date +%s) - cache_timestamp))
+        # Security: Detect symlink attacks
+        if [[ -L "$cache_file" ]]; then
+            rm -f "$cache_file"
+        else
+            local cache_timestamp file_age
+            cache_timestamp=$(stat -c %Y "$cache_file" 2> /dev/null || echo "0")
+            file_age=$(($(date +%s) - cache_timestamp))
 
-        if [[ "$file_age" -lt "$cache_age" ]]; then
-            cat "$cache_file" 2> /dev/null && return
+            if [[ "$file_age" -lt "$cache_age" ]]; then
+                cat "$cache_file" 2> /dev/null && return
+            fi
         fi
     fi
 
-    # Fetch fresh IP and cache it
+    # Fetch fresh IP and cache it atomically
     local external_ip
     external_ip=$(curl -s --max-time 5 https://ipinfo.io/ip 2> /dev/null || echo "Unable to determine")
-    echo "$external_ip" > "$cache_file" 2> /dev/null || true
+
+    # Atomic write: write to .tmp then mv (prevents race conditions)
+    echo "$external_ip" > "${cache_file}.tmp" 2> /dev/null || {
+        echo "$external_ip"
+        return
+    }
+    chmod 600 "${cache_file}.tmp" 2> /dev/null
+    mv "${cache_file}.tmp" "$cache_file" 2> /dev/null || true
+
     echo "$external_ip"
 }
 
@@ -677,9 +713,10 @@ cleanup_files() {
         fi
     fi
 
-    # Clean up lock files (these should be user-writable)
+    # Clean up lock files (these should be user-writable in secure LOCK_DIR)
     [[ -f "$LOCK_FILE" ]] && rm -f "$LOCK_FILE" 2> /dev/null
-    [[ -f "/tmp/vpn_connect.lock" ]] && rm -f "/tmp/vpn_connect.lock" 2> /dev/null
+    # Also clean vpn-connector's lock file from same secure directory
+    [[ -f "$LOCK_DIR/vpn_connect.lock" ]] && rm -f "$LOCK_DIR/vpn_connect.lock" 2> /dev/null
 }
 
 cleanup_routes_light() {
@@ -720,7 +757,9 @@ full_cleanup() {
     # Use hierarchical process cleanup
     if hierarchical_process_cleanup "false"; then
         echo "Cleaning up temporary files..."
-        # Only remove cache and lock files - preserve production logs in ~/.local/state/vpn/
+        # Clean secure cache directory (XDG cache)
+        rm -f "$CACHE_DIR"/*.cache 2> /dev/null || true
+        # Legacy cleanup for old /tmp files (can be removed after transition period)
         rm -f /tmp/vpn_*.cache /tmp/vpn_*.lock 2> /dev/null || true
 
         cleanup_files
