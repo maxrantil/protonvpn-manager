@@ -158,6 +158,48 @@ We request that you:
 - **ProtonVPN Security**: https://protonvpn.com/support/security-features/
 - **Linux Security Hardening**: https://www.cyberciti.biz/tips/linux-security.html
 
+## Security Acknowledgments
+
+We deeply appreciate security researchers who help keep protonvpn-manager secure. This section recognizes individuals who have responsibly disclosed security vulnerabilities.
+
+### Hall of Fame
+
+Contributors who have responsibly disclosed security vulnerabilities will be acknowledged here (with their permission):
+
+| Date | Researcher | Issue | Severity |
+|------|-----------|--------|----------|
+| *Future entries* | *Will be added as security reports are received* | - | - |
+
+### Recognition Policy
+
+When you report a security vulnerability:
+1. **We will credit you** in this section (with your permission)
+2. **Your contribution** will be mentioned in release notes
+3. **You choose** how you're identified (real name, pseudonym, or anonymous)
+4. **We include** a brief description of the vulnerability (after fix is released)
+
+### How to Be Acknowledged
+
+When reporting a vulnerability, please indicate:
+- **Name/handle** you'd like to be credited as (or "Anonymous")
+- **Optional**: Your website, Twitter/GitHub handle, or professional affiliation
+- **Permission** to publicly acknowledge your contribution
+
+**Example acknowledgment format**:
+> **March 2025** - *@researcher123* - Reported privilege escalation in sudo validation (HIGH severity). The vulnerability allowed path traversal in profile validation, which could lead to arbitrary file access. Fixed in v1.2.0.
+
+### Thank You!
+
+Security research makes this project safer for everyone. We're grateful for:
+- Your time and expertise
+- Responsible disclosure practices
+- Detailed reports and proof-of-concepts
+- Patience during the fix and disclosure process
+
+If you're interested in security research but new to it, we welcome reports from researchers at all experience levels. Clear communication and responsible disclosure matter more than sophistication.
+
+---
+
 ## Contact
 
 For security-related questions that don't involve vulnerabilities:
@@ -166,5 +208,5 @@ For security-related questions that don't involve vulnerabilities:
 
 ---
 
-**Last Updated**: 2025-10-13
-**Version**: 1.0
+**Last Updated**: 2025-10-15
+**Version**: 1.1
