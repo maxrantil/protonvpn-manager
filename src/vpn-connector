@@ -7,6 +7,14 @@ CONFIG_DIR="${VPN_CONFIG_DIR:-$HOME/.config/vpn}"
 LOCATIONS_DIR="${LOCATIONS_DIR:-$CONFIG_DIR/locations}"
 CREDENTIALS_FILE="${CREDENTIALS_FILE:-$CONFIG_DIR/vpn-credentials.txt}"
 
+# Backward compatibility: Check for old credentials filename
+if [[ ! -f "$CREDENTIALS_FILE" ]] && [[ -f "$CONFIG_DIR/credentials.txt" ]]; then
+    echo "⚠️  WARNING: Found old credentials file 'credentials.txt'" >&2
+    echo "   Please rename it to 'vpn-credentials.txt' for consistency:" >&2
+    echo "   mv ~/.config/vpn/credentials.txt ~/.config/vpn/vpn-credentials.txt" >&2
+    echo "" >&2
+fi
+
 # Script locations - robust detection for installed vs development mode
 if [[ -f "/usr/local/bin/vpn-manager" ]] && [[ -f "/usr/local/bin/vpn-error-handler" ]]; then
     # Installed mode - all components in /usr/local/bin
