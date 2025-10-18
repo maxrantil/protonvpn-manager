@@ -24,7 +24,7 @@ source "$VPN_DIR/vpn-error-handler"
 
 show_banner() {
     echo -e "\033[1;36m╔════════════════════════════════════════╗\033[0m"
-    echo -e "\033[1;36m║             VPN Manager v2.0           ║\033[0m"
+    echo -e "\033[1;36m║           VPN Manager v1.0.0           ║\033[0m"
     echo -e "\033[1;36m║         Artix/Arch Linux Edition       ║\033[0m"
     echo -e "\033[1;36m╚════════════════════════════════════════╝\033[0m"
     echo

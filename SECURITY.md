@@ -208,5 +208,5 @@ For security-related questions that don't involve vulnerabilities:
 
 ---
 
-**Last Updated**: 2025-10-15
-**Version**: 1.1
+**Last Updated**: 2025-10-18
+**Version**: 1.0.0
