@@ -214,7 +214,7 @@ sanitize_user_input() {
     fi
 
     # Reject dangerous shell metacharacters in certain contexts
-    if [[ "$input" =~ [\$\`\\;] ]]; then
+    if [[ "$input" =~ [\$\`\;] ]]; then
         echo "ERROR: Unsafe characters in input" >&2
         return 1
     fi
