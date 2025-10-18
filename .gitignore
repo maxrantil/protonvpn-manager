@@ -44,6 +44,10 @@ venv/
 locations/backups/
 locations/*.ovpn.original
 
+# VPN location files (user-specific, download your own)
+locations/*.ovpn
+locations/.download-metadata/
+
 # Development workflow files (keep local)
 CLAUDE.md
 AGENT_FEEDBACK.md
