@@ -517,6 +517,7 @@ connect_openvpn_profile() {
 
         # Clear previous log to avoid false positives
         sudo rm -f "$LOG_DIR/openvpn.log" 2> /dev/null || true
+        sudo rm -f "/tmp/openvpn.log" 2> /dev/null || true  # Fallback location cleanup
 
         # Start OpenVPN daemon without aggressive timeout
         sudo openvpn \
