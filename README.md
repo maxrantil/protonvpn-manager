@@ -94,6 +94,16 @@ curl -o locations/se-01.protonvpn.com.udp.ovpn \
 
 Create a credentials file with your ProtonVPN OpenVPN username and password:
 
+> ⚠️ **CRITICAL: OpenVPN credentials are DIFFERENT from your ProtonVPN account password!** ⚠️
+>
+> **Do NOT use your regular ProtonVPN login credentials.** You need special OpenVPN credentials.
+>
+> **How to find your OpenVPN credentials:**
+> 1. Log into https://account.protonvpn.com
+> 2. Go to **Account** → **OpenVPN / IKEv2 username**
+> 3. Your OpenVPN username looks like: `username+pm`
+> 4. Click "Show" or "Copy" to get your OpenVPN password
+
 ```bash
 # Create config directory
 mkdir -p ~/.config/vpn
