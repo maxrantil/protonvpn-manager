@@ -100,13 +100,13 @@ mkdir -p ~/.config/vpn
 
 # Create credentials file
 # NOTE: Use your OpenVPN/IKEv2 credentials, NOT your ProtonVPN account password
-cat > ~/.config/vpn/credentials.txt << 'EOF'
+cat > ~/.config/vpn/vpn-credentials.txt << 'EOF'
 your-openvpn-username
 your-openvpn-password
 EOF
 
 # Secure the file (IMPORTANT!)
-chmod 600 ~/.config/vpn/credentials.txt
+chmod 600 ~/.config/vpn/vpn-credentials.txt
 ```
 
 **Finding Your OpenVPN Credentials:**
@@ -128,7 +128,7 @@ ls -la locations/*.ovpn | head -5
 # etc.
 
 # Verify credentials file
-stat -c "%a" ~/.config/vpn/credentials.txt
+stat -c "%a" ~/.config/vpn/vpn-credentials.txt
 
 # Should output: 600 (owner read/write only)
 ```
@@ -179,7 +179,7 @@ protonvpn-manager/
 │   └── ... (other scripts)
 ├── tests/                   # Test suite
 └── ~/.config/vpn/           # User configuration (you create this)
-    └── credentials.txt      # Your ProtonVPN credentials (600 permissions)
+    └── vpn-credentials.txt      # Your ProtonVPN credentials (600 permissions)
 ```
 
 ### Configuration Tips
@@ -191,7 +191,7 @@ If you want to use different accounts, you can specify credentials:
 ./src/vpn connect
 
 # Use specific credentials file
-CREDENTIALS_FILE=~/.config/vpn/work-credentials.txt ./src/vpn connect
+CREDENTIALS_FILE=~/.config/vpn/work-vpn-credentials.txt ./src/vpn connect
 ```
 
 **Custom Config Directory:**
@@ -433,13 +433,13 @@ chmod 644 locations/*.ovpn
 #### "Authentication Failed" Error
 ```bash
 # Check credentials file exists
-ls -la ~/.config/vpn/credentials.txt
+ls -la ~/.config/vpn/vpn-credentials.txt
 
 # Verify credentials format (should be 2 lines: username, then password)
-cat ~/.config/vpn/credentials.txt
+cat ~/.config/vpn/vpn-credentials.txt
 
 # Check file permissions (should be 600)
-stat -c "%a" ~/.config/vpn/credentials.txt
+stat -c "%a" ~/.config/vpn/vpn-credentials.txt
 ```
 
 **Common causes**:
@@ -449,9 +449,9 @@ stat -c "%a" ~/.config/vpn/credentials.txt
 
 **Solution**:
 1. Log in to ProtonVPN web interface to verify credentials
-2. Update `~/.config/vpn/credentials.txt` with correct credentials
+2. Update `~/.config/vpn/vpn-credentials.txt` with correct credentials
 3. Ensure file has exactly 2 lines (username on line 1, password on line 2)
-4. Set correct permissions: `chmod 600 ~/.config/vpn/credentials.txt`
+4. Set correct permissions: `chmod 600 ~/.config/vpn/vpn-credentials.txt`
 
 #### "Credentials File Not Found"
 ```bash
@@ -459,13 +459,13 @@ stat -c "%a" ~/.config/vpn/credentials.txt
 mkdir -p ~/.config/vpn
 
 # Create credentials file
-cat > ~/.config/vpn/credentials.txt << EOF
+cat > ~/.config/vpn/vpn-credentials.txt << EOF
 your-protonvpn-username
 your-protonvpn-password
 EOF
 
 # Secure permissions
-chmod 600 ~/.config/vpn/credentials.txt
+chmod 600 ~/.config/vpn/vpn-credentials.txt
 ```
 
 ### Permission Issues
