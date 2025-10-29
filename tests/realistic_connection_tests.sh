@@ -262,12 +262,12 @@ test_multiple_connection_prevention_regression() {
     # Attempt connection - should be BLOCKED by check_vpn_processes()
     local connect_output
     connect_output=$(LOCATIONS_DIR="$TEST_LOCATIONS_DIR" \
-                     CREDENTIALS_FILE="$test_creds" \
-                     timeout 5 "$vpn_script" connect dk 2>&1) || true
+        CREDENTIALS_FILE="$test_creds" \
+        timeout 5 "$vpn_script" connect dk 2>&1) || true
 
     # Cleanup mock process immediately
-    kill $mock_vpn_pid 2>/dev/null || true
-    wait $mock_vpn_pid 2>/dev/null || true
+    kill $mock_vpn_pid 2> /dev/null || true
+    wait $mock_vpn_pid 2> /dev/null || true
 
     # Verify blocking behavior - can be detected by vpn health check OR vpn-connector
     # Health check (vpn:76-86): "CRITICAL: Multiple OpenVPN processes detected"

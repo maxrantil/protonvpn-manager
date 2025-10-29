@@ -129,7 +129,7 @@ check_dependencies() {
 acquire_lock() {
     # Security: Use flock for atomic locking (prevents race conditions)
     # File descriptor 200 is used for the lock
-    exec 200>"$LOCK_FILE"
+    exec 200> "$LOCK_FILE"
     if ! flock -n 200; then
         local lock_pid
         lock_pid=$(cat "$LOCK_FILE" 2> /dev/null)
@@ -517,7 +517,7 @@ connect_openvpn_profile() {
 
         # Clear previous log to avoid false positives
         sudo rm -f "$LOG_DIR/openvpn.log" 2> /dev/null || true
-        sudo rm -f "/tmp/openvpn.log" 2> /dev/null || true  # Fallback location cleanup
+        sudo rm -f "/tmp/openvpn.log" 2> /dev/null || true # Fallback location cleanup
 
         # Start OpenVPN daemon without aggressive timeout
         sudo openvpn \
