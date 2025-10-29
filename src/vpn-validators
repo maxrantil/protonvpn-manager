@@ -186,7 +186,7 @@ validate_country_code() {
 
     # Optional: Whitelist known codes (can be extended)
     local supported="se dk no nl de ch us uk fr ca jp au is br"
-    [[ " $supported " =~ " $code " ]] || {
+    [[ " $supported " == *" $code "* ]] || {
         echo "WARNING: Unknown country code: $code" >&2
         return 1
     }
