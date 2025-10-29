@@ -140,7 +140,7 @@ assert_command_succeeds() {
     if (
         set -eu
         readonly HOME PATH
-        unset SUDO_* SSH_* || true
+        unset 'SUDO_*' 'SSH_*' || true
         bash -c "$command"
     ) > /dev/null 2>&1; then
         log_test "PASS" "$CURRENT_TEST: $message - '$command'"
@@ -163,7 +163,7 @@ assert_command_fails() {
     if ! (
         set -eu
         readonly HOME PATH
-        unset SUDO_* SSH_* || true
+        unset 'SUDO_*' 'SSH_*' || true
         bash -c "$command"
     ) > /dev/null 2>&1; then
         log_test "PASS" "$CURRENT_TEST: $message - '$command'"

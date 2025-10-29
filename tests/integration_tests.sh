@@ -142,9 +142,9 @@ test_dependency_checking() {
     # Create symlinks to core utilities (needed for script execution)
     local core_utils="bash sh realpath dirname cat grep awk sed chmod stat wc head tail sort find"
     for util in $core_utils; do
-        local util_path=$(command -v "$util" 2>/dev/null)
+        local util_path=$(command -v "$util" 2> /dev/null)
         if [[ -n "$util_path" ]]; then
-            ln -sf "$util_path" "/tmp/test_path_$$/$util" 2>/dev/null || true
+            ln -sf "$util_path" "/tmp/test_path_$$/$util" 2> /dev/null || true
         fi
     done
 
