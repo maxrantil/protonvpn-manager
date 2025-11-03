@@ -1,0 +1,19 @@
+title = "Gitleaks Config for protonvpn-manager"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Allow known false positives in protonvpn-manager"
+paths = [
+  '''README\.md$''',  # Documentation may contain example credentials
+  '''\.github/workflows/.*''',  # Workflow files may reference example tokens
+  '''docs/.*\.md$''',  # Documentation files
+]
+
+regexes = [
+  '''example\.com''',  # Allow example domains
+  '''your-.*-here''',  # Allow placeholder patterns
+  '''REPLACEME''',  # Allow placeholder tokens
+  '''EXAMPLE_.*''',  # Example variable patterns
+]
