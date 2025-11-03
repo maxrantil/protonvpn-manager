@@ -9,6 +9,9 @@ paths = [
   '''README\.md$''',  # Documentation may contain example credentials
   '''\.github/workflows/.*''',  # Workflow files may reference example tokens
   '''docs/.*\.md$''',  # Documentation files
+  '''tests/.*''',  # Test files with test API keys and mock credentials
+  '''locations/.*\.conf$''',  # WireGuard configuration files (user-provided VPN configs)
+  '''src/api-server''',  # API server with test endpoints
 ]
 
 regexes = [
@@ -16,4 +19,6 @@ regexes = [
   '''your-.*-here''',  # Allow placeholder patterns
   '''REPLACEME''',  # Allow placeholder tokens
   '''EXAMPLE_.*''',  # Example variable patterns
+  '''TEST_API_KEY''',  # Test API keys in test files
+  '''test_api_key''',  # Test API keys in test files
 ]
