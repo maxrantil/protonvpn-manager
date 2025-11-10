@@ -4,8 +4,9 @@
 
 set -uo pipefail
 
+# shellcheck disable=SC2034  # SCRIPT_DIR may be used by sourced test frameworks
 SCRIPT_DIR="$(dirname "$(realpath "$0")")"
-PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+# PROJECT_ROOT removed - unused in this test file
 
 # Colors
 GREEN='\033[0;32m'
@@ -233,8 +234,8 @@ else
     fail "Long commit title rejected unexpectedly"
 fi
 
-# Test regex with special characters
-SPECIAL_CHARS_COMMIT="feat(api): add OAuth2.0 support with JWT tokens & refresh"
+# Test regex with special characters (variable removed - unused)
+# SPECIAL_CHARS_COMMIT test can be added if needed for future validation
 
 if [[ "$LARGE_COMMIT_TITLE" =~ $PATTERN ]]; then
     pass "Commit with special characters validated"

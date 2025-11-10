@@ -5,8 +5,10 @@
 set -euo pipefail
 
 # Test configuration
-readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-readonly PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+readonly SCRIPT_DIR
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly PROJECT_ROOT
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 readonly TEST_LOCATIONS_DIR="$SCRIPT_DIR/test_locations"
 readonly FIX_OVPN_FILES="$PROJECT_ROOT/src/fix-ovpn-files"
 
@@ -282,9 +284,8 @@ test_backup_mechanism() {
 
     export LOCATIONS_DIR="$TEST_LOCATIONS_DIR"
 
-    # Count files before repair
-    local files_before
-    files_before=$(find "$TEST_LOCATIONS_DIR" -name "*.ovpn" | wc -l)
+    # Count files before repair (removed - unused in current test)
+    # Can be re-added when implementing file count validation
 
     "$FIX_OVPN_FILES" --repair --backup &> /dev/null || true
 

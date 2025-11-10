@@ -221,8 +221,8 @@ test_warning_system_integration() {
     local invalid_output
     invalid_output=$("$manager_script" invalid_command 2>&1) || true
 
-    assert_contains "$invalid_output" "Usage:" "Should show usage on invalid commands"
-    assert_contains "$invalid_output" "health" "Usage should include health command"
+    assert_contains "$_invalid_output" "Usage:" "Should show usage on invalid commands"
+    assert_contains "$_invalid_output" "health" "Usage should include health command"
 }
 
 test_connection_blocking_code_exists() {
@@ -278,8 +278,8 @@ test_real_process_prevention_system() {
 
     # Create multiple persistent test processes to ensure critical state
     local test_pids=()
-    for i in {1..3}; do
-        bash -c "exec -a 'openvpn --config /test/config$i.ovpn' sleep 120" &
+    for _i in {1..3}; do
+        bash -c "exec -a 'openvpn --config /test/config$_i.ovpn' sleep 120" &
         test_pids+=($!)
     done
 
@@ -329,8 +329,8 @@ test_aggressive_cleanup_effectiveness() {
     local manager_script="$PROJECT_DIR/src/vpn-manager"
 
     # Create multiple stubborn processes that simulate real OpenVPN behavior
-    for i in {1..3}; do
-        bash -c "exec -a 'openvpn --config /test/config$i.ovpn' sleep 30" &
+    for _i in {1..3}; do
+        bash -c "exec -a 'openvpn --config /test/config$_i.ovpn' sleep 30" &
     done
 
     sleep 2 # Let processes start

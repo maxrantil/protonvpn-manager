@@ -401,10 +401,10 @@ test_t1_6_reacquisition_after_release() {
     local cycles=5
     local success_count=0
 
-    for i in $(seq 1 $cycles); do
+    for _i in $(seq 1 $cycles); do
         # Acquire lock
         if ! acquire_lock 2> /dev/null; then
-            log_test "FAIL" "Lock acquisition failed at cycle $i"
+            log_test "FAIL" "Lock acquisition failed at cycle $_i"
             ((TESTS_FAILED++))
             return 1
         fi
@@ -413,7 +413,7 @@ test_t1_6_reacquisition_after_release() {
         local written_pid
         written_pid=$(cat "$LOCK_FILE" 2> /dev/null)
         if [[ "$written_pid" != "$$" ]]; then
-            log_test "FAIL" "PID mismatch at cycle $i - Expected: $$, Got: $written_pid"
+            log_test "FAIL" "PID mismatch at cycle $_i - Expected: $$, Got: $written_pid"
             ((TESTS_FAILED++))
             return 1
         fi
@@ -423,7 +423,7 @@ test_t1_6_reacquisition_after_release() {
 
         # Verify cleanup
         if [[ -f "$LOCK_FILE" ]]; then
-            log_test "FAIL" "Lock file not removed at cycle $i"
+            log_test "FAIL" "Lock file not removed at cycle $_i"
             ((TESTS_FAILED++))
             return 1
         fi
@@ -455,7 +455,7 @@ test_t1_7_lock_file_permissions() {
     # Verify insecure permissions
     local initial_perms
     initial_perms=$(stat -c '%a' "$LOCK_FILE" 2> /dev/null)
-    if [[ "$initial_perms" != "777" ]]; then
+    if [[ "$_initial_perms" != "777" ]]; then
         log_test "FAIL" "Test setup failed - permissions not set to 777"
         ((TESTS_FAILED++))
         return 1
@@ -546,16 +546,16 @@ test_t1_9_multiple_rapid_acquisitions() {
     local failures=0
 
     # Rapidly acquire and release lock many times
-    for i in $(seq 1 $iterations); do
+    for _i in $(seq 1 $_iterations); do
         if ! acquire_lock 2> /dev/null; then
             ((failures++))
-            log_test "FAIL" "Lock acquisition failed at iteration $i"
+            log_test "FAIL" "Lock acquisition failed at iteration $_i"
         fi
 
         # Verify lock is held
         if [[ ! -f "$LOCK_FILE" ]]; then
             ((failures++))
-            log_test "FAIL" "Lock file missing at iteration $i"
+            log_test "FAIL" "Lock file missing at iteration $_i"
         fi
 
         # Release immediately
@@ -563,11 +563,11 @@ test_t1_9_multiple_rapid_acquisitions() {
     done
 
     if [[ $failures -eq 0 ]]; then
-        log_test "PASS" "All $iterations rapid acquisitions succeeded"
+        log_test "PASS" "All $_iterations rapid acquisitions succeeded"
         ((TESTS_PASSED++))
         return 0
     else
-        log_test "FAIL" "$failures failures out of $iterations iterations"
+        log_test "FAIL" "$failures failures out of $_iterations iterations"
         ((TESTS_FAILED++))
         return 1
     fi
@@ -587,7 +587,7 @@ test_t2_1_concurrent_acquisition() {
 
     # Launch 10 background processes simultaneously
     local num_processes=10
-    for i in $(seq 1 $num_processes); do
+    for _i in $(seq 1 $num_processes); do
         (
             exec 200> "$LOCK_FILE"
             if flock -n 200; then
@@ -628,11 +628,11 @@ test_t2_2_rapid_acquire_release_cycles() {
     local iterations=100
     local success_count=0
 
-    for i in $(seq 1 $iterations); do
+    for _i in $(seq 1 $_iterations); do
         # Acquire lock
         exec 200> "$LOCK_FILE"
         if ! flock -n 200; then
-            log_test "FAIL" "Lock acquisition failed at iteration $i"
+            log_test "FAIL" "Lock acquisition failed at iteration $_i"
             ((TESTS_FAILED++))
             return 1
         fi
@@ -644,7 +644,7 @@ test_t2_2_rapid_acquire_release_cycles() {
         local written_pid
         written_pid=$(cat "$LOCK_FILE" 2> /dev/null)
         if [[ "$written_pid" != "$$" ]]; then
-            log_test "FAIL" "PID mismatch at iteration $i - Expected: $$, Got: $written_pid"
+            log_test "FAIL" "PID mismatch at iteration $_i - Expected: $$, Got: $written_pid"
             ((TESTS_FAILED++))
             return 1
         fi
@@ -655,12 +655,12 @@ test_t2_2_rapid_acquire_release_cycles() {
         ((success_count++))
     done
 
-    if [[ $success_count -eq $iterations ]]; then
-        log_test "PASS" "All $iterations rapid cycles completed successfully (no corruption)"
+    if [[ $success_count -eq $_iterations ]]; then
+        log_test "PASS" "All $_iterations rapid cycles completed successfully (no corruption)"
         ((TESTS_PASSED++))
         return 0
     else
-        log_test "FAIL" "Only $success_count/$iterations cycles succeeded"
+        log_test "FAIL" "Only $success_count/$_iterations cycles succeeded"
         ((TESTS_FAILED++))
         return 1
     fi
@@ -740,16 +740,16 @@ test_t2_4_stress_test() {
     local num_processes=20
     local iterations_per_process=50
 
-    log_test "INFO" "Starting stress test: $num_processes processes × $iterations_per_process iterations"
+    log_test "INFO" "Starting stress test: $num_processes processes × $_iterations_per_process iterations"
 
     # Launch processes
     for p in $(seq 1 $num_processes); do
         (
-            for i in $(seq 1 $iterations_per_process); do
+            for _i in $(seq 1 $_iterations_per_process); do
                 exec 200> "$LOCK_FILE"
                 if flock -n 200; then
                     # Record timestamp and PID
-                    echo "$(date +%s%N) $$ $p $i" >> "$result_file"
+                    echo "$(date +%s%N) $$ $p $_i" >> "$result_file"
                     # Hold lock very briefly
                     usleep 100 2> /dev/null || sleep 0.001
                     flock -u 200
@@ -770,8 +770,10 @@ test_t2_4_stress_test() {
     # Under high contention, expect at least 1% success rate (very conservative)
     # This validates lock works correctly under stress without being too strict
     # Note: With 20 concurrent processes, most acquisition attempts will fail
-    local total_attempts=$((num_processes * iterations_per_process))
-    local expected_min=$((total_attempts / 100)) # 1% success rate minimum (10 acquisitions for 1000 attempts)
+    local total_attempts
+    total_attempts=$((num_processes * iterations_per_process))
+    local expected_min
+    expected_min=$((total_attempts / 100)) # 1% success rate minimum (10 acquisitions for 1000 attempts)
 
     if [[ $total_acquisitions -ge $expected_min ]]; then
         log_test "PASS" "Stress test completed: $total_acquisitions acquisitions (≥$expected_min expected)"

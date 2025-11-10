@@ -147,7 +147,8 @@ run_test_suite() {
     echo ""
 
     # Track suite results
-    local suite_start_time=$(date +%s)
+    local suite_start_time
+    suite_start_time=$(date +%s)
     local suite_passed_before=$TESTS_PASSED
     local suite_failed_before=$TESTS_FAILED
 
@@ -167,10 +168,14 @@ run_test_suite() {
         local suite_exit_code=$?
 
         # Calculate suite statistics (now accurate since variables accumulated)
-        local suite_end_time=$(date +%s)
-        local suite_duration=$((suite_end_time - suite_start_time))
-        local suite_passed=$((TESTS_PASSED - suite_passed_before))
-        local suite_failed=$((TESTS_FAILED - suite_failed_before))
+        local suite_end_time
+        suite_end_time=$(date +%s)
+        local suite_duration
+        suite_duration=$((suite_end_time - suite_start_time))
+        local suite_passed
+        suite_passed=$((TESTS_PASSED - suite_passed_before))
+        local suite_failed
+        suite_failed=$((TESTS_FAILED - suite_failed_before))
 
         echo ""
         log_test "INFO" "$suite_name completed in ${suite_duration}s"
@@ -189,7 +194,8 @@ run_test_suite() {
 }
 
 generate_test_report() {
-    local total_tests=$((TESTS_PASSED + TESTS_FAILED))
+    local total_tests
+    total_tests=$((TESTS_PASSED + TESTS_FAILED))
     local success_rate=0
 
     if [[ $total_tests -gt 0 ]]; then
@@ -273,7 +279,9 @@ main() {
         exit 1
     fi
 
-    local start_time=$(date +%s)
+    local start_time
+
+    start_time=$(date +%s)
     local overall_exit_code=0
 
     # Run test suites based on configuration
@@ -328,7 +336,8 @@ main() {
 
         # Issue #60: TOCTOU lock mechanism tests
         log_test "INFO" "Running flock lock implementation tests"
-        local flock_start=$(date +%s)
+        local flock_start
+        flock_start=$(date +%s)
         if ! bash "$TEST_DIR/test_flock_lock_implementation.sh"; then
             log_test "FAIL" "Flock lock implementation tests failed"
             overall_exit_code=1
@@ -337,14 +346,19 @@ main() {
                 exit $overall_exit_code
             fi
         else
-            local flock_end=$(date +%s)
-            local flock_duration=$((flock_end - flock_start))
+            local flock_end
+            flock_end=$(date +%s)
+            local flock_duration
+            flock_duration=$((flock_end - flock_start))
             log_test "INFO" "Flock lock implementation tests completed in ${flock_duration}s"
         fi
     fi
 
-    local end_time=$(date +%s)
-    local total_duration=$((end_time - start_time))
+    local end_time
+
+    end_time=$(date +%s)
+    local total_duration
+    total_duration=$((end_time - start_time))
 
     echo ""
     log_test "INFO" "All test suites completed in ${total_duration}s"

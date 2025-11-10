@@ -191,7 +191,7 @@ test_error_recovery_scenarios() {
     local invalid_output
     invalid_output=$(LOCATIONS_DIR="$TEST_LOCATIONS_DIR" "$connector_script" list xyz 2>&1) || true
 
-    assert_contains "$invalid_output" "No VPN profiles found matching" "Should handle invalid country codes"
+    assert_contains "$_invalid_output" "No VPN profiles found matching" "Should handle invalid country codes"
     return 0
 }
 
@@ -258,8 +258,8 @@ test_performance_scenarios() {
     local connector_script="$PROJECT_DIR/src/vpn-connector"
 
     # Test that large numbers of profiles can be handled
-    for i in {1..20}; do
-        cat > "$TEST_LOCATIONS_DIR/test-$i.ovpn" << EOF
+    for _i in {1..20}; do
+        cat > "$TEST_LOCATIONS_DIR/test-$_i.ovpn" << EOF
 remote 192.168.1.$((100 + i)) 1194
 proto udp
 dev tun
@@ -278,7 +278,8 @@ EOF
 
     local end_time
     end_time=$(date +%s)
-    local duration=$((end_time - start_time))
+    local duration
+    duration=$((end_time - start_time))
 
     # Should complete within reasonable time (5 seconds)
     if [[ $duration -le 5 ]]; then

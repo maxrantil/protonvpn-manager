@@ -5,10 +5,12 @@
 set -euo pipefail
 
 # Test configuration
-readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-readonly PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+readonly SCRIPT_DIR
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly PROJECT_ROOT
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 readonly VPN_SCRIPT="$PROJECT_ROOT/src/vpn"
-readonly VPN_CONNECTOR="$PROJECT_ROOT/src/vpn-connector"
+# VPN_CONNECTOR removed - unused in WireGuard tests
 readonly TEST_LOG="/tmp/wireguard_connection_tests.log"
 
 # Colors for output

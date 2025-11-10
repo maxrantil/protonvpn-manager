@@ -151,7 +151,7 @@ test_config_directories() {
     test_header "Test 6: Configuration Directories"
 
     local config_dir="$HOME/.config/vpn"
-    local locations_dir="$config_dir/locations"
+    # locations_dir removed - unused in current test implementation
     local log_dir="${XDG_STATE_HOME:-$HOME/.local/state}/vpn"
 
     # These directories might not exist until first run

@@ -11,10 +11,8 @@ source "$TEST_DIR/test_framework.sh"
 readonly PERFORMANCE_TESTS="$TEST_DIR/phase8_2_performance_validation_tests.sh"
 readonly EDGE_CASE_TESTS="$TEST_DIR/phase8_3_edge_case_tests.sh"
 
-# Track overall Phase 8 results
-declare -g PHASE8_TOTAL_TESTS=0
-declare -g PHASE8_TOTAL_PASSED=0
-declare -g PHASE8_TOTAL_FAILED=0
+# Track overall Phase 8 results (counters removed - unused in current implementation)
+# Can be re-added when implementing comprehensive phase reporting
 declare -a PHASE8_FAILED_SUITES=()
 
 run_test_suite() {

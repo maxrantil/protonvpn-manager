@@ -5,8 +5,10 @@
 set -euo pipefail
 
 # Test configuration
-readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-readonly PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+readonly SCRIPT_DIR
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly PROJECT_ROOT
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 readonly VPN_SCRIPT="$PROJECT_ROOT/src/vpn"
 readonly VPN_MANAGER="$PROJECT_ROOT/src/vpn-manager"
 readonly TEST_LOG="/tmp/disconnect_safety_tests.log"
@@ -14,7 +16,7 @@ readonly TEST_LOG="/tmp/disconnect_safety_tests.log"
 # Colors for output
 readonly RED='\033[1;31m'
 readonly GREEN='\033[1;32m'
-readonly YELLOW='\033[1;33m'
+# YELLOW removed - unused in this test file
 readonly BLUE='\033[1;36m'
 readonly NC='\033[0m'
 
@@ -132,7 +134,7 @@ test_disconnect_restores_internet() {
 
     # Test internet connectivity after disconnect
     local connectivity_test=0
-    for i in {1..3}; do
+    for _i in {1..3}; do
         if ping -c 1 -W 10 8.8.8.8 > /dev/null 2>&1; then
             connectivity_test=1
             break
@@ -164,7 +166,7 @@ test_cleanup_command_reliability() {
 
         # Test internet after cleanup with multiple attempts
         local connectivity_restored=0
-        for i in {1..5}; do
+        for _i in {1..5}; do
             if ping -c 1 -W 5 8.8.8.8 > /dev/null 2>&1; then
                 connectivity_restored=1
                 break
@@ -226,9 +228,9 @@ test_multiple_disconnect_safety() {
     log "Testing multiple disconnect commands safety"
 
     # Run disconnect multiple times (should be safe)
-    for i in {1..3}; do
+    for _i in {1..3}; do
         if ! "$VPN_SCRIPT" disconnect > /dev/null 2>&1; then
-            log "ERROR: Disconnect command failed on attempt $i"
+            log "ERROR: Disconnect command failed on attempt $_i"
             return 1
         fi
         # Small delay to prevent race conditions

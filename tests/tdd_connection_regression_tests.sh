@@ -286,7 +286,8 @@ test_connection_acceptance_criteria() {
 
     local end_time
     end_time=$(date +%s)
-    local duration=$((end_time - start_time))
+    local duration
+    duration=$((end_time - start_time))
 
     # CRITICAL CHECKS - ALL MUST PASS
     local critical_failures=0
