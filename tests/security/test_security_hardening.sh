@@ -7,7 +7,8 @@ set -euo pipefail
 
 # Test configuration
 readonly TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-readonly PROJECT_ROOT="$(cd "$TEST_DIR/../.." && pwd)"
+readonly PROJECT_ROOT
+PROJECT_ROOT="$(cd "$TEST_DIR/../.." && pwd)"
 readonly TEST_LOG="/tmp/security_hardening_tests.log"
 
 # Test counters
