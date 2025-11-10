@@ -1,14 +1,33 @@
-# Session Handoff: Issue #65 → Issue #126
+# Session Handoff: Issue #126 (In Progress)
 
-**Date**: 2025-11-10
+**Date**: 2025-11-11
 **Previous Issue**: #65 - Fix ShellCheck warnings ✅ **CLOSED**
-**Current Focus**: #126 - Fix 15 failing functional tests
-**Branch**: master (Issue #65 merged)
-**Status**: Ready to begin Issue #126
+**Current Issue**: #126 - Fix failing functional tests ⏳ **IN PROGRESS**
+**Branch**: feat/issue-126-fix-failing-tests
+**PR**: #127 - Critical test infrastructure fixes (created)
+**Status**: Partial fix completed, 26 tests still failing
 
 ---
 
 ## ✅ Completed Work
+
+### Issue #126: Fix Failing Tests (Partial Progress)
+
+**Critical Infrastructure Fixes Completed:**
+1. ✅ Restored PROJECT_DIR variable in test_framework.sh
+   - Was removed but still required by all test files
+   - This was causing test scripts to fail finding the VPN scripts
+2. ✅ Added missing NL (Netherlands) test profile
+   - Created nl-test.ovpn in setup_test_env function
+   - Updated unit test to expect 4 profiles instead of 3
+3. ✅ Created PR #127 with infrastructure fixes
+   - Fixes critical test setup issues
+   - Improves test count from 110 to 111 (NL profile test added)
+
+**Test Results After Fixes:**
+- **Current**: 85/111 passing (76% success rate) - 26 failures
+- **Initial**: 84/110 passing (76% success rate) - 26 failures
+- **CI Target**: 98/113 passing (86% success rate) - 15 failures
 
 ### Issue #65: Fix ShellCheck Warnings ✅ **MERGED & CLOSED**
 
@@ -47,13 +66,59 @@ Issue #126 requires:
 
 ---
 
+## 🚨 Remaining Issues (26 Failing Tests)
+
+### Categories of Failures:
+
+1. **Profile/Country Tests (10 failures)**
+   - Country filtering for SE/DK not finding expected profiles
+   - Profile listing not showing "Available VPN Profiles" header
+   - Tests looking for "se-test"/"dk-test" in output but actual profiles are named differently
+
+2. **Connection Tests (3 failures)**
+   - Multiple location switching (SE/DK/NL) all failing
+   - Connection attempts not working in test environment
+
+3. **Health/Safety Tests (4 failures)**
+   - Health command output format mismatch
+   - Process detection expecting different output format
+   - Safety command accessibility issues
+
+4. **Error Handling Tests (5 failures)**
+   - Missing directory handling
+   - Empty directory handling
+   - Invalid country codes
+   - Credentials/network error handling
+   - Tests expecting specific error codes/messages
+
+5. **Other Tests (4 failures)**
+   - Dependency detection not working as expected
+   - Regression prevention tests failing
+   - Multiple connection prevention issues
+
+### Root Cause Analysis:
+
+**Primary Issue Found:** vpn-connector script path resolution
+- Error: `/usr/local/bin/vpn-validators: No such file or directory`
+- Scripts trying to detect installed vs development mode
+- VPN_DIR detection logic may be failing in test environment
+
+**Secondary Issues:**
+- Test assertions expect exact strings that don't match actual output
+- Some functionality (health command) may not be fully implemented
+- Tests may need environment variables or mock setup
+
 ## 🚀 Next Session Priorities
 
-### Issue #126: Fix 15 Failing Functional Tests
+### Continue Issue #126: Fix Remaining 26 Test Failures
 
-**Objective**: Achieve 100% test pass rate (113/113 tests passing)
-
-**Current State**: 15 failing tests across 4 categories:
+**Immediate Next Steps:**
+1. Wait for PR #127 to be reviewed/merged (infrastructure fixes)
+2. Investigate VPN_DIR path resolution in test environment
+3. Fix vpn-validators path issue causing many failures
+4. Update test assertions to match actual script output
+5. Implement missing health command functionality if needed
+6. Achieve 100% test pass rate
 1. **Profile Management** (7 failures) - SE/DK/NL test profiles missing/broken
 2. **Connection Tests** (3 failures) - Multi-location switching issues
 3. **Health/Safety Tests** (3 failures) - Health check command incomplete
@@ -75,17 +140,17 @@ Issue #126 requires:
 
 ## 📝 Startup Prompt for Next Session
 
-Read CLAUDE.md to understand our workflow, then tackle Issue #126.
+Read CLAUDE.md to understand our workflow, then continue Issue #126 after PR #127 review.
 
-**Immediate priority**: Issue #126 - Fix 15 failing functional tests (6-8 hours estimated)
-**Context**: Issue #65 successfully merged - ShellCheck 100% clean. Now fixing pre-existing test failures.
+**Immediate priority**: Continue fixing remaining 26 test failures in Issue #126
+**Context**: PR #127 created with critical infrastructure fixes, but 26 tests still failing
 **Reference docs**:
+  - PR #127: https://github.com/maxrantil/protonvpn-manager/pull/127
   - Issue #126: https://github.com/maxrantil/protonvpn-manager/issues/126
-  - CI test logs: https://github.com/maxrantil/protonvpn-manager/actions
   - SESSION_HANDOVER.md (this file)
-**Ready state**: Clean master branch, all quality checks passing, tests at 86% (98/113)
+**Ready state**: feat/issue-126-fix-failing-tests branch pushed, PR #127 pending review
 
-**Expected scope**: Diagnose 15 failing tests, fix root causes, achieve 100% pass rate (113/113)
+**Expected scope**: Fix VPN_DIR path resolution, update test assertions, achieve 100% pass rate
 
 ---
 
