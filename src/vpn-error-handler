@@ -1,6 +1,17 @@
 #!/bin/bash
+set -euo pipefail
 # ABOUTME: Centralized error handling library for VPN management system
 # ABOUTME: Provides consistent, accessible error formatting, codes, and logging
+
+# Script locations - detect installed vs development mode
+if [[ -f "/usr/local/bin/vpn-colors" ]]; then
+    VPN_DIR="/usr/local/bin"
+else
+    VPN_DIR="$(dirname "$(realpath "$0")")"
+fi
+
+# Source color definitions (required for error display)
+source "$VPN_DIR/vpn-colors"
 
 # Error severity levels
 readonly ERROR_CRITICAL=1
