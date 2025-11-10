@@ -41,7 +41,7 @@ test_commands_complete_without_hanging() {
     local commands=("cleanup" "kill" "health" "status")
     local timeouts=(30 30 10 15)
 
-    for i in "${!commands[@]}"; do
+    for _i in "${!commands[@]}"; do
         local cmd="${commands[$i]}"
         local timeout_val="${timeouts[$i]}"
 

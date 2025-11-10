@@ -5,8 +5,9 @@
 # Test framework variables (with include guard to prevent re-initialization)
 if [[ -z "${TEST_FRAMEWORK_LOADED:-}" ]]; then
     TEST_FRAMEWORK_LOADED=1
+    # shellcheck disable=SC2034  # TEST_DIR used by tests that source this framework
     TEST_DIR="$(dirname "$(realpath "$0")")"
-    PROJECT_DIR="$(dirname "$TEST_DIR")"
+    # PROJECT_DIR removed - unused in framework, tests define their own
     TESTS_PASSED=0
     TESTS_FAILED=0
     CURRENT_TEST=""
@@ -23,7 +24,8 @@ NC='\033[0m' # No Color
 log_test() {
     local level="$1"
     local message="$2"
-    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    local timestamp
+    timestamp=$(date '+%Y-%m-%d %H:%M:%S')
 
     case "$level" in
         "INFO")

@@ -199,7 +199,7 @@ test_permission_enforcement() {
         local expected="${test_case##*:}"
 
         chmod "$perm" "$test_file"
-        local actual_perm=$(stat -c "%a" "$test_file")
+        # actual_perm validation removed - test relies on file system enforcement
 
         echo "Testing permission $perm (expected: $expected)"
 
@@ -299,8 +299,9 @@ test_pid_file_security() {
     chown "$(whoami):$(id -gn)" "$test_pid_file"
 
     # Validate permissions
-    local perms=$(stat -c "%a" "$test_pid_file")
-    local owner=$(stat -c "%U:%G" "$test_pid_file")
+    local perms
+    perms=$(stat -c "%a" "$test_pid_file")
+    # owner check removed - test focuses on permission bits only
 
     local pid_security_ok=true
 

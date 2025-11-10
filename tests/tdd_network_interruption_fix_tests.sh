@@ -17,7 +17,7 @@ test_automatic_cleanup_on_multiple_processes_detected() {
 
     # Create multiple fake OpenVPN processes to simulate the network interruption scenario
     local test_pids=()
-    for i in {1..3}; do
+    for _i in {1..3}; do
         bash -c 'exec -a "openvpn --config /test.ovpn" sleep 60' &
         test_pids+=($!)
     done
@@ -210,7 +210,7 @@ test_network_interruption_scenario_integration() {
 
     # Create the exact scenario from the bug report
     local test_pids=()
-    for i in {1..3}; do
+    for _i in {1..3}; do
         bash -c 'exec -a "openvpn --config /locations/interrupted.ovpn" sleep 60' &
         test_pids+=($!)
     done
@@ -225,11 +225,14 @@ test_network_interruption_scenario_integration() {
         log_test "INFO" "$CURRENT_TEST: Health check detects critical state correctly"
 
         # The integration test: connection should auto-cleanup and proceed (will fail initially)
-        local connection_start_time=$(date +%s)
+        local connection_start_time
+        connection_start_time=$(date +%s)
         local connection_output
         connection_output=$(timeout 10s "$vpn_script" connect se 2>&1 || true)
-        local connection_end_time=$(date +%s)
-        local connection_duration=$((connection_end_time - connection_start_time))
+        local connection_end_time
+        connection_end_time=$(date +%s)
+        local connection_duration
+        connection_duration=$((connection_end_time - connection_start_time))
 
         # Should auto-cleanup (not hang on user prompt)
         if [[ $connection_duration -lt 8 ]]; then

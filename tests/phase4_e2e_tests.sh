@@ -63,7 +63,8 @@ test_best_vpn_profile_performance_workflow() {
     start_test "best-vpn-profile complete performance testing workflow"
 
     # Test the full performance testing workflow
-    local cache_before cache_after best_result
+    local best_result
+    # cache_before/after variables reserved for future validation
 
     # Clear cache first
     "$BEST_VPN_PROFILE_PATH" clear > /dev/null 2>&1 || true

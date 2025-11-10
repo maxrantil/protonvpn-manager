@@ -10,7 +10,7 @@ source "$TEST_DIR/test_framework.sh"
 # Test constants
 readonly TEST_TIMEOUT=30
 readonly STRESS_PROCESSES=4
-readonly STRESS_MEMORY_MB=100
+# STRESS_MEMORY_MB removed - reserved for future stress testing expansion
 
 test_no_internet_connection_handling() {
     start_test "Graceful handling when no internet connection available"
@@ -129,7 +129,7 @@ test_high_system_load_stability() {
     local stress_pids=()
     log_test "INFO" "$CURRENT_TEST: Creating $STRESS_PROCESSES CPU stress processes"
 
-    for i in $(seq 1 $STRESS_PROCESSES); do
+    for _i in $(seq 1 $STRESS_PROCESSES); do
         # Create CPU load without using 'yes' (which might not be available)
         bash -c 'while true; do echo >/dev/null; done' &
         stress_pids+=($!)
@@ -176,8 +176,8 @@ test_multiple_rapid_connection_attempts() {
     # Test rapid connection attempts (simulate user clicking connect multiple times)
     local pids=() log_files=()
 
-    for i in {1..3}; do
-        local log_file="/tmp/connect_test_$i.log"
+    for _i in {1..3}; do
+        local log_file="/tmp/connect_test_$_i.log"
         log_files+=("$log_file")
 
         # Use timeout to prevent hanging and run in background
@@ -250,7 +250,7 @@ test_cleanup_after_process_termination() {
     fi
 
     # Test that multiple cleanup calls don't cause issues
-    for i in {1..3}; do
+    for _i in {1..3}; do
         timeout 10 "$PROJECT_DIR/src/vpn" cleanup > /dev/null 2>&1 || true
     done
 
@@ -338,7 +338,8 @@ test_disk_space_exhaustion_handling() {
         local temp_large_file="/tmp/disk_space_test_large_file"
 
         # Try to create a file that uses most available space (but safely)
-        local safe_size=$((available_space / 10)) # Use 10% of available space
+        local safe_size
+        safe_size=$((available_space / 10)) # Use 10% of available space
 
         if dd if=/dev/zero of="$temp_large_file" bs=1K count=$safe_size 2> /dev/null; then
             # Test system behavior with reduced disk space

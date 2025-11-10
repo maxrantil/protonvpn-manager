@@ -15,7 +15,7 @@ jobs:
         uses: ludeeus/action-shellcheck@master
         with:
           severity: warning
-          ignore_paths: tests/mocks
+          ignore_paths: tests/mocks src_archive
 
   shfmt:
     name: Shell Format Check

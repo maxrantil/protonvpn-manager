@@ -5,17 +5,19 @@
 set -euo pipefail
 
 # Test configuration
-readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-readonly PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+readonly SCRIPT_DIR
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly PROJECT_ROOT
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 readonly FIX_TOOL="$PROJECT_ROOT/src/fix-ovpn-configs"
-readonly LOCATIONS_DIR="$PROJECT_ROOT/locations"
+# LOCATIONS_DIR removed - unused in this test file
 readonly TEST_DIR="$PROJECT_ROOT/tests/test_configs"
 readonly TEST_LOG="/tmp/config_fixing_tests.log"
 
 # Colors for output
 readonly RED='\033[1;31m'
 readonly GREEN='\033[1;32m'
-readonly YELLOW='\033[1;33m'
+# YELLOW removed - unused in this test file
 readonly BLUE='\033[1;36m'
 readonly NC='\033[0m'
 
