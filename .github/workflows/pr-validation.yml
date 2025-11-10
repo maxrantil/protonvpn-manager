@@ -7,6 +7,10 @@ on:
     branches: [master]
     types: [opened, edited, synchronize]
 
+permissions:
+  contents: read
+  pull-requests: write
+
 jobs:
   pr-title:
     name: Check PR Title
@@ -54,9 +58,3 @@ jobs:
     uses: maxrantil/.github/.github/workflows/pre-commit-validation-reusable.yml@master
     with:
       python-version: '3.11'
-
-  protect-master:
-    name: Protect Master Branch
-    uses: maxrantil/.github/.github/workflows/protect-master-reusable.yml@master
-    with:
-      protected-branch: 'master'
