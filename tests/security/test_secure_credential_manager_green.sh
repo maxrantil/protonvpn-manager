@@ -35,6 +35,7 @@ Passphrase: test-passphrase-123
 EOF
 
     gpg --batch --generate-key "$TEST_GPG_HOME/key-gen-params" 2>/dev/null
+    # shellcheck disable=SC2034  # TEST_KEY_ID reserved for GPG key validation tests
     TEST_KEY_ID=$(gpg --list-secret-keys --with-colons | grep '^sec' | cut -d: -f5)
 }
 

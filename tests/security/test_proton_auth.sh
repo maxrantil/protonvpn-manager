@@ -3,8 +3,11 @@
 # SECURITY: Tests critical authentication flows and security boundaries
 
 # Test configuration
-readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-readonly PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
+readonly SCRIPT_DIR
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly PROJECT_ROOT
+PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
+# shellcheck disable=SC2034  # TEST_SUITE_NAME used for test reporting
 readonly TEST_SUITE_NAME="ProtonVPN Authentication Module"
 readonly AUTH_MODULE="${PROJECT_ROOT}/src/proton-auth"
 readonly TEST_CREDENTIALS_DIR="/tmp/vpn-test-credentials"
@@ -13,6 +16,7 @@ readonly TEST_SESSION_DIR="/tmp/vpn-test-sessions"
 # Colors for output
 readonly RED='\033[1;31m'
 readonly GREEN='\033[1;32m'
+# shellcheck disable=SC2034  # YELLOW reserved for future warning messages
 readonly YELLOW='\033[1;33m'
 readonly BLUE='\033[1;36m'
 readonly NC='\033[0m'
