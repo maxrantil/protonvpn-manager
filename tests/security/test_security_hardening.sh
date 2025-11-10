@@ -6,7 +6,8 @@
 set -euo pipefail
 
 # Test configuration
-readonly TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly TEST_DIR
+TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly PROJECT_ROOT
 PROJECT_ROOT="$(cd "$TEST_DIR/../.." && pwd)"
 readonly TEST_LOG="/tmp/security_hardening_tests.log"
@@ -27,7 +28,8 @@ readonly NC='\033[0m'
 log_test() {
     local level="$1"
     local message="$2"
-    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    local timestamp
+    timestamp=$(date '+%Y-%m-%d %H:%M:%S')
     echo "[$timestamp] [$level] $message" | tee -a "$TEST_LOG"
 }
 

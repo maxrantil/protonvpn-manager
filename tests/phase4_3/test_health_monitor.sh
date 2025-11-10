@@ -341,6 +341,7 @@ test_health_monitor_concurrent_execution() {
     local failed=0
 
     # Start multiple health monitor instances
+    # shellcheck disable=SC2034  # i is loop counter placeholder
     for i in {1..3}; do
         "$HEALTH_MONITOR_SCRIPT" --check=service >/dev/null 2>&1 &
         pids+=($!)

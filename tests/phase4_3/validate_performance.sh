@@ -11,6 +11,7 @@ cd "$PROJECT_ROOT"
 # Performance targets
 readonly STATUS_DASHBOARD_TARGET=100
 readonly HEALTH_MONITOR_TARGET=500
+# shellcheck disable=SC2034  # API_SERVER_TARGET reserved for future API tests
 readonly API_SERVER_TARGET=200
 
 log_info() { echo "[INFO] $1"; }
