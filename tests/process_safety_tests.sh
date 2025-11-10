@@ -221,8 +221,8 @@ test_warning_system_integration() {
     local invalid_output
     invalid_output=$("$manager_script" invalid_command 2>&1) || true
 
-    assert_contains "$_invalid_output" "Usage:" "Should show usage on invalid commands"
-    assert_contains "$_invalid_output" "health" "Usage should include health command"
+    assert_contains "$invalid_output" "Usage:" "Should show usage on invalid commands"
+    assert_contains "$invalid_output" "health" "Usage should include health command"
 }
 
 test_connection_blocking_code_exists() {
