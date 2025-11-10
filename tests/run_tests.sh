@@ -325,6 +325,22 @@ main() {
                 exit $overall_exit_code
             fi
         fi
+
+        # Issue #60: TOCTOU lock mechanism tests
+        log_test "INFO" "Running flock lock implementation tests"
+        local flock_start=$(date +%s)
+        if ! bash "$TEST_DIR/test_flock_lock_implementation.sh"; then
+            log_test "FAIL" "Flock lock implementation tests failed"
+            overall_exit_code=1
+            if [[ $FAIL_FAST -eq 1 ]]; then
+                generate_test_report
+                exit $overall_exit_code
+            fi
+        else
+            local flock_end=$(date +%s)
+            local flock_duration=$((flock_end - flock_start))
+            log_test "INFO" "Flock lock implementation tests completed in ${flock_duration}s"
+        fi
     fi
 
     local end_time=$(date +%s)
