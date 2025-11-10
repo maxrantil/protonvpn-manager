@@ -108,7 +108,7 @@ test_memory_usage_stability() {
         sleep 1
     done
 
-    final_mem=$(ps -o rss= -p $$ 2> /dev/null | tr -d ' ' || echo "$_initial_mem")
+    final_mem=$(ps -o rss= -p $$ 2> /dev/null | tr -d ' ' || echo "$initial_mem")
     mem_diff=$((final_mem - initial_mem))
 
     if [[ $mem_diff -lt $MEMORY_GROWTH_LIMIT ]]; then
@@ -165,7 +165,7 @@ test_performance_regression_detection() {
         # Update baseline if we're significantly faster (> 5% improvement)
         local improvement_threshold
         improvement_threshold=$(echo "$baseline * 0.95" | bc -l 2> /dev/null || echo "28.5")
-        if (($(echo "$current_perf < $_improvement_threshold" | bc -l 2> /dev/null || echo 0))); then
+        if (($(echo "$current_perf < $improvement_threshold" | bc -l 2> /dev/null || echo 0))); then
             echo "$current_perf" > "$PERFORMANCE_BASELINE_FILE"
             log_test "INFO" "$CURRENT_TEST: Updated baseline to ${current_perf}s (performance improvement)"
         fi

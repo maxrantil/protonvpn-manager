@@ -455,7 +455,7 @@ test_t1_7_lock_file_permissions() {
     # Verify insecure permissions
     local initial_perms
     initial_perms=$(stat -c '%a' "$LOCK_FILE" 2> /dev/null)
-    if [[ "$_initial_perms" != "777" ]]; then
+    if [[ "$initial_perms" != "777" ]]; then
         log_test "FAIL" "Test setup failed - permissions not set to 777"
         ((TESTS_FAILED++))
         return 1
@@ -546,7 +546,7 @@ test_t1_9_multiple_rapid_acquisitions() {
     local failures=0
 
     # Rapidly acquire and release lock many times
-    for _i in $(seq 1 $_iterations); do
+    for _i in $(seq 1 $iterations); do
         if ! acquire_lock 2> /dev/null; then
             ((failures++))
             log_test "FAIL" "Lock acquisition failed at iteration $_i"
@@ -563,11 +563,11 @@ test_t1_9_multiple_rapid_acquisitions() {
     done
 
     if [[ $failures -eq 0 ]]; then
-        log_test "PASS" "All $_iterations rapid acquisitions succeeded"
+        log_test "PASS" "All $iterations rapid acquisitions succeeded"
         ((TESTS_PASSED++))
         return 0
     else
-        log_test "FAIL" "$failures failures out of $_iterations iterations"
+        log_test "FAIL" "$failures failures out of $iterations iterations"
         ((TESTS_FAILED++))
         return 1
     fi
@@ -628,7 +628,7 @@ test_t2_2_rapid_acquire_release_cycles() {
     local iterations=100
     local success_count=0
 
-    for _i in $(seq 1 $_iterations); do
+    for _i in $(seq 1 $iterations); do
         # Acquire lock
         exec 200> "$LOCK_FILE"
         if ! flock -n 200; then
@@ -655,12 +655,12 @@ test_t2_2_rapid_acquire_release_cycles() {
         ((success_count++))
     done
 
-    if [[ $success_count -eq $_iterations ]]; then
-        log_test "PASS" "All $_iterations rapid cycles completed successfully (no corruption)"
+    if [[ $success_count -eq $iterations ]]; then
+        log_test "PASS" "All $iterations rapid cycles completed successfully (no corruption)"
         ((TESTS_PASSED++))
         return 0
     else
-        log_test "FAIL" "Only $success_count/$_iterations cycles succeeded"
+        log_test "FAIL" "Only $success_count/$iterations cycles succeeded"
         ((TESTS_FAILED++))
         return 1
     fi
@@ -740,12 +740,12 @@ test_t2_4_stress_test() {
     local num_processes=20
     local iterations_per_process=50
 
-    log_test "INFO" "Starting stress test: $num_processes processes × $_iterations_per_process iterations"
+    log_test "INFO" "Starting stress test: $num_processes processes × $iterations_per_process iterations"
 
     # Launch processes
     for p in $(seq 1 $num_processes); do
         (
-            for _i in $(seq 1 $_iterations_per_process); do
+            for _i in $(seq 1 $iterations_per_process); do
                 exec 200> "$LOCK_FILE"
                 if flock -n 200; then
                     # Record timestamp and PID
