@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 # ABOUTME: Main VPN management CLI interface script for Artix/Arch Linux
 # ABOUTME: Routes commands to appropriate VPN management sub-scripts
 
@@ -69,7 +70,7 @@ show_help() {
     echo
 }
 
-case "$1" in
+case "${1:-}" in
     "connect" | "c")
         if [[ -x "$VPN_CONNECTOR" ]]; then
             # Check for process health issues before connecting
@@ -85,7 +86,7 @@ case "$1" in
                     echo -e "\033[1;32m✓ Cleanup completed. Proceeding with connection...\033[0m"
                 fi
             fi
-            "$VPN_CONNECTOR" connect "$2"
+            "$VPN_CONNECTOR" connect "${2:-}"
         else
             file_not_found_error "$COMP_VPN_MAIN" "$VPN_CONNECTOR" "Check installation and file permissions"
             exit 1
@@ -103,7 +104,7 @@ case "$1" in
         if [[ -x "$VPN_MANAGER" ]]; then
             "$VPN_MANAGER" stop
             sleep 2
-            "$VPN_CONNECTOR" connect "$2"
+            "$VPN_CONNECTOR" connect "${2:-}"
         else
             file_not_found_error "$COMP_VPN_MAIN" "$VPN_MANAGER" "Check installation and file permissions"
             exit 1
@@ -111,7 +112,7 @@ case "$1" in
         ;;
     "status" | "s")
         if [[ -x "$VPN_MANAGER" ]]; then
-            if [[ "$2" == "--accessible" ]]; then
+            if [[ "${2:-}" == "--accessible" ]]; then
                 VPN_ACCESSIBLE_MODE=1 "$VPN_MANAGER" status
             else
                 "$VPN_MANAGER" status
@@ -131,7 +132,7 @@ case "$1" in
         ;;
     "fast" | "f")
         if [[ -x "$VPN_CONNECTOR" ]]; then
-            "$VPN_CONNECTOR" fast "$2"
+            "$VPN_CONNECTOR" fast "${2:-}"
         else
             file_not_found_error "$COMP_VPN_MAIN" "$VPN_CONNECTOR" "Check installation and file permissions"
             exit 1
@@ -147,7 +148,7 @@ case "$1" in
         ;;
     "custom")
         if [[ -x "$VPN_CONNECTOR" ]]; then
-            "$VPN_CONNECTOR" custom "$2"
+            "$VPN_CONNECTOR" custom "${2:-}"
         else
             file_not_found_error "$COMP_VPN_MAIN" "$VPN_CONNECTOR" "Check installation and file permissions"
             exit 1
@@ -234,7 +235,7 @@ case "$1" in
                     "$DOWNLOAD_ENGINE" status
                     ;;
                 "country")
-                    if [[ -n "$3" ]]; then
+                    if [[ -n "${3:-}" ]]; then
                         "$DOWNLOAD_ENGINE" download-country "$3" "${@:4}"
                     else
                         echo "Usage: vpn download-configs country <CC> [options]"
@@ -282,7 +283,7 @@ case "$1" in
                     "$SERVICE_MANAGER" config "$3" "$4"
                     ;;
                 *)
-                    echo "Error: Unknown service command '$2'"
+                    echo "Error: Unknown service command '${2:-}'"
                     echo "Use 'vpn service help' for usage information"
                     exit 1
                     ;;
@@ -297,7 +298,7 @@ case "$1" in
         show_help
         ;;
     *)
-        vpn_error "$ERROR_HIGH" "$COMP_VPN_MAIN" "INVALID_COMMAND" "Unknown command '$1'" "" "Run 'vpn help' for usage information"
+        vpn_error "$ERROR_HIGH" "$COMP_VPN_MAIN" "INVALID_COMMAND" "Unknown command '${1:-}'" "" "Run 'vpn help' for usage information"
         exit 1
         ;;
 esac
