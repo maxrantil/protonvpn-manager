@@ -92,8 +92,8 @@ test_memory_usage_stability() {
     timeout 10 "$PROJECT_DIR/src/vpn" cleanup > /dev/null 2>&1 || true
 
     # Perform multiple connection cycles
-    for i in {1..3}; do
-        log_test "INFO" "$CURRENT_TEST: Running connection cycle $i/3"
+    for _i in {1..3}; do
+        log_test "INFO" "$CURRENT_TEST: Running connection cycle $_i/3"
 
         # Attempt connection (don't fail test if individual connection fails)
         timeout 15 "$PROJECT_DIR/src/vpn" connect se > /dev/null 2>&1 || true
@@ -190,7 +190,7 @@ test_concurrent_operation_performance() {
 
     # Run multiple status checks concurrently
     local pids=()
-    for i in {1..5}; do
+    for _i in {1..5}; do
         timeout 10 "$PROJECT_DIR/src/vpn" status > /dev/null 2>&1 &
         pids+=($!)
     done

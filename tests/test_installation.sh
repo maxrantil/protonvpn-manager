@@ -86,7 +86,8 @@ test_permission_validation() {
     sudo chmod 755 "$TEST_PREFIX/etc/protonvpn"
 
     # Test permission checking
-    local perms=$(stat -c "%a" "$TEST_PREFIX/etc/protonvpn")
+    local perms
+    perms=$(stat -c "%a" "$TEST_PREFIX/etc/protonvpn")
     if [[ "$perms" == "755" ]]; then
         log_test "PASS" "Directory permissions validated"
     else
@@ -109,7 +110,8 @@ test_user_creation() {
     fi
 
     # Test user properties
-    local shell=$(getent passwd "$TEST_USER" | cut -d: -f7)
+    local shell
+    shell=$(getent passwd "$TEST_USER" | cut -d: -f7)
     if [[ "$shell" == "/usr/sbin/nologin" || "$shell" == "/bin/false" ]]; then
         log_test "PASS" "Service user has no shell access"
     else
@@ -189,7 +191,8 @@ EOF
 
     # Validate configuration
     if [[ -f "$TEST_PREFIX/etc/protonvpn/test.conf" ]]; then
-        local interval=$(grep "UPDATE_INTERVAL" "$TEST_PREFIX/etc/protonvpn/test.conf" | cut -d= -f2)
+        local interval
+        interval=$(grep "UPDATE_INTERVAL" "$TEST_PREFIX/etc/protonvpn/test.conf" | cut -d= -f2)
         if [[ "$interval" == "3600" ]]; then
             log_test "PASS" "Configuration file created correctly"
         else

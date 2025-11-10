@@ -5,8 +5,10 @@
 set -euo pipefail
 
 # Test framework integration
-readonly PHASE4_TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-readonly PROJECT_ROOT="$(cd "$PHASE4_TEST_DIR/../.." && pwd)"
+readonly PHASE4_TEST_DIR
+PHASE4_TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly PROJECT_ROOT
+PROJECT_ROOT="$(cd "$PHASE4_TEST_DIR/../.." && pwd)"
 readonly VPN_DIR="$PROJECT_ROOT/src"
 readonly HEALTH_MONITOR_SCRIPT="$VPN_DIR/health-monitor"
 
@@ -339,6 +341,7 @@ test_health_monitor_concurrent_execution() {
     local failed=0
 
     # Start multiple health monitor instances
+    # shellcheck disable=SC2034  # i is loop counter placeholder
     for i in {1..3}; do
         "$HEALTH_MONITOR_SCRIPT" --check=service >/dev/null 2>&1 &
         pids+=($!)

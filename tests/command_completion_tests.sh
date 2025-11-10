@@ -113,7 +113,8 @@ test_status_completes_within_timeout() {
 test_commands_produce_output() {
     start_test "Commands produce expected output and don't hang silently"
 
-    local cleanup_output kill_output health_output status_output
+    local cleanup_output kill_output health_output
+    # status_output removed - unused in this test
 
     # Test cleanup produces output
     cleanup_output=$(timeout 10s "$PROJECT_DIR/src/vpn" cleanup 2>&1 || echo "TIMEOUT")
@@ -207,7 +208,7 @@ test_multiple_rapid_commands() {
 
     # Run multiple commands rapidly
     timeout 30s bash -c '
-        for i in {1..5}; do
+        for _i in {1..5}; do
             "$1/src/vpn" health >/dev/null 2>&1 &
             "$1/src/vpn" status >/dev/null 2>&1 &
         done

@@ -298,7 +298,8 @@ test_statusbar_performance() {
 
     local end_time
     end_time=$(date +%s%N)
-    local duration_ms=$(((end_time - start_time) / 1000000))
+    local duration_ms
+    duration_ms=$(((end_time - start_time) / 1000000))
 
     if [[ $duration_ms -lt 100 ]]; then
         echo "  ✓ Status bar update is fast ($duration_ms ms)"

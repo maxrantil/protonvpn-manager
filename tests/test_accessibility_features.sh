@@ -5,9 +5,11 @@
 set -uo pipefail
 
 # Test configuration
-readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-readonly PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
-readonly VPN_SCRIPT="$PROJECT_ROOT/src/vpn"
+readonly SCRIPT_DIR
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly PROJECT_ROOT
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+# VPN_SCRIPT removed - unused in this test file
 readonly VPN_MANAGER="$PROJECT_ROOT/src/vpn-manager"
 
 # Colors for output

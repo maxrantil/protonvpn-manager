@@ -5,8 +5,11 @@
 set -euo pipefail
 
 # Test framework integration
-readonly PHASE4_TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-readonly PROJECT_ROOT="$(cd "$PHASE4_TEST_DIR/../.." && pwd)"
+readonly PHASE4_TEST_DIR
+PHASE4_TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly PROJECT_ROOT
+PROJECT_ROOT="$(cd "$PHASE4_TEST_DIR/../.." && pwd)"
+# shellcheck disable=SC2034  # VPN_DIR reserved for path validation
 readonly VPN_DIR="$PROJECT_ROOT/src"
 
 # Simple test framework functions (used by test execution)
@@ -251,6 +254,7 @@ test_cross_platform_compatibility() {
     start_test "cross_platform_shell_compatibility"
 
     # Test basic shell compatibility
+    # shellcheck disable=SC2034  # shell_features reserved for capability detection
     local shell_features=("bash" "parameter expansion" "arrays" "process substitution")
     local compatible=true
 
