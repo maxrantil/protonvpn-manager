@@ -140,7 +140,7 @@ test_t1_1_basic_lock_acquisition() {
     rm -f "$LOCK_FILE"
 
     # Acquire lock
-    if acquire_lock 2>/dev/null; then
+    if acquire_lock 2> /dev/null; then
         # Verify FD 200 is open
         if [[ -e /proc/$$/fd/200 ]]; then
             log_test "PASS" "File descriptor 200 is open"
@@ -152,7 +152,7 @@ test_t1_1_basic_lock_acquisition() {
 
         # Verify PID written to lock file
         local written_pid
-        written_pid=$(cat "$LOCK_FILE" 2>/dev/null)
+        written_pid=$(cat "$LOCK_FILE" 2> /dev/null)
         if [[ "$written_pid" == "$$" ]]; then
             log_test "PASS" "Lock file contains current PID ($$)"
         else
@@ -162,7 +162,10 @@ test_t1_1_basic_lock_acquisition() {
         fi
 
         # Verify lock is actually held (second attempt with different FD should fail)
-        if (exec 201> "$LOCK_FILE"; flock -n 201) 2>/dev/null; then
+        if (
+            exec 201> "$LOCK_FILE"
+            flock -n 201
+        ) 2> /dev/null; then
             log_test "FAIL" "Lock not actually held (concurrent acquisition possible)"
             ((TESTS_FAILED++))
             return 1
@@ -192,7 +195,7 @@ test_t1_2_lock_already_held() {
         exec 200> "$LOCK_FILE"
         if flock -n 200; then
             echo $$ >&200
-            sleep 2  # Hold lock for 2 seconds
+            sleep 2 # Hold lock for 2 seconds
         fi
     ) &
     local bg_pid=$!
@@ -201,7 +204,7 @@ test_t1_2_lock_already_held() {
     sleep 0.5
 
     # Verify background process is alive
-    if ! kill -0 "$bg_pid" 2>/dev/null; then
+    if ! kill -0 "$bg_pid" 2> /dev/null; then
         log_test "FAIL" "Background process died unexpectedly"
         ((TESTS_FAILED++))
         return 1
@@ -217,8 +220,8 @@ test_t1_2_lock_already_held() {
     else
         log_test "FAIL" "Lock acquisition should have failed but returned $result"
         ((TESTS_FAILED++))
-        kill "$bg_pid" 2>/dev/null || true
-        wait "$bg_pid" 2>/dev/null || true
+        kill "$bg_pid" 2> /dev/null || true
+        wait "$bg_pid" 2> /dev/null || true
         return 1
     fi
 
@@ -228,8 +231,8 @@ test_t1_2_lock_already_held() {
     else
         log_test "FAIL" "Error message missing expected text. Got: $output"
         ((TESTS_FAILED++))
-        kill "$bg_pid" 2>/dev/null || true
-        wait "$bg_pid" 2>/dev/null || true
+        kill "$bg_pid" 2> /dev/null || true
+        wait "$bg_pid" 2> /dev/null || true
         return 1
     fi
 
@@ -245,8 +248,8 @@ test_t1_2_lock_already_held() {
     fi
 
     # Clean up background process
-    kill "$bg_pid" 2>/dev/null || true
-    wait "$bg_pid" 2>/dev/null || true
+    kill "$bg_pid" 2> /dev/null || true
+    wait "$bg_pid" 2> /dev/null || true
 
     ((TESTS_PASSED++))
     return 0
@@ -263,7 +266,7 @@ test_t1_3_stale_lock_detection() {
     echo "$fake_pid" > "$LOCK_FILE"
 
     # Verify PID doesn't exist
-    if kill -0 "$fake_pid" 2>/dev/null; then
+    if kill -0 "$fake_pid" 2> /dev/null; then
         log_test "FAIL" "Test setup failed - PID $fake_pid actually exists"
         ((TESTS_FAILED++))
         return 1
@@ -302,7 +305,7 @@ test_t1_4_lock_release_and_cleanup() {
     rm -f "$LOCK_FILE"
 
     # Acquire lock
-    if ! acquire_lock 2>/dev/null; then
+    if ! acquire_lock 2> /dev/null; then
         log_test "FAIL" "Lock acquisition failed in setup"
         ((TESTS_FAILED++))
         return 1
@@ -330,7 +333,7 @@ test_t1_4_lock_release_and_cleanup() {
     fi
 
     # Verify lock can be re-acquired immediately
-    if acquire_lock 2>/dev/null; then
+    if acquire_lock 2> /dev/null; then
         log_test "PASS" "Lock can be re-acquired after release"
         release_lock
         ((TESTS_PASSED++))
@@ -353,7 +356,7 @@ test_t1_5_fd_cleanup_on_exit() {
         # Re-source functions in subprocess
         source "$TEST_LOCK_DIR/lock_functions.sh"
         trap cleanup_on_exit EXIT
-        acquire_lock 2>/dev/null
+        acquire_lock 2> /dev/null
         # Subprocess exits here, triggering EXIT trap
     )
     local subprocess_result=$?
@@ -377,7 +380,7 @@ test_t1_5_fd_cleanup_on_exit() {
     fi
 
     # Verify main process can acquire lock (proves cleanup worked)
-    if acquire_lock 2>/dev/null; then
+    if acquire_lock 2> /dev/null; then
         log_test "PASS" "Main process can acquire lock after subprocess cleanup"
         release_lock
         ((TESTS_PASSED++))
@@ -400,7 +403,7 @@ test_t1_6_reacquisition_after_release() {
 
     for i in $(seq 1 $cycles); do
         # Acquire lock
-        if ! acquire_lock 2>/dev/null; then
+        if ! acquire_lock 2> /dev/null; then
             log_test "FAIL" "Lock acquisition failed at cycle $i"
             ((TESTS_FAILED++))
             return 1
@@ -408,7 +411,7 @@ test_t1_6_reacquisition_after_release() {
 
         # Verify PID written
         local written_pid
-        written_pid=$(cat "$LOCK_FILE" 2>/dev/null)
+        written_pid=$(cat "$LOCK_FILE" 2> /dev/null)
         if [[ "$written_pid" != "$$" ]]; then
             log_test "FAIL" "PID mismatch at cycle $i - Expected: $$, Got: $written_pid"
             ((TESTS_FAILED++))
@@ -451,7 +454,7 @@ test_t1_7_lock_file_permissions() {
 
     # Verify insecure permissions
     local initial_perms
-    initial_perms=$(stat -c '%a' "$LOCK_FILE" 2>/dev/null)
+    initial_perms=$(stat -c '%a' "$LOCK_FILE" 2> /dev/null)
     if [[ "$initial_perms" != "777" ]]; then
         log_test "FAIL" "Test setup failed - permissions not set to 777"
         ((TESTS_FAILED++))
@@ -459,7 +462,7 @@ test_t1_7_lock_file_permissions() {
     fi
 
     # Acquire lock (should recreate/truncate file)
-    if ! acquire_lock 2>/dev/null; then
+    if ! acquire_lock 2> /dev/null; then
         log_test "FAIL" "Lock acquisition failed"
         ((TESTS_FAILED++))
         return 1
@@ -476,7 +479,7 @@ test_t1_7_lock_file_permissions() {
 
     # Verify PID is written (proves file was updated)
     local written_pid
-    written_pid=$(cat "$LOCK_FILE" 2>/dev/null)
+    written_pid=$(cat "$LOCK_FILE" 2> /dev/null)
     if [[ "$written_pid" == "$$" ]]; then
         log_test "PASS" "Lock file updated with current PID"
     else
@@ -498,7 +501,7 @@ test_t1_8_lock_reentry_safety() {
     rm -f "$LOCK_FILE"
 
     # First acquisition
-    if ! acquire_lock 2>/dev/null; then
+    if ! acquire_lock 2> /dev/null; then
         log_test "FAIL" "First lock acquisition failed"
         ((TESTS_FAILED++))
         return 1
@@ -544,7 +547,7 @@ test_t1_9_multiple_rapid_acquisitions() {
 
     # Rapidly acquire and release lock many times
     for i in $(seq 1 $iterations); do
-        if ! acquire_lock 2>/dev/null; then
+        if ! acquire_lock 2> /dev/null; then
             ((failures++))
             log_test "FAIL" "Lock acquisition failed at iteration $i"
         fi
@@ -589,7 +592,7 @@ test_t2_1_concurrent_acquisition() {
             exec 200> "$LOCK_FILE"
             if flock -n 200; then
                 echo "$$" >> "$result_file"
-                sleep 0.5  # Hold lock briefly
+                sleep 0.5 # Hold lock briefly
                 flock -u 200
             fi
         ) &
@@ -639,7 +642,7 @@ test_t2_2_rapid_acquire_release_cycles() {
 
         # Verify PID written correctly
         local written_pid
-        written_pid=$(cat "$LOCK_FILE" 2>/dev/null)
+        written_pid=$(cat "$LOCK_FILE" 2> /dev/null)
         if [[ "$written_pid" != "$$" ]]; then
             log_test "FAIL" "PID mismatch at iteration $i - Expected: $$, Got: $written_pid"
             ((TESTS_FAILED++))
@@ -673,8 +676,8 @@ test_t2_3_process_termination_mid_lock() {
     (
         source "$TEST_LOCK_DIR/lock_functions.sh"
         trap cleanup_on_exit EXIT
-        acquire_lock 2>/dev/null
-        sleep 60  # Long sleep - will be killed
+        acquire_lock 2> /dev/null
+        sleep 60 # Long sleep - will be killed
     ) &
     local bg_pid=$!
 
@@ -682,9 +685,12 @@ test_t2_3_process_termination_mid_lock() {
     sleep 0.5
 
     # Verify lock is held
-    if (exec 201> "$LOCK_FILE"; flock -n 201) 2>/dev/null; then
+    if (
+        exec 201> "$LOCK_FILE"
+        flock -n 201
+    ) 2> /dev/null; then
         log_test "FAIL" "Lock not held by background process"
-        kill "$bg_pid" 2>/dev/null || true
+        kill "$bg_pid" 2> /dev/null || true
         ((TESTS_FAILED++))
         return 1
     else
@@ -692,10 +698,10 @@ test_t2_3_process_termination_mid_lock() {
     fi
 
     # Kill subprocess
-    kill -TERM "$bg_pid" 2>/dev/null
+    kill -TERM "$bg_pid" 2> /dev/null
 
     # Wait for subprocess to exit
-    wait "$bg_pid" 2>/dev/null || true
+    wait "$bg_pid" 2> /dev/null || true
 
     # Give cleanup a moment to complete
     sleep 0.3
@@ -711,7 +717,7 @@ test_t2_3_process_termination_mid_lock() {
     fi
 
     # Verify main process can acquire lock
-    if acquire_lock 2>/dev/null; then
+    if acquire_lock 2> /dev/null; then
         log_test "PASS" "Main process can acquire lock after termination cleanup"
         release_lock
         ((TESTS_PASSED++))
@@ -745,7 +751,7 @@ test_t2_4_stress_test() {
                     # Record timestamp and PID
                     echo "$(date +%s%N) $$ $p $i" >> "$result_file"
                     # Hold lock very briefly
-                    usleep 100 2>/dev/null || sleep 0.001
+                    usleep 100 2> /dev/null || sleep 0.001
                     flock -u 200
                 fi
             done
@@ -765,7 +771,7 @@ test_t2_4_stress_test() {
     # This validates lock works correctly under stress without being too strict
     # Note: With 20 concurrent processes, most acquisition attempts will fail
     local total_attempts=$((num_processes * iterations_per_process))
-    local expected_min=$((total_attempts / 100))  # 1% success rate minimum (10 acquisitions for 1000 attempts)
+    local expected_min=$((total_attempts / 100)) # 1% success rate minimum (10 acquisitions for 1000 attempts)
 
     if [[ $total_acquisitions -ge $expected_min ]]; then
         log_test "PASS" "Stress test completed: $total_acquisitions acquisitions (≥$expected_min expected)"
