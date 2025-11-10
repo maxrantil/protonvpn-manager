@@ -1,5 +1,13 @@
 #!/bin/bash
-# ABOUTME: Specific test for lock file TOCTOU race condition fix
+# ABOUTME: DEPRECATED - Tests noclobber (set -C), not flock
+# ABOUTME: See test_flock_lock_implementation.sh for production tests
+#
+# DEPRECATION NOTICE:
+# This test validates a noclobber-based lock implementation that doesn't
+# exist in production code. Production uses flock-based locking (Issue #46).
+# Moved to archive on 2025-11-10 as part of Issue #60.
+#
+# For current lock tests, see: tests/test_flock_lock_implementation.sh
 
 set -euo pipefail
 
