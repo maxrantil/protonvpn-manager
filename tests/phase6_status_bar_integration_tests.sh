@@ -88,8 +88,8 @@ start_test "signal_debouncing"
 # This will fail because vpn-statusbar doesn't exist
 # Test rapid status updates don't flood signals
 start_time=$(date +%s)
-for i in {1..5}; do
-    "$VPN_DIR/vpn-statusbar" update "connecting" "test-$i" "0.0.0.0" --quiet 2> /dev/null
+for _i in {1..5}; do
+    "$VPN_DIR/vpn-statusbar" update "connecting" "test-$_i" "0.0.0.0" --quiet 2> /dev/null
 done
 end_time=$(date +%s)
 duration=$((end_time - start_time))
@@ -121,8 +121,8 @@ assert_equals "0" "$?" "Should handle concurrent status updates safely"
 start_test "signal_queue_management"
 # This will fail because vpn-statusbar doesn't exist
 # Test signal queueing during rapid changes
-for i in {1..10}; do
-    "$VPN_DIR/vpn-statusbar" update "state$i" "profile$i" "1.1.1.$i" --queue 2> /dev/null &
+for _i in {1..10}; do
+    "$VPN_DIR/vpn-statusbar" update "state$_i" "profile$_i" "1.1.1.$_i" --queue 2> /dev/null &
 done
 wait
 result=$("$VPN_DIR/vpn-statusbar" --check-queue-health 2> /dev/null)

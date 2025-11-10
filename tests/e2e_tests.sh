@@ -258,9 +258,9 @@ test_performance_scenarios() {
     local connector_script="$PROJECT_DIR/src/vpn-connector"
 
     # Test that large numbers of profiles can be handled
-    for i in {1..20}; do
-        cat > "$TEST_LOCATIONS_DIR/test-$i.ovpn" << EOF
-remote 192.168.1.$((100 + i)) 1194
+    for _i in {1..20}; do
+        cat > "$TEST_LOCATIONS_DIR/test-$_i.ovpn" << EOF
+remote 192.168.1.$((100 + _i)) 1194
 proto udp
 dev tun
 nobind
@@ -278,7 +278,8 @@ EOF
 
     local end_time
     end_time=$(date +%s)
-    local duration=$((end_time - start_time))
+    local duration
+    duration=$((end_time - start_time))
 
     # Should complete within reasonable time (5 seconds)
     if [[ $duration -le 5 ]]; then

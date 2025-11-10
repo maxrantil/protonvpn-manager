@@ -38,12 +38,12 @@ readonly ERR_PROCESS="PROCESS"
 readonly ERR_CONFIG="CONFIG"
 readonly ERR_DEPENDENCY="DEPENDENCY"
 
-# Component identifiers
-readonly COMP_VPN_MAIN="VPN-CLI"
-readonly COMP_VPN_CONNECTOR="VPN-CONNECTOR"
-readonly COMP_VPN_MANAGER="VPN-MANAGER"
-readonly COMP_VPN_LOGGER="VPN-LOGGER"
-readonly COMP_FIX_OVPN="OVPN-FIXER"
+# Component identifiers (exported for use by other scripts)
+export COMP_VPN_MAIN="VPN-CLI"
+export COMP_VPN_CONNECTOR="VPN-CONNECTOR"
+export COMP_VPN_MANAGER="VPN-MANAGER"
+export COMP_VPN_LOGGER="VPN-LOGGER"
+export COMP_FIX_OVPN="OVPN-FIXER"
 
 # Error message templates for common scenarios
 declare -A ERROR_TEMPLATES=(
@@ -265,7 +265,8 @@ log_error() {
     local message="$4"
     local context="${5:-}"
 
-    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    local timestamp
+    timestamp=$(date '+%Y-%m-%d %H:%M:%S')
     local log_entry="[$timestamp] [$level] [$component] [$category] $message"
     [[ -n "$context" ]] && log_entry="$log_entry | Context: $context"
 

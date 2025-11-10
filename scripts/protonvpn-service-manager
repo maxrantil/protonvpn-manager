@@ -8,6 +8,7 @@ set -euo pipefail
 readonly VPN_LOG_DIR="/var/log/protonvpn"
 readonly VPN_RUN_DIR="/run/protonvpn"
 readonly VPN_CONFIG_DIR="/etc/protonvpn"
+# shellcheck disable=SC2034  # SYSTEMD_DIR reserved for systemd integration
 readonly SYSTEMD_DIR="/etc/systemd/system"
 
 # Service configuration

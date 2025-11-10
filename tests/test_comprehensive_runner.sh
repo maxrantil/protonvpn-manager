@@ -63,18 +63,23 @@ run_test_suite() {
     chmod +x "$test_script"
 
     # Run test suite and capture results
-    local start_time=$(date +%s)
+    local start_time
+    start_time=$(date +%s)
     local test_output_file="/tmp/test_output_$$.log"
 
     if bash "$test_script" > "$test_output_file" 2>&1; then
-        local end_time=$(date +%s)
-        local duration=$((end_time - start_time))
+        local end_time
+        end_time=$(date +%s)
+        local duration
+        duration=$((end_time - start_time))
 
         log_success "$test_name completed successfully in ${duration}s"
 
         # Extract test counts if available
-        local passed=$(grep -o "Passed: [0-9]\+" "$test_output_file" | tail -1 | grep -o "[0-9]\+" || echo "0")
-        local failed=$(grep -o "Failed: [0-9]\+" "$test_output_file" | tail -1 | grep -o "[0-9]\+" || echo "0")
+        local passed
+        passed=$(grep -o "Passed: [0-9]\+" "$test_output_file" | tail -1 | grep -o "[0-9]\+" || echo "0")
+        local failed
+        failed=$(grep -o "Failed: [0-9]\+" "$test_output_file" | tail -1 | grep -o "[0-9]\+" || echo "0")
 
         ((TOTAL_TESTS_PASSED += passed))
         ((TOTAL_TESTS_FAILED += failed))
@@ -86,8 +91,10 @@ run_test_suite() {
         tail -5 "$test_output_file" | sed 's/^/    /'
 
     else
-        local end_time=$(date +%s)
-        local duration=$((end_time - start_time))
+        local end_time
+        end_time=$(date +%s)
+        local duration
+        duration=$((end_time - start_time))
 
         log_error "$test_name failed after ${duration}s"
         FAILED_TEST_SUITES+=("$test_name")
@@ -145,7 +152,8 @@ cleanup_test_environment() {
 
 # Generate test report
 generate_test_report() {
-    local report_file="$PROJECT_DIR/test_report_$(date +%Y%m%d_%H%M%S).txt"
+    local report_file
+    report_file="$PROJECT_DIR/test_report_$(date +%Y%m%d_%H%M%S).txt"
 
     cat > "$report_file" << EOF
 ProtonVPN System Test Report
@@ -274,7 +282,8 @@ run_comprehensive_tests() {
             # Additional existing tests
             for test_file in "$TEST_DIR"/*_tests.sh; do
                 if [[ -f "$test_file" ]] && [[ ! "$test_file" =~ (test_security_validation|test_installation|test_service_management|integration_tests) ]]; then
-                    local test_name=$(basename "$test_file" .sh)
+                    local test_name
+                    test_name=$(basename "$test_file" .sh)
                     run_test_suite "$test_file" \
                         "$test_name" \
                         "Additional system testing"

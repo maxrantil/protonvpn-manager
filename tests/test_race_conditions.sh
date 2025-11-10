@@ -123,11 +123,11 @@ test_concurrent_locks() {
     local expected_count=1
 
     # Start multiple processes trying to acquire the same lock
-    for i in {1..5}; do
+    for _i in {1..5}; do
         (
             exec 200> "$lock_file"
             if flock -n 200; then
-                echo "Process $i acquired lock" >> "$TEST_DIR/lock_results.txt"
+                echo "Process $_i acquired lock" >> "$TEST_DIR/lock_results.txt"
                 sleep 0.5
                 flock -u 200
             fi
@@ -155,7 +155,7 @@ test_pid_file_race() {
     local pid_file="$TEST_DIR/test.pid"
 
     # Simulate multiple processes writing to PID file
-    for i in {1..3}; do
+    for _i in {1..3}; do
         (
             echo $$ > "$pid_file"
             sleep 0.1
@@ -192,7 +192,8 @@ test_permission_race() {
 
     # Main process should detect and fix permissions
     sleep 0.2
-    local perms=$(stat -c "%a" "$test_file")
+    local perms
+    perms=$(stat -c "%a" "$test_file")
 
     wait
 

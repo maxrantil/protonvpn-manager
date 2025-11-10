@@ -81,6 +81,7 @@ test_dry_run_connection_attempt() {
 
     # Test connection attempt with test profile (should not actually connect)
     local connect_output
+    # shellcheck disable=SC2034  # LOCATIONS_DIR is intentionally set for subprocess environment
     LOCATIONS_DIR="$TEST_LOCATIONS_DIR" connect_output=$("$connector_script" connect se 2>&1) || true
 
     # Should attempt to process the connection even if mocked
@@ -143,6 +144,7 @@ test_credentials_file_access() {
     chmod 600 "$test_creds"
 
     # Test that connector can find credentials file
+    # shellcheck disable=SC2034  # CREDENTIALS_FILE is intentionally set for subprocess environment
     CREDENTIALS_FILE="$test_creds" test_output=$("$connector_script" test 2>&1) || true
 
     if echo "$test_output" | grep -q -v "credentials.*not found"; then

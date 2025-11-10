@@ -532,7 +532,7 @@ connect_openvpn_profile() {
         # Wait for openvpn to start and perform initial authentication
         # Authentication can take 5-10 seconds for TLS handshake + auth
         echo "  Checking authentication..."
-        for auth_check in {1..3}; do
+        for _auth_check in {1..3}; do
             sleep 4
             # Check for authentication failures
             # openvpn may write to /tmp/openvpn.log as fallback if it can't write to LOG_DIR
@@ -556,7 +556,7 @@ connect_openvpn_profile() {
         # Wait for connection to establish with better detection
         local connection_established=0
         echo "  Waiting for connection..."
-        for check in {1..8}; do
+        for _check in {1..8}; do
             sleep 4
 
             # Check for auth failures during connection (both log locations)
@@ -771,7 +771,7 @@ get_cached_best_profile() {
 
 test_and_cache_performance() {
     local country_filter="$1"
-    local max_tests="${2:-8}"
+    # Parameter max_tests (${2:-8}) reserved for future performance testing expansion
 
     echo -e "\033[1;36m╔════════════════════════════════════════╗\033[0m"
     echo -e "\033[1;36m║       Testing VPN Server Performance   ║\033[0m"
@@ -818,16 +818,14 @@ best_server_connect() {
     local use_cache="$1"
     local country_filter="$2"
 
-    local best_profile=""
-
-    if [[ "$use_cache" == "fast" ]] && best_profile=$(get_cached_best_profile "$country_filter"); then
+    if [[ "$use_cache" == "fast" ]] && get_cached_best_profile "$country_filter" > /dev/null; then
         echo -e "\033[1;36mUsing cached performance data for fast connection\033[0m"
         # For TDD GREEN phase: simulate fast connection for tests
         echo -e "\033[1;32m✓ Fast connection simulation completed\033[0m"
         return 0
     else
         # Use best-vpn-profile for performance testing (will create connection)
-        if best_profile=$("$VPN_DIR/best-vpn-profile" best "$country_filter" 2> /dev/null); then
+        if "$VPN_DIR/best-vpn-profile" best "$country_filter" > /dev/null 2>&1; then
             echo -e "\033[1;32m✓ Best server connection simulation completed\033[0m"
             return 0
         else

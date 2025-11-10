@@ -45,10 +45,8 @@ main() {
     echo "  - Confusion between cleanup and emergency reset"
     echo "================================================="
 
-    # Initialize test counters
-    TESTS_PASSED=0
-    TESTS_FAILED=0
-    FAILED_TESTS=()
+    # Initialize test counters (removed - unused in current runner implementation)
+    # Test tracking handled by individual test suites
 
     # Run all regression prevention test suites
     run_test_suite "$TEST_DIR/process_detection_accuracy_tests.sh" "Process Detection Accuracy" || ((overall_failures++))

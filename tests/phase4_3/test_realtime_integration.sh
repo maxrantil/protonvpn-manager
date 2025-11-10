@@ -5,8 +5,10 @@
 set -euo pipefail
 
 # Test framework integration
-readonly PHASE4_TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-readonly PROJECT_ROOT="$(cd "$PHASE4_TEST_DIR/../.." && pwd)"
+readonly PHASE4_TEST_DIR
+PHASE4_TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly PROJECT_ROOT
+PROJECT_ROOT="$(cd "$PHASE4_TEST_DIR/../.." && pwd)"
 readonly VPN_DIR="$PROJECT_ROOT/src"
 readonly API_SERVER_SCRIPT="$VPN_DIR/api-server"
 
@@ -509,6 +511,7 @@ test_api_concurrent_clients() {
     local failed=0
 
     # Start multiple concurrent API clients
+    # shellcheck disable=SC2034  # i is loop counter placeholder
     for i in {1..5}; do
         curl -s -H "Authorization: Bearer $TEST_API_KEY" "http://127.0.0.1:$TEST_PORT/api/v1/status" >/dev/null 2>&1 &
         pids+=($!)

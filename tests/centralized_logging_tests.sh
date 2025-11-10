@@ -5,8 +5,10 @@
 set -euo pipefail
 
 # Test configuration
-readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-readonly PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+readonly SCRIPT_DIR
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly PROJECT_ROOT
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 readonly VPN_LOGGER="$PROJECT_ROOT/src/vpn-logger"
 readonly TEST_LOG_DIR="/tmp/vpn_test_logs"
 readonly CENTRAL_LOG="$TEST_LOG_DIR/vpn.log"
@@ -236,8 +238,8 @@ test_log_rotation() {
     start_test "vpn-logger supports log rotation"
 
     # Create a large log file to trigger rotation
-    for i in {1..100}; do
-        echo "Large log entry number $i with lots of content to make the file bigger" >> "$CENTRAL_LOG"
+    for _i in {1..100}; do
+        echo "Large log entry number $_i with lots of content to make the file bigger" >> "$CENTRAL_LOG"
     done
 
     # Test rotation

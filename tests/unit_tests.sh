@@ -9,8 +9,8 @@ TEST_DIR="$(dirname "$(realpath "$0")")"
 # shellcheck source=tests/test_framework.sh
 source "$TEST_DIR/test_framework.sh"
 
-# Source the VPN connector functions for testing
-VPN_CONNECTOR="$PROJECT_DIR/vpn-connector"
+# Note: VPN_CONNECTOR path removed - unused in unit tests
+# Tests use mocked functions instead
 
 # Test helper functions
 test_country_code_validation() {
@@ -103,7 +103,8 @@ test_cache_file_operations() {
     setup_test_env
 
     local test_cache="/tmp/test_cache_$$"
-    local test_data="profile1.ovpn|50|$(date +%s)
+    local test_data
+    test_data="profile1.ovpn|50|$(date +%s)
 profile2.ovpn|75|$(date +%s)
 profile3.ovpn|100|$(date +%s)"
 
