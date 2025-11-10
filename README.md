@@ -235,18 +235,18 @@ You're ready to use ProtonVPN Manager. Try these commands:
 ./src/vpn help
 ```
 
-## Core Components (2,891 lines total)
+## Core Components (3,217 lines total)
 
 This simplified version contains only essential components:
 
-- **`src/vpn`** - Main CLI interface (307 lines)
-- **`src/vpn-manager`** - Process management and safety (949 lines)
-- **`src/vpn-connector`** - Server selection logic (977 lines)
+- **`src/vpn`** - Main CLI interface (303 lines)
+- **`src/vpn-manager`** - Process management and safety (1,108 lines)
+- **`src/vpn-connector`** - Server selection logic (1,081 lines)
 - **`src/best-vpn-profile`** - Performance testing engine (104 lines)
-- **`src/vpn-error-handler`** - Error handling (275 lines)
-- **`src/fix-ovpn-configs`** - Configuration file validation (281 lines)
-- **`src/vpn-utils`** - Shared utility functions (logging, notifications)
-- **`src/vpn-colors`** - Color management with NO_COLOR support
+- **`src/vpn-error-handler`** - Error handling (287 lines)
+- **`src/vpn-validators`** - Input validation and security checks (230 lines)
+- **`src/vpn-utils`** - Shared utility functions (34 lines)
+- **`src/vpn-colors`** - Color management with NO_COLOR support (70 lines)
 
 ## Available Commands
 
