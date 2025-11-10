@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 # ABOUTME: Centralized color management for VPN scripts with NO_COLOR support
 # ABOUTME: Provides ANSI color codes and colorize function respecting user preferences
 

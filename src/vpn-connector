@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 # ABOUTME: VPN connection establishment and profile management for Artix/Arch Linux
 # ABOUTME: Handles server selection, connection attempts, and performance testing
 
@@ -902,7 +903,7 @@ connect_custom_profile() {
     connect_to_profile "$profile_path"
 }
 
-case "$1" in
+case "${1:-}" in
     "connect" | "c")
         if ! check_dependencies; then
             exit 1
@@ -912,7 +913,7 @@ case "$1" in
             exit 1
         fi
 
-        connect_random "$2"
+        connect_random "${2:-}"
         ;;
     "best" | "b")
         if ! check_dependencies; then
@@ -925,7 +926,7 @@ case "$1" in
 
         # For TDD GREEN phase: make best command actually perform connection
         echo -e "\033[1;36mFinding best server and connecting...\033[0m"
-        best_server_connect "full" "$2"
+        best_server_connect "full" "${2:-}"
         ;;
     "fast" | "f")
         if ! check_dependencies; then
@@ -937,7 +938,7 @@ case "$1" in
         fi
 
         echo -e "\033[1;33mFast connect mode (using cached results if available)\033[0m"
-        best_server_connect "fast" "$2"
+        best_server_connect "fast" "${2:-}"
         ;;
     "secure")
         if ! check_dependencies; then
@@ -959,7 +960,7 @@ case "$1" in
             exit 1
         fi
 
-        connect_custom_profile "$2"
+        connect_custom_profile "${2:-}"
         ;;
     "interactive" | "i")
         if ! check_dependencies; then
@@ -970,7 +971,7 @@ case "$1" in
             exit 1
         fi
 
-        interactive_profile_selection "$2"
+        interactive_profile_selection "${2:-}"
         ;;
     "countries")
         echo -e "\033[1;36mAvailable countries in profiles:\033[0m"
@@ -980,14 +981,14 @@ case "$1" in
         done
         ;;
     "list" | "l")
-        if [[ "$2" == "detailed" ]]; then
-            list_profiles "$3" "detailed"
+        if [[ "${2:-}" == "detailed" ]]; then
+            list_profiles "${3:-}" "detailed"
         else
-            list_profiles "$2"
+            list_profiles "${2:-}"
         fi
         ;;
     "cache")
-        case "$2" in
+        case "${2:-}" in
             "clear")
                 if [[ -f "$PERFORMANCE_CACHE" ]]; then
                     rm -f "$PERFORMANCE_CACHE"

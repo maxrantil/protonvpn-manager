@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 # ABOUTME: VPN process and connection management script for Artix/Arch Linux
 # ABOUTME: Handles OpenVPN process lifecycle, status checking, and cleanup operations
 
@@ -1049,7 +1050,7 @@ show_status_format() {
     esac
 }
 
-case "$1" in
+case "${1:-}" in
     "status" | "s")
         show_status
         ;;
@@ -1063,7 +1064,7 @@ case "$1" in
         show_status_enhanced
         ;;
     "status-format")
-        show_status_format "$2"
+        show_status_format "${2:-}"
         ;;
     "stop" | "disconnect" | "d")
         stop_vpn
