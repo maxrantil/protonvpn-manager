@@ -5,7 +5,8 @@
 set -euo pipefail
 
 # Test framework integration
-readonly PHASE4_TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly PHASE4_TEST_DIR
+PHASE4_TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly PROJECT_ROOT
 PROJECT_ROOT="$(cd "$PHASE4_TEST_DIR/../.." && pwd)"
 readonly VPN_DIR="$PROJECT_ROOT/src"
