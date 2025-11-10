@@ -1,0 +1,17 @@
+# ABOUTME: Push event protection workflows (using centralized reusable workflows)
+
+name: Push Protection
+
+on:
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  protect-master:
+    name: Block Direct Pushes to Master
+    uses: maxrantil/.github/.github/workflows/protect-master-reusable.yml@master
+    with:
+      protected-branch: 'master'
