@@ -24,7 +24,8 @@ NC='\033[0m'
 log_test() {
     local level="$1"
     local message="$2"
-    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    local timestamp
+    timestamp=$(date '+%Y-%m-%d %H:%M:%S')
 
     case "$level" in
         "PASS") echo -e "${GREEN}[PASS]${NC} [$timestamp] $message" ;;
@@ -806,7 +807,7 @@ test_zombie_process_detection() {
     # Create zombie process (child exits, parent doesn't reap)
     (
         bash -c "exec -a 'openvpn --config /test/zombie.ovpn' true" &
-        local child_pid=$!
+        local _child_pid=$!
         sleep 0.5
         # Parent stays alive, child becomes zombie
         sleep 5
