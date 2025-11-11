@@ -227,7 +227,23 @@ sanitize_user_input() {
 # Returns: 0 if valid, 1 if invalid
 validate_pid() {
     local pid="$1"
-    [[ -n "$pid" && "$pid" =~ ^[0-9]+$ && "$pid" -gt 0 && "$pid" -lt 4194304 ]]
+
+    # Must be non-empty and numeric only
+    [[ -n "$pid" ]] || return 1
+    [[ "$pid" =~ ^[0-9]+$ ]] || return 1
+
+    # Reject leading zeros (octal confusion risk)
+    [[ "$pid" =~ ^0[0-9] ]] && return 1
+
+    # Must be positive
+    [[ "$pid" -gt 0 ]] || return 1
+
+    # Check against system PID_MAX (read from /proc if available)
+    local system_pid_max
+    system_pid_max=$(cat /proc/sys/kernel/pid_max 2>/dev/null || echo "4194304")
+    [[ "$pid" -lt "$system_pid_max" ]] || return 1
+
+    return 0
 }
 
 # Validate that a PID belongs to an OpenVPN process
