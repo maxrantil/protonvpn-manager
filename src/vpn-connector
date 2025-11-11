@@ -306,16 +306,36 @@ interactive_profile_selection() {
 validate_country_code() {
     local country_code="$1"
 
-    # List of common country codes we support
-    local supported_countries="se dk no nl de ch us uk fr ca jp au"
+    # Security: Reject empty input
+    if [[ -z "$country_code" ]]; then
+        return 1
+    fi
 
+    # Security: Length must be exactly 2 characters
     if [[ ${#country_code} -ne 2 ]]; then
         return 1
     fi
 
+    # Security: CRITICAL - Reject path traversal and command injection attempts
+    # Only allow alphanumeric characters (a-z, A-Z, 0-9)
+    if [[ ! "$country_code" =~ ^[a-zA-Z0-9]+$ ]]; then
+        return 1
+    fi
+
+    # Security: Explicitly reject dangerous patterns
+    case "$country_code" in
+        */*|*\\*|*..*|*\;*|*\|*|*\&*|*\$*|*\`*|*\ *)
+            return 1
+            ;;
+    esac
+
+    # List of common country codes we support
+    local supported_countries="se dk no nl de ch us uk fr ca jp au"
+
     local code_lower
     code_lower=$(echo "$country_code" | tr '[:upper:]' '[:lower:]')
 
+    # Whitelist validation
     for supported in $supported_countries; do
         if [[ "$code_lower" == "$supported" ]]; then
             return 0
@@ -334,10 +354,12 @@ find_profiles_by_country() {
         return
     fi
 
-    # Validate country code format
+    # Security: CRITICAL - Validate country code format and reject dangerous inputs
     if ! validate_country_code "$country_code"; then
-        echo -e "\033[1;33mWarning: '$country_code' may not be a valid country code\033[0m" >&2
-        echo -e "Supported: se, dk, no, nl, de, ch, us, uk, fr, ca, jp, au" >&2
+        echo -e "\033[1;31mError: Invalid country code '$country_code' - security validation failed\033[0m" >&2
+        echo -e "Supported country codes: se, dk, no, nl, de, ch, us, uk, fr, ca, jp, au" >&2
+        echo -e "\033[1;33mNote: Only alphanumeric 2-character codes are allowed\033[0m" >&2
+        return 1
     fi
 
     country_code=$(echo "$country_code" | tr '[:upper:]' '[:lower:]')
@@ -901,6 +923,9 @@ connect_custom_profile() {
     connect_to_profile "$profile_path"
 }
 
+# Main execution guard - only run if executed directly, not sourced
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+
 case "${1:-}" in
     "connect" | "c")
         if ! check_dependencies; then
@@ -1078,3 +1103,5 @@ case "${1:-}" in
         exit 1
         ;;
 esac
+
+fi # End of main execution guard

@@ -135,7 +135,77 @@ test_path_traversal_protection() {
     fi
 }
 
-# Test 3: Input Sanitization
+# Test 3: Country Code Path Traversal Prevention
+test_country_code_path_traversal() {
+    echo "=== Security Test: Country Code Path Traversal Prevention ==="
+
+    local vpn_connector="$PROJECT_DIR/src/vpn-connector"
+
+    # Test malicious country code inputs that should be rejected
+    local malicious_country_codes=(
+        "../"           # Directory traversal (2 chars, passes length check)
+        ".."            # Parent directory (2 chars, passes length check)
+        "/e"            # Absolute path start (2 chars)
+        "\\"            # Backslash escape (2 chars) - Windows-style
+        "\n"            # Newline injection (2 chars)
+        "\0"            # Null byte injection (2 chars)
+        "./"            # Current directory (2 chars)
+        "s;"            # Command injection attempt (2 chars)
+        "s|"            # Pipe injection (2 chars)
+        "s&"            # Background command (2 chars)
+        "\$("           # Command substitution (2 chars)
+        "\`s"           # Backtick injection (2 chars)
+        "../../etc/passwd"  # Classic traversal (too long but test anyway)
+        "../../../"         # Deep traversal
+        "se/../../etc"      # Mixed valid + traversal
+    )
+
+    # Test that null bytes and special chars are rejected
+    local null_byte_test=$'.\x00'
+    malicious_country_codes+=("$null_byte_test")
+
+    local traversal_prevented=true
+
+    for code in "${malicious_country_codes[@]}"; do
+        echo "Testing malicious country code: $(printf '%q' "$code")"
+
+        # Test actual production behavior - malicious codes should be rejected
+        if "$vpn_connector" list "$code" 2>&1 | command grep -a -q "security validation failed"; then
+            echo "  ✅ PASS: Malicious country code rejected: $(printf '%q' "$code")"
+        else
+            echo "  ❌ FAIL: Malicious country code accepted: $(printf '%q' "$code")"
+            traversal_prevented=false
+        fi
+    done
+
+    # Test that valid country codes still work
+    local valid_country_codes=(
+        "se"
+        "us"
+        "uk"
+        "de"
+        "fr"
+    )
+
+    echo "Verifying valid country codes still accepted:"
+    for code in "${valid_country_codes[@]}"; do
+        # Valid codes should NOT show security validation failed message
+        if "$vpn_connector" list "$code" 2>&1 | command grep -a -q "security validation failed"; then
+            echo "  ❌ FAIL: Valid country code rejected: $code"
+            traversal_prevented=false
+        else
+            echo "  ✅ PASS: Valid country code accepted: $code"
+        fi
+    done
+
+    if [[ "$traversal_prevented" == "true" ]]; then
+        log_security_test "PASS" "Country code path traversal prevention effective"
+    else
+        log_security_test "FAIL" "Country code path traversal prevention insufficient (CVSS 7.0)"
+    fi
+}
+
+# Test 4: Input Sanitization
 test_input_sanitization() {
     echo "=== Security Test: Input Sanitization ==="
 
@@ -176,7 +246,7 @@ test_input_sanitization() {
     fi
 }
 
-# Test 4: Permission Enforcement
+# Test 5: Permission Enforcement
 test_permission_enforcement() {
     echo "=== Security Test: Permission Enforcement ==="
 
@@ -227,7 +297,7 @@ test_permission_enforcement() {
     fi
 }
 
-# Test 5: Service Name Validation
+# Test 6: Service Name Validation
 test_service_name_validation() {
     echo "=== Security Test: Service Name Validation ==="
 
@@ -283,7 +353,7 @@ test_service_name_validation() {
     fi
 }
 
-# Test 6: PID File Security
+# Test 7: PID File Security
 test_pid_file_security() {
     echo "=== Security Test: PID File Security ==="
 
@@ -325,7 +395,7 @@ test_pid_file_security() {
     fi
 }
 
-# Test 7: Systemd Security Features
+# Test 8: Systemd Security Features
 test_systemd_security_features() {
     echo "=== Security Test: Systemd Security Features ==="
 
@@ -372,6 +442,7 @@ main() {
 
     test_command_injection_prevention
     test_path_traversal_protection
+    test_country_code_path_traversal
     test_input_sanitization
     test_permission_enforcement
     test_service_name_validation
