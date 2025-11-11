@@ -60,6 +60,7 @@ fi
 source "$VPN_DIR/vpn-colors"
 source "$VPN_DIR/vpn-error-handler"
 source "$VPN_DIR/vpn-utils"
+source "$VPN_DIR/vpn-validators"
 
 # Enhanced logging function for VPN events
 # Usage: log_vpn_event "LEVEL" "message"
@@ -456,38 +457,6 @@ stop_vpn() {
     pkill -RTMIN+4 dwmblocks 2> /dev/null || true
 
     return 0
-}
-
-validate_pid() {
-    local pid="$1"
-    [[ -n "$pid" && "$pid" =~ ^[0-9]+$ && "$pid" -gt 0 && "$pid" -lt 4194304 ]]
-}
-
-validate_openvpn_process() {
-    local pid="$1"
-    if ! validate_pid "$pid"; then
-        return 1
-    fi
-    local cmd_line
-    cmd_line=$(ps -p "$pid" -o cmd= 2> /dev/null || true)
-    [[ "$cmd_line" =~ ^openvpn.*--config ]]
-}
-
-# Discover all VPN-related processes including zombies
-# Returns: newline-separated list of PIDs
-validate_and_discover_processes() {
-    local openvpn_pids zombie_pids pids
-
-    # Find running OpenVPN processes
-    openvpn_pids=$(pgrep -f "openvpn.*--config" 2> /dev/null || true)
-
-    # Find zombie OpenVPN processes
-    zombie_pids=$(ps -eo pid,stat,comm | awk '$2~/^Z/ && $3=="openvpn" {print $1}' 2> /dev/null || true)
-
-    # Combine and deduplicate PIDs
-    pids=$(echo -e "$openvpn_pids\n$zombie_pids" | grep -v '^$' | sort -u || true)
-
-    echo "$pids"
 }
 
 # Attempt graceful termination using TERM signal

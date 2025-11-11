@@ -9,7 +9,11 @@ TEST_DIR="$(dirname "$(dirname "$(realpath "$0")")")"
 # shellcheck source=tests/test_framework.sh
 source "$TEST_DIR/test_framework.sh"
 
-PROJECT_DIR="$(dirname "$TEST_DIR")"
+# Override PROJECT_DIR to point to actual project root (not tests dir)
+# test_framework.sh sets PROJECT_DIR=$(dirname TEST_DIR), but TEST_DIR is /path/tests
+# So PROJECT_DIR ends up as /path/tests/.. which resolves to /path/tests due to symlinks
+# We need to explicitly go up two levels from security/ subdir
+PROJECT_DIR="$(dirname "$(dirname "$TEST_DIR")")"
 VPN_MANAGER="$PROJECT_DIR/src/vpn-manager"
 
 # Test-specific variables
@@ -66,34 +70,19 @@ create_fake_process() {
     echo "$pid"
 }
 
-# Helper: Source vpn-manager functions safely
-source_vpn_manager() {
-    # Source the vpn-manager file to get access to validation functions
-    # Need to set VPN_DIR first so vpn-manager can find dependencies
-    export VPN_DIR="$PROJECT_DIR/src"
+# Helper: Source vpn-validators functions (simplified - no initialization needed)
+source_vpn_validators() {
+    # PID validation functions are now in vpn-validators module
+    # This module has no initialization code, so we can source it directly
+    local validators="$PROJECT_DIR/src/vpn-validators"
 
-    # Create mock environment to prevent vpn-manager from failing during source
-    export LOG_DIR="${LOG_DIR:-/tmp/vpn-test-$$}"
-    export CACHE_DIR="${CACHE_DIR:-/tmp/vpn-cache-test-$$}"
-    export LOCK_DIR="${LOCK_DIR:-/tmp/vpn-lock-test-$$}"
-    mkdir -p "$LOG_DIR" "$CACHE_DIR" "$LOCK_DIR" 2>/dev/null
-    chmod 700 "$LOG_DIR" "$CACHE_DIR" "$LOCK_DIR" 2>/dev/null
-
-    export VPN_PID_FILE="/tmp/test-openvpn.pid"
-    export VPN_LOG_FILE="$LOG_DIR/vpn_manager.log"
-    export LOCK_FILE="$LOCK_DIR/vpn_manager.lock"
-
-    # Touch log file with correct permissions
-    touch "$VPN_LOG_FILE" 2>/dev/null
-    chmod 600 "$VPN_LOG_FILE" 2>/dev/null
-
-    # Source vpn-manager (which sources its dependencies)
-    # Suppress initialization output and errors
     # shellcheck disable=SC1090
-    source "$VPN_MANAGER" 2>/dev/null || {
-        log_test "WARN" "Could not source vpn-manager, some tests may fail"
+    if ! source "$validators" 2>/dev/null; then
+        log_test "ERROR" "Could not source vpn-validators"
         return 1
-    }
+    fi
+
+    return 0
 }
 
 # ============================================================================
@@ -103,7 +92,7 @@ source_vpn_manager() {
 test_validate_pid_accepts_valid_pids() {
     start_test "validate_pid: Accept valid PID range"
 
-    source_vpn_manager
+    source_vpn_validators
 
     local valid_pids=(1 100 1000 10000 100000 1000000 4194303)
     local all_passed=true
@@ -128,7 +117,7 @@ test_validate_pid_accepts_valid_pids() {
 test_validate_pid_rejects_zero() {
     start_test "validate_pid: Reject PID 0"
 
-    source_vpn_manager
+    source_vpn_validators
 
     if validate_pid "0"; then
         log_test "FAIL" "Accepted PID 0 (should reject - null process)"
@@ -145,7 +134,7 @@ test_validate_pid_rejects_zero() {
 test_validate_pid_rejects_negative() {
     start_test "validate_pid: Reject negative PIDs"
 
-    source_vpn_manager
+    source_vpn_validators
 
     local negative_pids=(-1 -100 -999999)
     local all_rejected=true
@@ -168,7 +157,7 @@ test_validate_pid_rejects_negative() {
 test_validate_pid_rejects_overflow() {
     start_test "validate_pid: Reject PIDs above system maximum"
 
-    source_vpn_manager
+    source_vpn_validators
 
     # Linux PID_MAX_LIMIT is 4194304 (2^22)
     local overflow_pids=(4194304 4194305 9999999 2147483647 2147483648)
@@ -192,7 +181,7 @@ test_validate_pid_rejects_overflow() {
 test_validate_pid_rejects_empty_string() {
     start_test "validate_pid: Reject empty string"
 
-    source_vpn_manager
+    source_vpn_validators
 
     if validate_pid ""; then
         log_test "FAIL" "Accepted empty string as PID"
@@ -209,7 +198,7 @@ test_validate_pid_rejects_empty_string() {
 test_validate_pid_rejects_whitespace() {
     start_test "validate_pid: Reject whitespace inputs"
 
-    source_vpn_manager
+    source_vpn_validators
 
     local whitespace_inputs=(" " "  " "	" "  123" "123  " " 123 ")
     local all_rejected=true
@@ -232,7 +221,7 @@ test_validate_pid_rejects_whitespace() {
 test_validate_pid_rejects_non_numeric() {
     start_test "validate_pid: Reject non-numeric inputs"
 
-    source_vpn_manager
+    source_vpn_validators
 
     local non_numeric=("abc" "12a34" "a1234" "pid" "one" "1.234" "1,234")
     local all_rejected=true
@@ -255,7 +244,7 @@ test_validate_pid_rejects_non_numeric() {
 test_validate_pid_rejects_shell_metacharacters() {
     start_test "validate_pid: Reject shell metacharacters"
 
-    source_vpn_manager
+    source_vpn_validators
 
     local shell_chars=(
         "12;3"
@@ -293,7 +282,7 @@ test_validate_pid_rejects_shell_metacharacters() {
 test_validate_pid_rejects_path_traversal() {
     start_test "validate_pid: Reject path traversal attempts"
 
-    source_vpn_manager
+    source_vpn_validators
 
     local path_attempts=("../1234" "../../proc/1" "/proc/1234" "./1234" "$HOME/1234")
     local all_rejected=true
@@ -316,7 +305,7 @@ test_validate_pid_rejects_path_traversal() {
 test_validate_pid_rejects_octal_hex() {
     start_test "validate_pid: Reject octal and hexadecimal encoding"
 
-    source_vpn_manager
+    source_vpn_validators
 
     local encoded_pids=("0123" "0777" "0x1234" "0xFFFF" "0o123")
     local all_rejected=true
@@ -339,7 +328,7 @@ test_validate_pid_rejects_octal_hex() {
 test_validate_pid_rejects_leading_zeros() {
     start_test "validate_pid: Reject PIDs with leading zeros"
 
-    source_vpn_manager
+    source_vpn_validators
 
     # Leading zeros could be interpreted as octal, security risk
     local leading_zero_pids=("00001" "000123" "0000000001")
@@ -363,7 +352,7 @@ test_validate_pid_rejects_leading_zeros() {
 test_validate_pid_system_pid_max() {
     start_test "validate_pid: Respect system PID_MAX"
 
-    source_vpn_manager
+    source_vpn_validators
 
     # Read actual system PID_MAX
     local system_pid_max
@@ -408,7 +397,7 @@ test_validate_openvpn_process_valid() {
     local openvpn_pid
     openvpn_pid=$(create_fake_openvpn_process "valid.ovpn")
 
-    source_vpn_manager
+    source_vpn_validators
 
     if validate_openvpn_process "$openvpn_pid"; then
         log_test "PASS" "Validated legitimate OpenVPN process (PID: $openvpn_pid)"
@@ -429,7 +418,7 @@ test_validate_openvpn_process_wrong_command() {
     local fake_pid
     fake_pid=$(create_fake_process "sleep" 60)
 
-    source_vpn_manager
+    source_vpn_validators
 
     if validate_openvpn_process "$fake_pid"; then
         log_test "FAIL" "Accepted non-OpenVPN process as valid (PID: $fake_pid)"
@@ -452,7 +441,7 @@ test_validate_openvpn_process_similar_name() {
     TEST_PIDS+=("$similar_pid")
     sleep 0.1
 
-    source_vpn_manager
+    source_vpn_validators
 
     if validate_openvpn_process "$similar_pid"; then
         log_test "FAIL" "Accepted 'openvpn-fake' as legitimate (PID: $similar_pid)"
@@ -469,7 +458,7 @@ test_validate_openvpn_process_similar_name() {
 test_validate_openvpn_process_nonexistent() {
     start_test "validate_openvpn_process: Reject nonexistent PID"
 
-    source_vpn_manager
+    source_vpn_validators
 
     # Use a PID that definitely doesn't exist
     local nonexistent_pid=999999
@@ -489,7 +478,7 @@ test_validate_openvpn_process_nonexistent() {
 test_validate_openvpn_process_invalid_pid_format() {
     start_test "validate_openvpn_process: Reject invalid PID format"
 
-    source_vpn_manager
+    source_vpn_validators
 
     # Should fail PID validation before checking process
     if validate_openvpn_process "not-a-pid"; then
@@ -513,7 +502,7 @@ test_validate_openvpn_process_missing_config_flag() {
     TEST_PIDS+=("$no_config_pid")
     sleep 0.1
 
-    source_vpn_manager
+    source_vpn_validators
 
     if validate_openvpn_process "$no_config_pid"; then
         log_test "FAIL" "Accepted OpenVPN process without --config flag"
@@ -536,7 +525,7 @@ test_validate_openvpn_process_concurrent_validation() {
     pid2=$(create_fake_openvpn_process "concurrent2.ovpn")
     pid3=$(create_fake_openvpn_process "concurrent3.ovpn")
 
-    source_vpn_manager
+    source_vpn_validators
 
     # Validate all concurrently
     local all_valid=true
@@ -564,7 +553,7 @@ test_validate_openvpn_process_concurrent_validation() {
 test_command_injection_via_pid() {
     start_test "Security: Command injection prevention via PID parameter"
 
-    source_vpn_manager
+    source_vpn_validators
 
     # Create marker file to detect injection
     local marker_file="/tmp/pid-injection-marker-$$"
@@ -618,7 +607,7 @@ EOF
     TEST_PIDS+=("$impostor_pid")
     sleep 0.1
 
-    source_vpn_manager
+    source_vpn_validators
 
     # Should be rejected (not real openvpn executable)
     if validate_openvpn_process "$impostor_pid"; then
@@ -646,7 +635,7 @@ test_process_impersonation_symlink() {
     TEST_PIDS+=("$symlink_pid")
     sleep 0.1
 
-    source_vpn_manager
+    source_vpn_validators
 
     if validate_openvpn_process "$symlink_pid"; then
         log_test "FAIL" "Accepted symlinked process as OpenVPN"
@@ -663,7 +652,7 @@ test_process_impersonation_symlink() {
 test_privilege_escalation_system_pid() {
     start_test "Security: Prevent targeting system processes"
 
-    source_vpn_manager
+    source_vpn_validators
 
     # Critical system PIDs that should NEVER be accepted as OpenVPN
     local system_pids=(1 2)  # init, kthreadd
@@ -687,7 +676,7 @@ test_privilege_escalation_system_pid() {
 test_information_disclosure_error_messages() {
     start_test "Security: Prevent PID information disclosure in error messages"
 
-    source_vpn_manager
+    source_vpn_validators
 
     # Test that error messages don't leak sensitive PID information
     # This is more of a code review test - checking that validation
@@ -716,7 +705,7 @@ test_pid_reuse_timing_window() {
     local test_pid
     test_pid=$(create_fake_openvpn_process "toctou-test.ovpn" 1)
 
-    source_vpn_manager
+    source_vpn_validators
 
     # Validate process
     if validate_openvpn_process "$test_pid"; then
@@ -764,7 +753,7 @@ test_lock_file_pid_validation() {
         "not-a-number"
     )
 
-    source_vpn_manager
+    source_vpn_validators
 
     local all_handled=true
 
@@ -850,7 +839,7 @@ test_zombie_process_detection() {
     if [[ -n "$zombie_pid" ]]; then
         log_test "INFO" "Created zombie process: $zombie_pid"
 
-        source_vpn_manager
+        source_vpn_validators
 
         # Test if validate_and_discover_processes finds zombies
         local discovered
@@ -876,7 +865,7 @@ test_recently_killed_process() {
     local short_pid
     short_pid=$(create_fake_openvpn_process "short-lived.ovpn" 0.5)
 
-    source_vpn_manager
+    source_vpn_validators
 
     # Validate process
     if validate_openvpn_process "$short_pid"; then
@@ -904,7 +893,7 @@ test_recently_killed_process() {
 test_kernel_thread_rejection() {
     start_test "Edge Case: Reject kernel thread PIDs"
 
-    source_vpn_manager
+    source_vpn_validators
 
     # PID 2 is kthreadd on Linux
     if validate_openvpn_process "2"; then
@@ -922,7 +911,7 @@ test_kernel_thread_rejection() {
 test_current_shell_protection() {
     start_test "Edge Case: Reject current shell PID"
 
-    source_vpn_manager
+    source_vpn_validators
 
     # Should not accept current shell as OpenVPN
     if validate_openvpn_process "$$"; then
@@ -940,7 +929,7 @@ test_current_shell_protection() {
 test_empty_command_line_process() {
     start_test "Edge Case: Reject process with empty command line"
 
-    source_vpn_manager
+    source_vpn_validators
 
     # Some processes (like kernel threads) have empty cmdline
     # Should be rejected by validation
@@ -968,7 +957,7 @@ test_rapid_pid_validation_stress() {
     local stable_pid
     stable_pid=$(create_fake_openvpn_process "stable.ovpn" 10)
 
-    source_vpn_manager
+    source_vpn_validators
 
     # Rapidly validate same PID many times
     local iterations=100
