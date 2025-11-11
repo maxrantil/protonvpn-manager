@@ -189,7 +189,7 @@ list_profiles() {
     while IFS= read -r profile; do
         local name
         name=$(basename "$profile" .ovpn)
-        ((count++))
+        ((++count))
 
         if [[ "$show_details" == "detailed" ]]; then
             local server_ip country_info secure_core=""
@@ -273,7 +273,7 @@ interactive_profile_selection() {
         profile_array+=("$profile")
         local name
         name=$(basename "$profile" .ovpn)
-        ((count++))
+        ((++count))
 
         local secure_core=""
         if echo "$name" | grep -iq "secure\|core"; then

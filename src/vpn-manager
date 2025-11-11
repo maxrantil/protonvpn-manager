@@ -715,9 +715,13 @@ cleanup_files() {
     fi
 
     # Clean up lock files (these should be user-writable in secure LOCK_DIR)
-    [[ -f "$LOCK_FILE" ]] && rm -f "$LOCK_FILE" 2> /dev/null
+    if [[ -f "$LOCK_FILE" ]]; then
+        rm -f "$LOCK_FILE" 2> /dev/null || true
+    fi
     # Also clean vpn-connector's lock file from same secure directory
-    [[ -f "$LOCK_DIR/vpn_connect.lock" ]] && rm -f "$LOCK_DIR/vpn_connect.lock" 2> /dev/null
+    if [[ -f "$LOCK_DIR/vpn_connect.lock" ]]; then
+        rm -f "$LOCK_DIR/vpn_connect.lock" 2> /dev/null || true
+    fi
 }
 
 cleanup_routes_light() {
@@ -725,7 +729,7 @@ cleanup_routes_light() {
 
     # Clean up OpenVPN tunnel interfaces
     local interfaces
-    interfaces=$(ip addr show | grep -E "tun[0-9]+" | awk '{print $2}' | sed 's/:$//')
+    interfaces=$(ip addr show | grep -E "tun[0-9]+" | awk '{print $2}' | sed 's:$//' || true)
 
     if [[ -n "$interfaces" ]]; then
         echo "Cleaning up OpenVPN tunnel interfaces..."
@@ -1079,8 +1083,8 @@ case "${1:-}" in
         emergency_network_reset
         ;;
     "health" | "check" | "h")
-        check_process_health
-        case $? in
+        check_process_health || health_result=$?
+        case ${health_result:-0} in
             0) echo -e "\033[1;32m✓ Process health: GOOD (1 process running)\033[0m" ;;
             1)
                 echo -e "\033[1;31m✗ Process health: CRITICAL (multiple processes)\033[0m"
