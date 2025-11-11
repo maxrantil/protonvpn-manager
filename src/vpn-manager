@@ -60,6 +60,7 @@ fi
 source "$VPN_DIR/vpn-colors"
 source "$VPN_DIR/vpn-error-handler"
 source "$VPN_DIR/vpn-utils"
+source "$VPN_DIR/vpn-validators"
 
 # Enhanced logging function for VPN events
 # Usage: log_vpn_event "LEVEL" "message"
@@ -456,38 +457,6 @@ stop_vpn() {
     pkill -RTMIN+4 dwmblocks 2> /dev/null || true
 
     return 0
-}
-
-validate_pid() {
-    local pid="$1"
-    [[ -n "$pid" && "$pid" =~ ^[0-9]+$ && "$pid" -gt 0 && "$pid" -lt 4194304 ]]
-}
-
-validate_openvpn_process() {
-    local pid="$1"
-    if ! validate_pid "$pid"; then
-        return 1
-    fi
-    local cmd_line
-    cmd_line=$(ps -p "$pid" -o cmd= 2> /dev/null || true)
-    [[ "$cmd_line" =~ ^openvpn.*--config ]]
-}
-
-# Discover all VPN-related processes including zombies
-# Returns: newline-separated list of PIDs
-validate_and_discover_processes() {
-    local openvpn_pids zombie_pids pids
-
-    # Find running OpenVPN processes
-    openvpn_pids=$(pgrep -f "openvpn.*--config" 2> /dev/null || true)
-
-    # Find zombie OpenVPN processes
-    zombie_pids=$(ps -eo pid,stat,comm | awk '$2~/^Z/ && $3=="openvpn" {print $1}' 2> /dev/null || true)
-
-    # Combine and deduplicate PIDs
-    pids=$(echo -e "$openvpn_pids\n$zombie_pids" | grep -v '^$' | sort -u || true)
-
-    echo "$pids"
 }
 
 # Attempt graceful termination using TERM signal
@@ -1054,60 +1023,66 @@ show_status_format() {
     esac
 }
 
-case "${1:-}" in
-    "status" | "s")
-        show_status
-        ;;
-    "status-wcag")
-        show_status_wcag
-        ;;
-    "status-accessible")
-        show_status_accessible
-        ;;
-    "status-enhanced")
-        show_status_enhanced
-        ;;
-    "status-format")
-        show_status_format "${2:-}"
-        ;;
-    "stop" | "disconnect" | "d")
-        stop_vpn
-        ;;
-    "kill-all" | "kill" | "k")
-        kill_all_vpn
-        ;;
-    "cleanup" | "clean" | "c")
-        full_cleanup
-        ;;
-    "emergency-reset" | "emergency" | "reset")
-        emergency_network_reset
-        ;;
-    "health" | "check" | "h")
-        check_process_health || health_result=$?
-        case ${health_result:-0} in
-            0) echo -e "\033[1;32m✓ Process health: GOOD (1 process running)\033[0m" ;;
-            1)
-                echo -e "\033[1;31m✗ Process health: CRITICAL (multiple processes)\033[0m"
-                exit 1
-                ;;
-            2) echo -e "\033[1;33m○ Process health: NO PROCESSES RUNNING\033[0m" ;;
-        esac
-        ;;
-    "logs" | "log" | "l")
-        view_logs "${2:-50}"
-        ;;
-    *)
-        echo "VPN Manager - Process Management"
-        echo "Usage: $0 {status|stop|kill-all|cleanup|emergency-reset|health|logs}"
-        echo ""
-        echo "Commands:"
-        echo "  status          - Show VPN connection status"
-        echo "  stop            - Gracefully stop VPN connection"
-        echo "  kill-all        - Force kill all VPN processes"
-        echo "  cleanup         - Cleanup VPN processes and routes (safe)"
-        echo "  emergency-reset - Emergency network reset (restarts NetworkManager)"
-        echo "  health          - Check OpenVPN process health"
-        echo "  logs [lines]    - View recent log entries (default: 50)"
-        exit 1
-        ;;
-esac
+# Main execution block - only run if script is executed directly, not sourced
+# This allows tests to source this file to access functions without triggering execution
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+
+    case "${1:-}" in
+        "status" | "s")
+            show_status
+            ;;
+        "status-wcag")
+            show_status_wcag
+            ;;
+        "status-accessible")
+            show_status_accessible
+            ;;
+        "status-enhanced")
+            show_status_enhanced
+            ;;
+        "status-format")
+            show_status_format "${2:-}"
+            ;;
+        "stop" | "disconnect" | "d")
+            stop_vpn
+            ;;
+        "kill-all" | "kill" | "k")
+            kill_all_vpn
+            ;;
+        "cleanup" | "clean" | "c")
+            full_cleanup
+            ;;
+        "emergency-reset" | "emergency" | "reset")
+            emergency_network_reset
+            ;;
+        "health" | "check" | "h")
+            check_process_health || health_result=$?
+            case ${health_result:-0} in
+                0) echo -e "\033[1;32m✓ Process health: GOOD (1 process running)\033[0m" ;;
+                1)
+                    echo -e "\033[1;31m✗ Process health: CRITICAL (multiple processes)\033[0m"
+                    exit 1
+                    ;;
+                2) echo -e "\033[1;33m○ Process health: NO PROCESSES RUNNING\033[0m" ;;
+            esac
+            ;;
+        "logs" | "log" | "l")
+            view_logs "${2:-50}"
+            ;;
+        *)
+            echo "VPN Manager - Process Management"
+            echo "Usage: $0 {status|stop|kill-all|cleanup|emergency-reset|health|logs}"
+            echo ""
+            echo "Commands:"
+            echo "  status          - Show VPN connection status"
+            echo "  stop            - Gracefully stop VPN connection"
+            echo "  kill-all        - Force kill all VPN processes"
+            echo "  cleanup         - Cleanup VPN processes and routes (safe)"
+            echo "  emergency-reset - Emergency network reset (restarts NetworkManager)"
+            echo "  health          - Check OpenVPN process health"
+            echo "  logs [lines]    - View recent log entries (default: 50)"
+            exit 1
+            ;;
+    esac
+
+fi # End of main execution block guard
