@@ -1079,8 +1079,8 @@ case "${1:-}" in
         emergency_network_reset
         ;;
     "health" | "check" | "h")
-        check_process_health
-        case $? in
+        check_process_health || health_result=$?
+        case ${health_result:-0} in
             0) echo -e "\033[1;32m✓ Process health: GOOD (1 process running)\033[0m" ;;
             1)
                 echo -e "\033[1;31m✗ Process health: CRITICAL (multiple processes)\033[0m"
