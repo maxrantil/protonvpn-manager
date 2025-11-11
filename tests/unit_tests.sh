@@ -210,6 +210,15 @@ run_unit_tests() {
     test_cache_file_operations
     test_configuration_validation
 
+    # Run error handler unit tests (Issue #72)
+    log_test "INFO" "Running VPN error handler unit tests"
+    if bash "$TEST_DIR/unit/test_error_handler.sh"; then
+        log_test "PASS" "VPN error handler tests: All 43 tests passed"
+    else
+        log_test "FAIL" "VPN error handler tests: Some tests failed"
+        return 1
+    fi
+
     return 0
 }
 
