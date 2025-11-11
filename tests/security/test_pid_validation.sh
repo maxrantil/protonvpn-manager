@@ -4,17 +4,41 @@
 
 set -euo pipefail
 
-# Source test framework
-TEST_DIR="$(dirname "$(dirname "$(realpath "$0")")")"
-# shellcheck source=tests/test_framework.sh
-source "$TEST_DIR/test_framework.sh"
+# Simple standalone test runner (no test_framework.sh dependency)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-# Override PROJECT_DIR to point to actual project root (not tests dir)
-# test_framework.sh sets PROJECT_DIR=$(dirname TEST_DIR), but TEST_DIR is /path/tests
-# So PROJECT_DIR ends up as /path/tests/.. which resolves to /path/tests due to symlinks
-# We need to explicitly go up two levels from security/ subdir
-PROJECT_DIR="$(dirname "$(dirname "$TEST_DIR")")"
-VPN_MANAGER="$PROJECT_DIR/src/vpn-manager"
+# Test counters
+TESTS_PASSED=0
+TESTS_FAILED=0
+FAILED_TESTS=()
+
+# Color codes
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+# Simple logging
+log_test() {
+    local level="$1"
+    local message="$2"
+    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+
+    case "$level" in
+        "PASS") echo -e "${GREEN}[PASS]${NC} [$timestamp] $message" ;;
+        "FAIL") echo -e "${RED}[FAIL]${NC} [$timestamp] $message" ;;
+        "INFO") echo -e "${BLUE}[INFO]${NC} [$timestamp] $message" ;;
+        "WARN") echo -e "${YELLOW}[WARN]${NC} [$timestamp] $message" ;;
+    esac
+}
+
+# Source PID validation functions
+if ! source "$PROJECT_DIR/src/vpn-validators" 2>/dev/null; then
+    echo "ERROR: Cannot source vpn-validators" >&2
+    exit 1
+fi
 
 # Test-specific variables
 TEST_PIDS=()
@@ -70,29 +94,14 @@ create_fake_process() {
     echo "$pid"
 }
 
-# Helper: Source vpn-validators functions (simplified - no initialization needed)
-source_vpn_validators() {
-    # PID validation functions are now in vpn-validators module
-    # This module has no initialization code, so we can source it directly
-    local validators="$PROJECT_DIR/src/vpn-validators"
-
-    # shellcheck disable=SC1090
-    if ! source "$validators" 2>/dev/null; then
-        log_test "ERROR" "Could not source vpn-validators"
-        return 1
-    fi
-
-    return 0
-}
+# No helper needed - vpn-validators sourced at top of file
 
 # ============================================================================
 # UNIT TESTS: validate_pid() - Boundary Value Testing
 # ============================================================================
 
 test_validate_pid_accepts_valid_pids() {
-    start_test "validate_pid: Accept valid PID range"
-
-    source_vpn_validators
+    log_test "INFO" "Testing validate_pid: Accept valid PID range"
 
     local valid_pids=(1 100 1000 10000 100000 1000000 4194303)
     local all_passed=true
@@ -100,11 +109,11 @@ test_validate_pid_accepts_valid_pids() {
     for pid in "${valid_pids[@]}"; do
         if validate_pid "$pid"; then
             log_test "PASS" "Accepted valid PID: $pid"
-            ((TESTS_PASSED++))
+            TESTS_PASSED=$((TESTS_PASSED + 1))
         else
             log_test "FAIL" "Rejected valid PID: $pid"
             FAILED_TESTS+=("validate_pid valid range: $pid")
-            ((TESTS_FAILED++))
+            TESTS_FAILED=$((TESTS_FAILED + 1))
             all_passed=false
         fi
     done
@@ -115,26 +124,24 @@ test_validate_pid_accepts_valid_pids() {
 }
 
 test_validate_pid_rejects_zero() {
-    start_test "validate_pid: Reject PID 0"
+    log_test "INFO" "Testing validate_pid: Reject PID 0"
 
-    source_vpn_validators
 
     if validate_pid "0"; then
         log_test "FAIL" "Accepted PID 0 (should reject - null process)"
         FAILED_TESTS+=("validate_pid: PID 0 accepted")
-        ((TESTS_FAILED++))
+        TESTS_FAILED=$((TESTS_FAILED + 1))
         return 1
     else
         log_test "PASS" "Rejected PID 0 (null process protection)"
-        ((TESTS_PASSED++))
+        TESTS_PASSED=$((TESTS_PASSED + 1))
         return 0
     fi
 }
 
 test_validate_pid_rejects_negative() {
-    start_test "validate_pid: Reject negative PIDs"
+    log_test "INFO" "Testing validate_pid: Reject negative PIDs"
 
-    source_vpn_validators
 
     local negative_pids=(-1 -100 -999999)
     local all_rejected=true
@@ -143,11 +150,11 @@ test_validate_pid_rejects_negative() {
         if validate_pid "$pid"; then
             log_test "FAIL" "Accepted negative PID: $pid"
             FAILED_TESTS+=("validate_pid negative: $pid")
-            ((TESTS_FAILED++))
+            TESTS_FAILED=$((TESTS_FAILED + 1))
             all_rejected=false
         else
             log_test "PASS" "Rejected negative PID: $pid"
-            ((TESTS_PASSED++))
+            TESTS_PASSED=$((TESTS_PASSED + 1))
         fi
     done
 
@@ -155,9 +162,8 @@ test_validate_pid_rejects_negative() {
 }
 
 test_validate_pid_rejects_overflow() {
-    start_test "validate_pid: Reject PIDs above system maximum"
+    log_test "INFO" "Testing validate_pid: Reject PIDs above system maximum"
 
-    source_vpn_validators
 
     # Linux PID_MAX_LIMIT is 4194304 (2^22)
     local overflow_pids=(4194304 4194305 9999999 2147483647 2147483648)
@@ -167,11 +173,11 @@ test_validate_pid_rejects_overflow() {
         if validate_pid "$pid"; then
             log_test "FAIL" "Accepted overflow PID: $pid"
             FAILED_TESTS+=("validate_pid overflow: $pid")
-            ((TESTS_FAILED++))
+            TESTS_FAILED=$((TESTS_FAILED + 1))
             all_rejected=false
         else
             log_test "PASS" "Rejected overflow PID: $pid"
-            ((TESTS_PASSED++))
+            TESTS_PASSED=$((TESTS_PASSED + 1))
         fi
     done
 
@@ -179,26 +185,24 @@ test_validate_pid_rejects_overflow() {
 }
 
 test_validate_pid_rejects_empty_string() {
-    start_test "validate_pid: Reject empty string"
+    log_test "INFO" "Testing validate_pid: Reject empty string"
 
-    source_vpn_validators
 
     if validate_pid ""; then
         log_test "FAIL" "Accepted empty string as PID"
         FAILED_TESTS+=("validate_pid: empty string")
-        ((TESTS_FAILED++))
+        TESTS_FAILED=$((TESTS_FAILED + 1))
         return 1
     else
         log_test "PASS" "Rejected empty string"
-        ((TESTS_PASSED++))
+        TESTS_PASSED=$((TESTS_PASSED + 1))
         return 0
     fi
 }
 
 test_validate_pid_rejects_whitespace() {
-    start_test "validate_pid: Reject whitespace inputs"
+    log_test "INFO" "Testing validate_pid: Reject whitespace inputs"
 
-    source_vpn_validators
 
     local whitespace_inputs=(" " "  " "	" "  123" "123  " " 123 ")
     local all_rejected=true
@@ -207,11 +211,11 @@ test_validate_pid_rejects_whitespace() {
         if validate_pid "$input"; then
             log_test "FAIL" "Accepted whitespace input: '$(printf '%q' "$input")'"
             FAILED_TESTS+=("validate_pid whitespace: $(printf '%q' "$input")")
-            ((TESTS_FAILED++))
+            TESTS_FAILED=$((TESTS_FAILED + 1))
             all_rejected=false
         else
             log_test "PASS" "Rejected whitespace input: '$(printf '%q' "$input")'"
-            ((TESTS_PASSED++))
+            TESTS_PASSED=$((TESTS_PASSED + 1))
         fi
     done
 
@@ -219,9 +223,8 @@ test_validate_pid_rejects_whitespace() {
 }
 
 test_validate_pid_rejects_non_numeric() {
-    start_test "validate_pid: Reject non-numeric inputs"
+    log_test "INFO" "Testing validate_pid: Reject non-numeric inputs"
 
-    source_vpn_validators
 
     local non_numeric=("abc" "12a34" "a1234" "pid" "one" "1.234" "1,234")
     local all_rejected=true
@@ -230,11 +233,11 @@ test_validate_pid_rejects_non_numeric() {
         if validate_pid "$input"; then
             log_test "FAIL" "Accepted non-numeric input: $input"
             FAILED_TESTS+=("validate_pid non-numeric: $input")
-            ((TESTS_FAILED++))
+            TESTS_FAILED=$((TESTS_FAILED + 1))
             all_rejected=false
         else
             log_test "PASS" "Rejected non-numeric input: $input"
-            ((TESTS_PASSED++))
+            TESTS_PASSED=$((TESTS_PASSED + 1))
         fi
     done
 
@@ -242,9 +245,8 @@ test_validate_pid_rejects_non_numeric() {
 }
 
 test_validate_pid_rejects_shell_metacharacters() {
-    start_test "validate_pid: Reject shell metacharacters"
+    log_test "INFO" "Testing validate_pid: Reject shell metacharacters"
 
-    source_vpn_validators
 
     local shell_chars=(
         "12;3"
@@ -268,11 +270,11 @@ test_validate_pid_rejects_shell_metacharacters() {
         if validate_pid "$input"; then
             log_test "FAIL" "Accepted shell metacharacter: $(printf '%q' "$input")"
             FAILED_TESTS+=("validate_pid shell: $(printf '%q' "$input")")
-            ((TESTS_FAILED++))
+            TESTS_FAILED=$((TESTS_FAILED + 1))
             all_rejected=false
         else
             log_test "PASS" "Rejected shell metacharacter: $(printf '%q' "$input")"
-            ((TESTS_PASSED++))
+            TESTS_PASSED=$((TESTS_PASSED + 1))
         fi
     done
 
@@ -280,9 +282,8 @@ test_validate_pid_rejects_shell_metacharacters() {
 }
 
 test_validate_pid_rejects_path_traversal() {
-    start_test "validate_pid: Reject path traversal attempts"
+    log_test "INFO" "Testing validate_pid: Reject path traversal attempts"
 
-    source_vpn_validators
 
     local path_attempts=("../1234" "../../proc/1" "/proc/1234" "./1234" "$HOME/1234")
     local all_rejected=true
@@ -291,11 +292,11 @@ test_validate_pid_rejects_path_traversal() {
         if validate_pid "$input"; then
             log_test "FAIL" "Accepted path traversal: $input"
             FAILED_TESTS+=("validate_pid path traversal: $input")
-            ((TESTS_FAILED++))
+            TESTS_FAILED=$((TESTS_FAILED + 1))
             all_rejected=false
         else
             log_test "PASS" "Rejected path traversal: $input"
-            ((TESTS_PASSED++))
+            TESTS_PASSED=$((TESTS_PASSED + 1))
         fi
     done
 
@@ -303,9 +304,8 @@ test_validate_pid_rejects_path_traversal() {
 }
 
 test_validate_pid_rejects_octal_hex() {
-    start_test "validate_pid: Reject octal and hexadecimal encoding"
+    log_test "INFO" "Testing validate_pid: Reject octal and hexadecimal encoding"
 
-    source_vpn_validators
 
     local encoded_pids=("0123" "0777" "0x1234" "0xFFFF" "0o123")
     local all_rejected=true
@@ -314,11 +314,11 @@ test_validate_pid_rejects_octal_hex() {
         if validate_pid "$input"; then
             log_test "FAIL" "Accepted encoded PID: $input"
             FAILED_TESTS+=("validate_pid encoded: $input")
-            ((TESTS_FAILED++))
+            TESTS_FAILED=$((TESTS_FAILED + 1))
             all_rejected=false
         else
             log_test "PASS" "Rejected encoded PID: $input"
-            ((TESTS_PASSED++))
+            TESTS_PASSED=$((TESTS_PASSED + 1))
         fi
     done
 
@@ -326,9 +326,8 @@ test_validate_pid_rejects_octal_hex() {
 }
 
 test_validate_pid_rejects_leading_zeros() {
-    start_test "validate_pid: Reject PIDs with leading zeros"
+    log_test "INFO" "Testing validate_pid: Reject PIDs with leading zeros"
 
-    source_vpn_validators
 
     # Leading zeros could be interpreted as octal, security risk
     local leading_zero_pids=("00001" "000123" "0000000001")
@@ -338,11 +337,11 @@ test_validate_pid_rejects_leading_zeros() {
         if validate_pid "$input"; then
             log_test "FAIL" "Accepted PID with leading zeros: $input"
             FAILED_TESTS+=("validate_pid leading zeros: $input")
-            ((TESTS_FAILED++))
+            TESTS_FAILED=$((TESTS_FAILED + 1))
             all_rejected=false
         else
             log_test "PASS" "Rejected PID with leading zeros: $input"
-            ((TESTS_PASSED++))
+            TESTS_PASSED=$((TESTS_PASSED + 1))
         fi
     done
 
@@ -350,9 +349,8 @@ test_validate_pid_rejects_leading_zeros() {
 }
 
 test_validate_pid_system_pid_max() {
-    start_test "validate_pid: Respect system PID_MAX"
+    log_test "INFO" "Testing validate_pid: Respect system PID_MAX"
 
-    source_vpn_validators
 
     # Read actual system PID_MAX
     local system_pid_max
@@ -364,11 +362,11 @@ test_validate_pid_system_pid_max() {
     local max_valid_pid=$((system_pid_max - 1))
     if validate_pid "$max_valid_pid"; then
         log_test "PASS" "Accepted PID at system max-1: $max_valid_pid"
-        ((TESTS_PASSED++))
+        TESTS_PASSED=$((TESTS_PASSED + 1))
     else
         log_test "FAIL" "Rejected valid PID at system max-1: $max_valid_pid"
         FAILED_TESTS+=("validate_pid: system max-1")
-        ((TESTS_FAILED++))
+        TESTS_FAILED=$((TESTS_FAILED + 1))
         return 1
     fi
 
@@ -377,11 +375,11 @@ test_validate_pid_system_pid_max() {
     if validate_pid "$over_max_pid"; then
         log_test "FAIL" "Accepted PID above system max: $over_max_pid"
         FAILED_TESTS+=("validate_pid: above system max")
-        ((TESTS_FAILED++))
+        TESTS_FAILED=$((TESTS_FAILED + 1))
         return 1
     else
         log_test "PASS" "Rejected PID above system max: $over_max_pid"
-        ((TESTS_PASSED++))
+        TESTS_PASSED=$((TESTS_PASSED + 1))
         return 0
     fi
 }
@@ -391,49 +389,47 @@ test_validate_pid_system_pid_max() {
 # ============================================================================
 
 test_validate_openvpn_process_valid() {
-    start_test "validate_openvpn_process: Accept real OpenVPN process"
+    log_test "INFO" "Testing validate_openvpn_process: Accept real OpenVPN process"
 
     # Create fake OpenVPN process
     local openvpn_pid
     openvpn_pid=$(create_fake_openvpn_process "valid.ovpn")
 
-    source_vpn_validators
 
     if validate_openvpn_process "$openvpn_pid"; then
         log_test "PASS" "Validated legitimate OpenVPN process (PID: $openvpn_pid)"
-        ((TESTS_PASSED++))
+        TESTS_PASSED=$((TESTS_PASSED + 1))
         return 0
     else
         log_test "FAIL" "Rejected legitimate OpenVPN process (PID: $openvpn_pid)"
         FAILED_TESTS+=("validate_openvpn_process: valid process rejected")
-        ((TESTS_FAILED++))
+        TESTS_FAILED=$((TESTS_FAILED + 1))
         return 1
     fi
 }
 
 test_validate_openvpn_process_wrong_command() {
-    start_test "validate_openvpn_process: Reject non-OpenVPN process"
+    log_test "INFO" "Testing validate_openvpn_process: Reject non-OpenVPN process"
 
     # Create regular sleep process
     local fake_pid
     fake_pid=$(create_fake_process "sleep" 60)
 
-    source_vpn_validators
 
     if validate_openvpn_process "$fake_pid"; then
         log_test "FAIL" "Accepted non-OpenVPN process as valid (PID: $fake_pid)"
         FAILED_TESTS+=("validate_openvpn_process: non-openvpn accepted")
-        ((TESTS_FAILED++))
+        TESTS_FAILED=$((TESTS_FAILED + 1))
         return 1
     else
         log_test "PASS" "Rejected non-OpenVPN process (PID: $fake_pid)"
-        ((TESTS_PASSED++))
+        TESTS_PASSED=$((TESTS_PASSED + 1))
         return 0
     fi
 }
 
 test_validate_openvpn_process_similar_name() {
-    start_test "validate_openvpn_process: Reject similar process names"
+    log_test "INFO" "Testing validate_openvpn_process: Reject similar process names"
 
     # Create process with similar but wrong name
     bash -c "exec -a 'openvpn-fake --config /test/fake.ovpn' sleep 60" &
@@ -441,24 +437,22 @@ test_validate_openvpn_process_similar_name() {
     TEST_PIDS+=("$similar_pid")
     sleep 0.1
 
-    source_vpn_validators
 
     if validate_openvpn_process "$similar_pid"; then
         log_test "FAIL" "Accepted 'openvpn-fake' as legitimate (PID: $similar_pid)"
         FAILED_TESTS+=("validate_openvpn_process: similar name accepted")
-        ((TESTS_FAILED++))
+        TESTS_FAILED=$((TESTS_FAILED + 1))
         return 1
     else
         log_test "PASS" "Rejected 'openvpn-fake' process (PID: $similar_pid)"
-        ((TESTS_PASSED++))
+        TESTS_PASSED=$((TESTS_PASSED + 1))
         return 0
     fi
 }
 
 test_validate_openvpn_process_nonexistent() {
-    start_test "validate_openvpn_process: Reject nonexistent PID"
+    log_test "INFO" "Testing validate_openvpn_process: Reject nonexistent PID"
 
-    source_vpn_validators
 
     # Use a PID that definitely doesn't exist
     local nonexistent_pid=999999
@@ -466,35 +460,34 @@ test_validate_openvpn_process_nonexistent() {
     if validate_openvpn_process "$nonexistent_pid"; then
         log_test "FAIL" "Accepted nonexistent PID: $nonexistent_pid"
         FAILED_TESTS+=("validate_openvpn_process: nonexistent PID accepted")
-        ((TESTS_FAILED++))
+        TESTS_FAILED=$((TESTS_FAILED + 1))
         return 1
     else
         log_test "PASS" "Rejected nonexistent PID: $nonexistent_pid"
-        ((TESTS_PASSED++))
+        TESTS_PASSED=$((TESTS_PASSED + 1))
         return 0
     fi
 }
 
 test_validate_openvpn_process_invalid_pid_format() {
-    start_test "validate_openvpn_process: Reject invalid PID format"
+    log_test "INFO" "Testing validate_openvpn_process: Reject invalid PID format"
 
-    source_vpn_validators
 
     # Should fail PID validation before checking process
     if validate_openvpn_process "not-a-pid"; then
         log_test "FAIL" "Accepted invalid PID format"
         FAILED_TESTS+=("validate_openvpn_process: invalid format accepted")
-        ((TESTS_FAILED++))
+        TESTS_FAILED=$((TESTS_FAILED + 1))
         return 1
     else
         log_test "PASS" "Rejected invalid PID format"
-        ((TESTS_PASSED++))
+        TESTS_PASSED=$((TESTS_PASSED + 1))
         return 0
     fi
 }
 
 test_validate_openvpn_process_missing_config_flag() {
-    start_test "validate_openvpn_process: Reject OpenVPN without --config"
+    log_test "INFO" "Testing validate_openvpn_process: Reject OpenVPN without --config"
 
     # Create process named openvpn but without --config flag
     bash -c "exec -a 'openvpn /test/file.ovpn' sleep 60" &
@@ -502,22 +495,21 @@ test_validate_openvpn_process_missing_config_flag() {
     TEST_PIDS+=("$no_config_pid")
     sleep 0.1
 
-    source_vpn_validators
 
     if validate_openvpn_process "$no_config_pid"; then
         log_test "FAIL" "Accepted OpenVPN process without --config flag"
         FAILED_TESTS+=("validate_openvpn_process: missing --config accepted")
-        ((TESTS_FAILED++))
+        TESTS_FAILED=$((TESTS_FAILED + 1))
         return 1
     else
         log_test "PASS" "Rejected OpenVPN process without --config flag"
-        ((TESTS_PASSED++))
+        TESTS_PASSED=$((TESTS_PASSED + 1))
         return 0
     fi
 }
 
 test_validate_openvpn_process_concurrent_validation() {
-    start_test "validate_openvpn_process: Handle concurrent validations"
+    log_test "INFO" "Testing validate_openvpn_process: Handle concurrent validations"
 
     # Create multiple OpenVPN processes
     local pid1 pid2 pid3
@@ -525,7 +517,6 @@ test_validate_openvpn_process_concurrent_validation() {
     pid2=$(create_fake_openvpn_process "concurrent2.ovpn")
     pid3=$(create_fake_openvpn_process "concurrent3.ovpn")
 
-    source_vpn_validators
 
     # Validate all concurrently
     local all_valid=true
@@ -536,12 +527,12 @@ test_validate_openvpn_process_concurrent_validation() {
 
     if [[ "$all_valid" == "true" ]]; then
         log_test "PASS" "All concurrent validations succeeded"
-        ((TESTS_PASSED++))
+        TESTS_PASSED=$((TESTS_PASSED + 1))
         return 0
     else
         log_test "FAIL" "Concurrent validation failed"
         FAILED_TESTS+=("validate_openvpn_process: concurrent validation failed")
-        ((TESTS_FAILED++))
+        TESTS_FAILED=$((TESTS_FAILED + 1))
         return 1
     fi
 }
@@ -551,9 +542,8 @@ test_validate_openvpn_process_concurrent_validation() {
 # ============================================================================
 
 test_command_injection_via_pid() {
-    start_test "Security: Command injection prevention via PID parameter"
+    log_test "INFO" "Testing Security: Command injection prevention via PID parameter"
 
-    source_vpn_validators
 
     # Create marker file to detect injection
     local marker_file="/tmp/pid-injection-marker-$$"
@@ -578,12 +568,12 @@ test_command_injection_via_pid() {
         if [[ -f "$marker_file" ]]; then
             log_test "FAIL" "Command injection succeeded: $(printf '%q' "$attempt")"
             FAILED_TESTS+=("command injection: $(printf '%q' "$attempt")")
-            ((TESTS_FAILED++))
+            TESTS_FAILED=$((TESTS_FAILED + 1))
             all_blocked=false
             rm -f "$marker_file"
         else
             log_test "PASS" "Command injection blocked: $(printf '%q' "$attempt")"
-            ((TESTS_PASSED++))
+            TESTS_PASSED=$((TESTS_PASSED + 1))
         fi
     done
 
@@ -591,7 +581,7 @@ test_command_injection_via_pid() {
 }
 
 test_process_impersonation_fake_path() {
-    start_test "Security: Prevent process impersonation via fake path"
+    log_test "INFO" "Testing Security: Prevent process impersonation via fake path"
 
     # Create fake openvpn executable in /tmp
     local fake_openvpn="$TEST_PROCS_DIR/openvpn"
@@ -607,23 +597,22 @@ EOF
     TEST_PIDS+=("$impostor_pid")
     sleep 0.1
 
-    source_vpn_validators
 
     # Should be rejected (not real openvpn executable)
     if validate_openvpn_process "$impostor_pid"; then
         log_test "FAIL" "Accepted fake openvpn from /tmp (PID: $impostor_pid)"
         FAILED_TESTS+=("process impersonation: fake path accepted")
-        ((TESTS_FAILED++))
+        TESTS_FAILED=$((TESTS_FAILED + 1))
         return 1
     else
         log_test "PASS" "Rejected fake openvpn from /tmp (PID: $impostor_pid)"
-        ((TESTS_PASSED++))
+        TESTS_PASSED=$((TESTS_PASSED + 1))
         return 0
     fi
 }
 
 test_process_impersonation_symlink() {
-    start_test "Security: Prevent process impersonation via symlink"
+    log_test "INFO" "Testing Security: Prevent process impersonation via symlink"
 
     # Create symlink to sleep named openvpn
     local symlink_path="$TEST_PROCS_DIR/openvpn-symlink"
@@ -635,24 +624,22 @@ test_process_impersonation_symlink() {
     TEST_PIDS+=("$symlink_pid")
     sleep 0.1
 
-    source_vpn_validators
 
     if validate_openvpn_process "$symlink_pid"; then
         log_test "FAIL" "Accepted symlinked process as OpenVPN"
         FAILED_TESTS+=("process impersonation: symlink accepted")
-        ((TESTS_FAILED++))
+        TESTS_FAILED=$((TESTS_FAILED + 1))
         return 1
     else
         log_test "PASS" "Rejected symlinked process"
-        ((TESTS_PASSED++))
+        TESTS_PASSED=$((TESTS_PASSED + 1))
         return 0
     fi
 }
 
 test_privilege_escalation_system_pid() {
-    start_test "Security: Prevent targeting system processes"
+    log_test "INFO" "Testing Security: Prevent targeting system processes"
 
-    source_vpn_validators
 
     # Critical system PIDs that should NEVER be accepted as OpenVPN
     local system_pids=(1 2)  # init, kthreadd
@@ -662,11 +649,11 @@ test_privilege_escalation_system_pid() {
         if validate_openvpn_process "$sys_pid"; then
             log_test "FAIL" "Accepted system PID as OpenVPN: $sys_pid"
             FAILED_TESTS+=("privilege escalation: system PID $sys_pid accepted")
-            ((TESTS_FAILED++))
+            TESTS_FAILED=$((TESTS_FAILED + 1))
             all_rejected=false
         else
             log_test "PASS" "Rejected system PID: $sys_pid"
-            ((TESTS_PASSED++))
+            TESTS_PASSED=$((TESTS_PASSED + 1))
         fi
     done
 
@@ -674,38 +661,36 @@ test_privilege_escalation_system_pid() {
 }
 
 test_information_disclosure_error_messages() {
-    start_test "Security: Prevent PID information disclosure in error messages"
+    log_test "INFO" "Testing Security: Prevent PID information disclosure in error messages"
 
-    source_vpn_validators
 
     # Test that error messages don't leak sensitive PID information
     # This is more of a code review test - checking that validation
     # doesn't echo PIDs in error messages
 
     local test_output
-    test_output=$(validate_pid "invalid-pid" 2>&1 || true)
+    test_output=$(validate_pid "invalid-pid" 2>&1 || true) || true
 
     if [[ "$test_output" =~ invalid-pid ]]; then
         log_test "WARN" "Error messages may leak input: $test_output"
         log_test "PASS" "Test completed (warning noted)"
-        ((TESTS_PASSED++))
+        TESTS_PASSED=$((TESTS_PASSED + 1))
     else
         log_test "PASS" "No PID information disclosed in error messages"
-        ((TESTS_PASSED++))
+        TESTS_PASSED=$((TESTS_PASSED + 1))
     fi
 }
 
 test_pid_reuse_timing_window() {
-    start_test "Security: TOCTOU race condition awareness"
+    log_test "INFO" "Testing Security: TOCTOU race condition awareness"
 
     # This test validates that there's a small timing window between
     # validation and kill operations where PID reuse could occur
 
     # Create process
     local test_pid
-    test_pid=$(create_fake_openvpn_process "toctou-test.ovpn" 1)
+    test_pid=$(create_fake_openvpn_process "toctou-test.ovpn" 1) || true
 
-    source_vpn_validators
 
     # Validate process
     if validate_openvpn_process "$test_pid"; then
@@ -722,24 +707,24 @@ test_pid_reuse_timing_window() {
             if [[ ! "$new_cmd" =~ openvpn ]]; then
                 log_test "WARN" "PID $test_pid was reused by different process: $new_cmd"
                 log_test "PASS" "TOCTOU race condition possible (test demonstrates risk)"
-                ((TESTS_PASSED++))
+                TESTS_PASSED=$((TESTS_PASSED + 1))
             else
                 log_test "PASS" "PID not reused during test"
-                ((TESTS_PASSED++))
+                TESTS_PASSED=$((TESTS_PASSED + 1))
             fi
         else
             log_test "PASS" "Process terminated, PID not reused"
-            ((TESTS_PASSED++))
+            TESTS_PASSED=$((TESTS_PASSED + 1))
         fi
     else
         log_test "FAIL" "Failed to validate test process"
-        ((TESTS_FAILED++))
+        TESTS_FAILED=$((TESTS_FAILED + 1))
         return 1
     fi
 }
 
 test_lock_file_pid_validation() {
-    start_test "Security: Lock file PID content validation"
+    log_test "INFO" "Testing Security: Lock file PID content validation"
 
     local test_lock_file="$TEST_PROCS_DIR/test.lock"
 
@@ -753,7 +738,6 @@ test_lock_file_pid_validation() {
         "not-a-number"
     )
 
-    source_vpn_validators
 
     local all_handled=true
 
@@ -768,11 +752,11 @@ test_lock_file_pid_validation() {
         if [[ -n "$lock_pid" ]] && validate_pid "$lock_pid"; then
             log_test "FAIL" "Accepted malicious lock file content: $(printf '%q' "$content")"
             FAILED_TESTS+=("lock file validation: $(printf '%q' "$content")")
-            ((TESTS_FAILED++))
+            TESTS_FAILED=$((TESTS_FAILED + 1))
             all_handled=false
         else
             log_test "PASS" "Rejected malicious lock file content: $(printf '%q' "$content")"
-            ((TESTS_PASSED++))
+            TESTS_PASSED=$((TESTS_PASSED + 1))
         fi
     done
 
@@ -781,7 +765,7 @@ test_lock_file_pid_validation() {
 }
 
 test_process_group_validation_safety() {
-    start_test "Security: Process group validation (PGID safety)"
+    log_test "INFO" "Testing Security: Process group validation (PGID safety)"
 
     # Create process group with leader
     setsid bash -c '
@@ -802,10 +786,10 @@ test_process_group_validation_safety() {
         if [[ "$pgid" -lt 1000 ]]; then
             log_test "WARN" "Process group ID in system range: $pgid"
             log_test "PASS" "Test highlights PGID range checking need"
-            ((TESTS_PASSED++))
+            TESTS_PASSED=$((TESTS_PASSED + 1))
         else
             log_test "PASS" "Process group ID in safe range: $pgid"
-            ((TESTS_PASSED++))
+            TESTS_PASSED=$((TESTS_PASSED + 1))
         fi
     else
         log_test "SKIP" "Could not create process group (test environment limitation)"
@@ -817,7 +801,7 @@ test_process_group_validation_safety() {
 # ============================================================================
 
 test_zombie_process_detection() {
-    start_test "Edge Case: Zombie process detection and handling"
+    log_test "INFO" "Testing Edge Case: Zombie process detection and handling"
 
     # Create zombie process (child exits, parent doesn't reap)
     (
@@ -847,11 +831,11 @@ test_zombie_process_detection() {
 
         if echo "$discovered" | grep -q "$zombie_pid"; then
             log_test "PASS" "Zombie process discovered by validation"
-            ((TESTS_PASSED++))
+            TESTS_PASSED=$((TESTS_PASSED + 1))
         else
             log_test "FAIL" "Zombie process not discovered"
             FAILED_TESTS+=("zombie detection: not found")
-            ((TESTS_FAILED++))
+            TESTS_FAILED=$((TESTS_FAILED + 1))
         fi
     else
         log_test "SKIP" "Could not create zombie process (test environment limitation)"
@@ -859,13 +843,12 @@ test_zombie_process_detection() {
 }
 
 test_recently_killed_process() {
-    start_test "Edge Case: Process killed between validation and action"
+    log_test "INFO" "Testing Edge Case: Process killed between validation and action"
 
     # Create short-lived process
     local short_pid
     short_pid=$(create_fake_openvpn_process "short-lived.ovpn" 0.5)
 
-    source_vpn_validators
 
     # Validate process
     if validate_openvpn_process "$short_pid"; then
@@ -878,11 +861,11 @@ test_recently_killed_process() {
         if validate_openvpn_process "$short_pid" 2>/dev/null; then
             log_test "FAIL" "Validated dead process"
             FAILED_TESTS+=("dead process: validated after death")
-            ((TESTS_FAILED++))
+            TESTS_FAILED=$((TESTS_FAILED + 1))
             return 1
         else
             log_test "PASS" "Gracefully handled dead process"
-            ((TESTS_PASSED++))
+            TESTS_PASSED=$((TESTS_PASSED + 1))
             return 0
         fi
     else
@@ -891,45 +874,42 @@ test_recently_killed_process() {
 }
 
 test_kernel_thread_rejection() {
-    start_test "Edge Case: Reject kernel thread PIDs"
+    log_test "INFO" "Testing Edge Case: Reject kernel thread PIDs"
 
-    source_vpn_validators
 
     # PID 2 is kthreadd on Linux
     if validate_openvpn_process "2"; then
         log_test "FAIL" "Accepted kernel thread as OpenVPN"
         FAILED_TESTS+=("kernel thread: accepted")
-        ((TESTS_FAILED++))
+        TESTS_FAILED=$((TESTS_FAILED + 1))
         return 1
     else
         log_test "PASS" "Rejected kernel thread PID"
-        ((TESTS_PASSED++))
+        TESTS_PASSED=$((TESTS_PASSED + 1))
         return 0
     fi
 }
 
 test_current_shell_protection() {
-    start_test "Edge Case: Reject current shell PID"
+    log_test "INFO" "Testing Edge Case: Reject current shell PID"
 
-    source_vpn_validators
 
     # Should not accept current shell as OpenVPN
     if validate_openvpn_process "$$"; then
         log_test "FAIL" "Accepted current shell as OpenVPN"
         FAILED_TESTS+=("current shell: accepted")
-        ((TESTS_FAILED++))
+        TESTS_FAILED=$((TESTS_FAILED + 1))
         return 1
     else
         log_test "PASS" "Rejected current shell PID"
-        ((TESTS_PASSED++))
+        TESTS_PASSED=$((TESTS_PASSED + 1))
         return 0
     fi
 }
 
 test_empty_command_line_process() {
-    start_test "Edge Case: Reject process with empty command line"
+    log_test "INFO" "Testing Edge Case: Reject process with empty command line"
 
-    source_vpn_validators
 
     # Some processes (like kernel threads) have empty cmdline
     # Should be rejected by validation
@@ -941,23 +921,22 @@ test_empty_command_line_process() {
     if validate_openvpn_process "999999" 2>/dev/null; then
         log_test "FAIL" "Accepted process with no command line"
         FAILED_TESTS+=("empty cmdline: accepted")
-        ((TESTS_FAILED++))
+        TESTS_FAILED=$((TESTS_FAILED + 1))
         return 1
     else
         log_test "PASS" "Rejected process with no command line"
-        ((TESTS_PASSED++))
+        TESTS_PASSED=$((TESTS_PASSED + 1))
         return 0
     fi
 }
 
 test_rapid_pid_validation_stress() {
-    start_test "Edge Case: Rapid repeated PID validations (stress test)"
+    log_test "INFO" "Testing Edge Case: Rapid repeated PID validations (stress test)"
 
     # Create stable test process
     local stable_pid
     stable_pid=$(create_fake_openvpn_process "stable.ovpn" 10)
 
-    source_vpn_validators
 
     # Rapidly validate same PID many times
     local iterations=100
@@ -971,12 +950,12 @@ test_rapid_pid_validation_stress() {
 
     if [[ $failures -eq 0 ]]; then
         log_test "PASS" "All $iterations rapid validations succeeded"
-        ((TESTS_PASSED++))
+        TESTS_PASSED=$((TESTS_PASSED + 1))
         return 0
     else
         log_test "FAIL" "Rapid validation failures: $failures/$iterations"
         FAILED_TESTS+=("rapid validation: $failures failures")
-        ((TESTS_FAILED++))
+        TESTS_FAILED=$((TESTS_FAILED + 1))
         return 1
     fi
 }
@@ -995,51 +974,51 @@ run_pid_validation_security_tests() {
 
     # Unit Tests: validate_pid() boundary testing
     echo "=== UNIT TESTS: validate_pid() Boundary Validation ==="
-    test_validate_pid_accepts_valid_pids
-    test_validate_pid_rejects_zero
-    test_validate_pid_rejects_negative
-    test_validate_pid_rejects_overflow
-    test_validate_pid_rejects_empty_string
-    test_validate_pid_rejects_whitespace
-    test_validate_pid_rejects_non_numeric
-    test_validate_pid_rejects_shell_metacharacters
-    test_validate_pid_rejects_path_traversal
-    test_validate_pid_rejects_octal_hex
-    test_validate_pid_rejects_leading_zeros
-    test_validate_pid_system_pid_max
+    test_validate_pid_accepts_valid_pids || true
+    test_validate_pid_rejects_zero || true
+    test_validate_pid_rejects_negative || true
+    test_validate_pid_rejects_overflow || true
+    test_validate_pid_rejects_empty_string || true
+    test_validate_pid_rejects_whitespace || true
+    test_validate_pid_rejects_non_numeric || true
+    test_validate_pid_rejects_shell_metacharacters || true
+    test_validate_pid_rejects_path_traversal || true
+    test_validate_pid_rejects_octal_hex || true
+    test_validate_pid_rejects_leading_zeros || true
+    test_validate_pid_system_pid_max || true
     echo ""
 
     # Integration Tests: validate_openvpn_process()
     echo "=== INTEGRATION TESTS: validate_openvpn_process() ==="
-    test_validate_openvpn_process_valid
-    test_validate_openvpn_process_wrong_command
-    test_validate_openvpn_process_similar_name
-    test_validate_openvpn_process_nonexistent
-    test_validate_openvpn_process_invalid_pid_format
-    test_validate_openvpn_process_missing_config_flag
-    test_validate_openvpn_process_concurrent_validation
+    test_validate_openvpn_process_valid || true
+    test_validate_openvpn_process_wrong_command || true
+    test_validate_openvpn_process_similar_name || true
+    test_validate_openvpn_process_nonexistent || true
+    test_validate_openvpn_process_invalid_pid_format || true
+    test_validate_openvpn_process_missing_config_flag || true
+    test_validate_openvpn_process_concurrent_validation || true
     echo ""
 
     # Security Tests: Attack vectors
     echo "=== SECURITY TESTS: Attack Vector Prevention ==="
-    test_command_injection_via_pid
-    test_process_impersonation_fake_path
-    test_process_impersonation_symlink
-    test_privilege_escalation_system_pid
-    test_information_disclosure_error_messages
-    test_pid_reuse_timing_window
-    test_lock_file_pid_validation
-    test_process_group_validation_safety
+    test_command_injection_via_pid || true
+    test_process_impersonation_fake_path || true
+    test_process_impersonation_symlink || true
+    test_privilege_escalation_system_pid || true
+    test_information_disclosure_error_messages || true
+    test_pid_reuse_timing_window || true
+    test_lock_file_pid_validation || true
+    test_process_group_validation_safety || true
     echo ""
 
     # Edge Cases: Zombies, races, special states
     echo "=== EDGE CASE TESTS: Zombies and Special States ==="
-    test_zombie_process_detection
-    test_recently_killed_process
-    test_kernel_thread_rejection
-    test_current_shell_protection
-    test_empty_command_line_process
-    test_rapid_pid_validation_stress
+    test_zombie_process_detection || true
+    test_recently_killed_process || true
+    test_kernel_thread_rejection || true
+    test_current_shell_protection || true
+    test_empty_command_line_process || true
+    test_rapid_pid_validation_stress || true
     echo ""
 
     return 0
