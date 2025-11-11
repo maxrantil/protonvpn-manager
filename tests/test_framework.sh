@@ -45,6 +45,9 @@ log_test() {
         "WARN")
             echo -e "${YELLOW}[WARN]${NC} [$timestamp] $message"
             ;;
+        "SKIP")
+            echo -e "${YELLOW}[SKIP]${NC} [$timestamp] $message"
+            ;;
     esac
 }
 
