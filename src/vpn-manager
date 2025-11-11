@@ -729,7 +729,7 @@ cleanup_routes_light() {
 
     # Clean up OpenVPN tunnel interfaces
     local interfaces
-    interfaces=$(ip addr show | grep -E "tun[0-9]+" | awk '{print $2}' | sed 's:$//' || true)
+    interfaces=$(ip addr show | grep -E "tun[0-9]+" | awk '{print $2}' | sed 's/:$//' || true)
 
     if [[ -n "$interfaces" ]]; then
         echo "Cleaning up OpenVPN tunnel interfaces..."
