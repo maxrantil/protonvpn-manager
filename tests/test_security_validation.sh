@@ -143,21 +143,21 @@ test_country_code_path_traversal() {
 
     # Test malicious country code inputs that should be rejected
     local malicious_country_codes=(
-        "../"           # Directory traversal (2 chars, passes length check)
-        ".."            # Parent directory (2 chars, passes length check)
-        "/e"            # Absolute path start (2 chars)
-        "\\"            # Backslash escape (2 chars) - Windows-style
-        "\n"            # Newline injection (2 chars)
-        "\0"            # Null byte injection (2 chars)
-        "./"            # Current directory (2 chars)
-        "s;"            # Command injection attempt (2 chars)
-        "s|"            # Pipe injection (2 chars)
-        "s&"            # Background command (2 chars)
-        "\$("           # Command substitution (2 chars)
-        "\`s"           # Backtick injection (2 chars)
-        "../../etc/passwd"  # Classic traversal (too long but test anyway)
-        "../../../"         # Deep traversal
-        "se/../../etc"      # Mixed valid + traversal
+        "../"              # Directory traversal (2 chars, passes length check)
+        ".."               # Parent directory (2 chars, passes length check)
+        "/e"               # Absolute path start (2 chars)
+        "\\"               # Backslash escape (2 chars) - Windows-style
+        "\n"               # Newline injection (2 chars)
+        "\0"               # Null byte injection (2 chars)
+        "./"               # Current directory (2 chars)
+        "s;"               # Command injection attempt (2 chars)
+        "s|"               # Pipe injection (2 chars)
+        "s&"               # Background command (2 chars)
+        "\$("              # Command substitution (2 chars)
+        "\`s"              # Backtick injection (2 chars)
+        "../../etc/passwd" # Classic traversal (too long but test anyway)
+        "../../../"        # Deep traversal
+        "se/../../etc"     # Mixed valid + traversal
     )
 
     # Test that null bytes and special chars are rejected
