@@ -109,8 +109,8 @@ test_pre_connection_safety_integration() {
     # Test that our safety commands are accessible
     local commands_work=0
 
-    # Test status command
-    if "$vpn_script" status > /dev/null 2>&1; then
+    # Test status command (exit 0 = connected, exit 2 = disconnected/accessible)
+    if "$vpn_script" status > /dev/null 2>&1 || [[ $? -eq 2 ]]; then
         ((commands_work++))
     fi
 
