@@ -4,7 +4,7 @@
 
 # Unalias grep to ensure consistent behavior across different environments
 # Some systems alias grep to ripgrep (rg) which has different flag semantics
-unalias grep 2>/dev/null || true
+unalias grep 2> /dev/null || true
 
 # Test framework variables (with include guard to prevent re-initialization)
 if [[ -z "${TEST_FRAMEWORK_LOADED:-}" ]]; then

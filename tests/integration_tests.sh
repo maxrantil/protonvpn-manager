@@ -140,7 +140,7 @@ test_dependency_checking() {
     local vpn_deps="openvpn curl bc ip"
     local all_in_bin=true
     for dep in $vpn_deps; do
-        if command -v "$dep" 2>/dev/null | command grep -v "^/bin/" >/dev/null; then
+        if command -v "$dep" 2> /dev/null | command grep -v "^/bin/" > /dev/null; then
             all_in_bin=false
             break
         fi
@@ -148,7 +148,7 @@ test_dependency_checking() {
 
     if [[ "$all_in_bin" == "true" ]]; then
         log_test "SKIP" "$CURRENT_TEST: Cannot simulate missing deps - all tools in /bin"
-        ((TESTS_PASSED++))  # Count as passed since it's a valid skip
+        ((TESTS_PASSED++)) # Count as passed since it's a valid skip
         return 0
     fi
 
