@@ -222,9 +222,66 @@ sanitize_user_input() {
     echo "$input"
 }
 
+# Validate PID format and bounds
+# Args: $1 = PID to validate
+# Returns: 0 if valid, 1 if invalid
+validate_pid() {
+    local pid="$1"
+
+    # Must be non-empty and numeric only
+    [[ -n "$pid" ]] || return 1
+    [[ "$pid" =~ ^[0-9]+$ ]] || return 1
+
+    # Reject leading zeros (octal confusion risk)
+    [[ "$pid" =~ ^0[0-9] ]] && return 1
+
+    # Must be positive
+    [[ "$pid" -gt 0 ]] || return 1
+
+    # Check against system PID_MAX (read from /proc if available)
+    local system_pid_max
+    system_pid_max=$(cat /proc/sys/kernel/pid_max 2>/dev/null || echo "4194304")
+    [[ "$pid" -lt "$system_pid_max" ]] || return 1
+
+    return 0
+}
+
+# Validate that a PID belongs to an OpenVPN process
+# Args: $1 = PID to validate
+# Returns: 0 if valid OpenVPN process, 1 otherwise
+validate_openvpn_process() {
+    local pid="$1"
+    if ! validate_pid "$pid"; then
+        return 1
+    fi
+    local cmd_line
+    cmd_line=$(ps -p "$pid" -o cmd= 2> /dev/null || true)
+    [[ "$cmd_line" =~ ^openvpn.*--config ]]
+}
+
+# Discover all VPN-related processes including zombies
+# Returns: newline-separated list of PIDs
+validate_and_discover_processes() {
+    local openvpn_pids zombie_pids pids
+
+    # Find running OpenVPN processes
+    openvpn_pids=$(pgrep -f "openvpn.*--config" 2> /dev/null || true)
+
+    # Find zombie OpenVPN processes
+    zombie_pids=$(ps -eo pid,stat,comm | awk '$2~/^Z/ && $3=="openvpn" {print $1}' 2> /dev/null || true)
+
+    # Combine and deduplicate PIDs
+    pids=$(echo -e "$openvpn_pids\n$zombie_pids" | grep -v '^$' | sort -u || true)
+
+    echo "$pids"
+}
+
 # Export functions for use in other scripts
 export -f validate_profile_path
 export -f validate_credentials_file
 export -f validate_and_secure_credentials
 export -f validate_country_code
 export -f sanitize_user_input
+export -f validate_pid
+export -f validate_openvpn_process
+export -f validate_and_discover_processes
