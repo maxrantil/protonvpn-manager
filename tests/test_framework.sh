@@ -2,6 +2,10 @@
 # ABOUTME: Test framework for VPN management system
 # ABOUTME: Provides utilities for unit, integration, and end-to-end testing
 
+# Unalias grep to ensure consistent behavior across different environments
+# Some systems alias grep to ripgrep (rg) which has different flag semantics
+unalias grep 2>/dev/null || true
+
 # Test framework variables (with include guard to prevent re-initialization)
 if [[ -z "${TEST_FRAMEWORK_LOADED:-}" ]]; then
     TEST_FRAMEWORK_LOADED=1
@@ -206,6 +210,9 @@ cleanup_mocks() {
 }
 
 setup_test_env() {
+    # Clean up any mocks from previous tests first
+    cleanup_mocks
+
     # Create temporary test directories
     TEST_TEMP_DIR="/tmp/vpn_test_$$"
     mkdir -p "$TEST_TEMP_DIR"

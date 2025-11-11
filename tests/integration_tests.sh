@@ -100,7 +100,7 @@ test_country_filtering_integration() {
         local se_output
         se_output=$(cat /tmp/se_output)
 
-        if echo "$se_output" | grep -q "se-test"; then
+        if echo "$se_output" | command grep -q "se-test"; then
             log_test "PASS" "$CURRENT_TEST: SE filtering works"
             ((TESTS_PASSED++))
         else
@@ -119,7 +119,7 @@ test_country_filtering_integration() {
         local dk_output
         dk_output=$(cat /tmp/dk_output)
 
-        if echo "$dk_output" | grep -q "dk-test"; then
+        if echo "$dk_output" | command grep -q "dk-test"; then
             log_test "PASS" "$CURRENT_TEST: DK filtering works"
             ((TESTS_PASSED++))
         else
@@ -245,7 +245,7 @@ test_error_handling() {
         cred_error=$(cat /tmp/cred_error)
 
         # Accept either credentials error (local) or network error (CI)
-        if echo "$cred_error" | grep -q -E "missing|NETWORK|connectivity"; then
+        if echo "$cred_error" | command grep -q -E "missing|NETWORK|connectivity"; then
             log_test "PASS" "$CURRENT_TEST: Error handling works (credentials or network)"
             ((TESTS_PASSED++))
         else

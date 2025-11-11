@@ -55,7 +55,7 @@ test_cleanup_command_reliability() {
     assert_contains "$vpn_cleanup_output" "cleanup" "VPN script should support cleanup"
 
     # Verify cleanup creates expected output patterns
-    if echo "$cleanup_output" | grep -q -E "(Full cleanup|cleanup completed|No VPN processes)"; then
+    if echo "$cleanup_output" | command grep -q -E "(Full cleanup|cleanup completed|No VPN processes)"; then
         log_test "PASS" "$CURRENT_TEST: Cleanup shows expected completion messages"
         ((TESTS_PASSED++))
     else
@@ -154,7 +154,7 @@ test_process_detection_functionality() {
     health_output=$("$manager_script" health 2>&1) || true
 
     # Should show some health state
-    if echo "$health_output" | grep -q -E "(GOOD|CRITICAL|NO PROCESSES)"; then
+    if echo "$health_output" | command grep -q -E "(GOOD|CRITICAL|NO PROCESSES)"; then
         log_test "PASS" "$CURRENT_TEST: Health command shows recognizable state"
         ((TESTS_PASSED++))
     else
@@ -231,7 +231,7 @@ test_connection_blocking_code_exists() {
     local connector_script="$PROJECT_DIR/src/vpn-connector"
 
     # Verify blocking logic exists in code (no mocking needed)
-    if grep -q "BLOCKED.*already running" "$connector_script"; then
+    if command grep -q "BLOCKED.*already running" "$connector_script"; then
         log_test "PASS" "$CURRENT_TEST: Blocking logic exists in vpn-connector"
         ((TESTS_PASSED++))
     else
@@ -244,7 +244,7 @@ test_connection_blocking_code_exists() {
     # Tests should validate current behavior, not aspirational features
 
     # Test that cleanup suggestion is included
-    if grep -q "vpn cleanup" "$connector_script"; then
+    if command grep -q "vpn cleanup" "$connector_script"; then
         log_test "PASS" "$CURRENT_TEST: Cleanup suggestion included"
         ((TESTS_PASSED++))
     else
@@ -255,7 +255,7 @@ test_connection_blocking_code_exists() {
 
     # Test that the prevention happens before connection attempt
     # pgrep check is ~10 lines before BLOCKED message, need larger context window
-    if grep -B15 -A5 "BLOCKED.*already running" "$connector_script" | grep -q "pgrep.*openvpn"; then
+    if command grep -B15 -A5 "BLOCKED.*already running" "$connector_script" | command grep -q "pgrep.*openvpn"; then
         log_test "PASS" "$CURRENT_TEST: Process check happens before connection attempt"
         ((TESTS_PASSED++))
     else
@@ -297,7 +297,7 @@ test_real_process_prevention_system() {
         local health_output
         health_output=$("$manager_script" health 2>&1)
 
-        if echo "$health_output" | grep -q -E "(CRITICAL|WARNING.*processes)"; then
+        if echo "$health_output" | command grep -q -E "(CRITICAL|WARNING.*processes)"; then
             log_test "PASS" "$CURRENT_TEST: Health check correctly shows critical state"
             ((TESTS_PASSED++))
         else

@@ -85,7 +85,7 @@ test_dry_run_connection_attempt() {
     LOCATIONS_DIR="$TEST_LOCATIONS_DIR" connect_output=$("$connector_script" connect se 2>&1) || true
 
     # Should attempt to process the connection even if mocked
-    if echo "$connect_output" | grep -q "se-test\|connecting\|profile" 2> /dev/null; then
+    if echo "$connect_output" | command grep -q "se-test\|connecting\|profile" 2> /dev/null; then
         log_test "PASS" "$CURRENT_TEST: Connection attempt processes correctly"
         ((TESTS_PASSED++))
     else
@@ -117,7 +117,7 @@ test_multiple_location_switching() {
         local connect_output
         connect_output=$(LOCATIONS_DIR="$TEST_LOCATIONS_DIR" CREDENTIALS_FILE="$test_creds" "$vpn_script" connect "$country" 2>&1) || true
 
-        if echo "$connect_output" | grep -q -E "$country|connecting|profile"; then
+        if echo "$connect_output" | command grep -q -E "$country|connecting|profile"; then
             log_test "PASS" "$CURRENT_TEST: Can attempt connection to $country"
             ((TESTS_PASSED++))
         else
@@ -147,7 +147,7 @@ test_credentials_file_access() {
     # shellcheck disable=SC2034  # CREDENTIALS_FILE is intentionally set for subprocess environment
     CREDENTIALS_FILE="$test_creds" test_output=$("$connector_script" test 2>&1) || true
 
-    if echo "$test_output" | grep -q -v "credentials.*not found"; then
+    if echo "$test_output" | command grep -q -v "credentials.*not found"; then
         log_test "PASS" "$CURRENT_TEST: Can access credentials file"
         ((TESTS_PASSED++))
     else
@@ -175,7 +175,7 @@ test_cleanup_and_reconnection() {
     local cleanup_output
     cleanup_output=$("$vpn_script" cleanup 2>&1) || true
 
-    if echo "$cleanup_output" | grep -q -E "cleanup|clean|stopped" || [[ -n "$cleanup_output" ]]; then
+    if echo "$cleanup_output" | command grep -q -E "cleanup|clean|stopped" || [[ -n "$cleanup_output" ]]; then
         log_test "PASS" "$CURRENT_TEST: Cleanup command executes"
         ((TESTS_PASSED++))
     else
@@ -189,7 +189,7 @@ test_cleanup_and_reconnection() {
     reconnect_output=$("$vpn_script" reconnect 2>&1) || true
 
     # Should attempt reconnection process
-    if echo "$reconnect_output" | grep -q -E "reconnect|connect|attempting"; then
+    if echo "$reconnect_output" | command grep -q -E "reconnect|connect|attempting"; then
         log_test "PASS" "$CURRENT_TEST: Reconnection workflow initiates"
         ((TESTS_PASSED++))
     else
@@ -214,7 +214,7 @@ test_working_directory_independence() {
     local help_output
     help_output=$("$vpn_script" help 2> /dev/null)
 
-    if [[ -n "$help_output" ]] && echo "$help_output" | grep -q "Usage:"; then
+    if [[ -n "$help_output" ]] && echo "$help_output" | command grep -q "Usage:"; then
         log_test "PASS" "$CURRENT_TEST: Script works from different working directory"
         ((TESTS_PASSED++))
     else
@@ -274,7 +274,7 @@ test_multiple_connection_prevention_regression() {
     # Verify blocking behavior - can be detected by vpn health check OR vpn-connector
     # Health check (vpn:76-86): "CRITICAL: Multiple OpenVPN processes detected"
     # Process check (vpn-connector:424): "BLOCKED: X OpenVPN process(es) already running"
-    if echo "$connect_output" | grep -q -E "CRITICAL.*Multiple.*processes|BLOCKED.*already running"; then
+    if echo "$connect_output" | command grep -q -E "CRITICAL.*Multiple.*processes|BLOCKED.*already running"; then
         log_test "PASS" "$CURRENT_TEST: Process detection works"
         ((TESTS_PASSED++))
     else
@@ -284,7 +284,7 @@ test_multiple_connection_prevention_regression() {
     fi
 
     # Verify cleanup or blocking occurred (prevents accumulation)
-    if echo "$connect_output" | grep -q -E "cleanup|BLOCKED"; then
+    if echo "$connect_output" | command grep -q -E "cleanup|BLOCKED"; then
         log_test "PASS" "$CURRENT_TEST: Process accumulation prevention active"
         ((TESTS_PASSED++))
     else
@@ -294,7 +294,7 @@ test_multiple_connection_prevention_regression() {
     fi
 
     # Verify no actual connection succeeded (key regression check)
-    if ! echo "$connect_output" | grep -q "Connection established"; then
+    if ! echo "$connect_output" | command grep -q "Connection established"; then
         log_test "PASS" "$CURRENT_TEST: No duplicate connection created"
         ((TESTS_PASSED++))
     else
