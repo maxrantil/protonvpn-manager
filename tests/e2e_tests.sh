@@ -191,7 +191,7 @@ test_error_recovery_scenarios() {
     local invalid_output
     invalid_output=$(LOCATIONS_DIR="$TEST_LOCATIONS_DIR" "$connector_script" list xyz 2>&1) || true
 
-    assert_contains "$invalid_output" "No VPN profiles found matching" "Should handle invalid country codes"
+    assert_contains "$invalid_output" "Invalid country code" "Should handle invalid country codes"
     return 0
 }
 
