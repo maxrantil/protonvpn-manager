@@ -2,12 +2,17 @@
 # ABOUTME: Test framework for VPN management system
 # ABOUTME: Provides utilities for unit, integration, and end-to-end testing
 
+# Unalias grep to ensure consistent behavior across different environments
+# Some systems alias grep to ripgrep (rg) which has different flag semantics
+unalias grep 2> /dev/null || true
+
 # Test framework variables (with include guard to prevent re-initialization)
 if [[ -z "${TEST_FRAMEWORK_LOADED:-}" ]]; then
     TEST_FRAMEWORK_LOADED=1
     # shellcheck disable=SC2034  # TEST_DIR used by tests that source this framework
     TEST_DIR="$(dirname "$(realpath "$0")")"
-    # PROJECT_DIR removed - unused in framework, tests define their own
+    # shellcheck disable=SC2034  # PROJECT_DIR used by tests that source this framework
+    PROJECT_DIR="$(dirname "$TEST_DIR")"
     TESTS_PASSED=0
     TESTS_FAILED=0
     CURRENT_TEST=""
@@ -39,6 +44,9 @@ log_test() {
             ;;
         "WARN")
             echo -e "${YELLOW}[WARN]${NC} [$timestamp] $message"
+            ;;
+        "SKIP")
+            echo -e "${YELLOW}[SKIP]${NC} [$timestamp] $message"
             ;;
     esac
 }
@@ -205,6 +213,9 @@ cleanup_mocks() {
 }
 
 setup_test_env() {
+    # Clean up any mocks from previous tests first
+    cleanup_mocks
+
     # Create temporary test directories
     TEST_TEMP_DIR="/tmp/vpn_test_$$"
     mkdir -p "$TEST_TEMP_DIR"
@@ -237,6 +248,16 @@ EOF
     cat > "$TEST_LOCATIONS_DIR/secure-core-test.ovpn" << 'EOF'
 # Secure Core
 remote 192.168.1.102 1194
+proto udp
+dev tun
+nobind
+persist-key
+persist-tun
+auth-user-pass
+EOF
+
+    cat > "$TEST_LOCATIONS_DIR/nl-test.ovpn" << 'EOF'
+remote 192.168.1.103 1194
 proto udp
 dev tun
 nobind

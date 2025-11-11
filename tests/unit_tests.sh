@@ -56,9 +56,10 @@ test_profile_discovery() {
     local profiles
     profiles=$(find "$TEST_LOCATIONS_DIR" -name "*.ovpn" | wc -l)
 
-    assert_equals "3" "$profiles" "Should find 3 test profiles"
+    assert_equals "4" "$profiles" "Should find 4 test profiles"
     assert_file_exists "$TEST_LOCATIONS_DIR/se-test.ovpn" "SE test profile should exist"
     assert_file_exists "$TEST_LOCATIONS_DIR/dk-test.ovpn" "DK test profile should exist"
+    assert_file_exists "$TEST_LOCATIONS_DIR/nl-test.ovpn" "NL test profile should exist"
     assert_file_exists "$TEST_LOCATIONS_DIR/secure-core-test.ovpn" "Secure core profile should exist"
 }
 
