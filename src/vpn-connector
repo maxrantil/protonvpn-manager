@@ -324,7 +324,7 @@ validate_country_code() {
 
     # Security: Explicitly reject dangerous patterns
     case "$country_code" in
-        */*|*\\*|*..*|*\;*|*\|*|*\&*|*\$*|*\`*|*\ *)
+        */* | *\\* | *..* | *\;* | *\|* | *\&* | *\$* | *\`* | *\ *)
             return 1
             ;;
     esac
@@ -926,182 +926,182 @@ connect_custom_profile() {
 # Main execution guard - only run if executed directly, not sourced
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 
-case "${1:-}" in
-    "connect" | "c")
-        if ! check_dependencies; then
-            exit 1
-        fi
+    case "${1:-}" in
+        "connect" | "c")
+            if ! check_dependencies; then
+                exit 1
+            fi
 
-        if ! acquire_lock; then
-            exit 1
-        fi
+            if ! acquire_lock; then
+                exit 1
+            fi
 
-        connect_random "${2:-}"
-        ;;
-    "best" | "b")
-        if ! check_dependencies; then
-            exit 1
-        fi
+            connect_random "${2:-}"
+            ;;
+        "best" | "b")
+            if ! check_dependencies; then
+                exit 1
+            fi
 
-        if ! acquire_lock; then
-            exit 1
-        fi
+            if ! acquire_lock; then
+                exit 1
+            fi
 
-        # For TDD GREEN phase: make best command actually perform connection
-        echo -e "\033[1;36mFinding best server and connecting...\033[0m"
-        best_server_connect "full" "${2:-}"
-        ;;
-    "fast" | "f")
-        if ! check_dependencies; then
-            exit 1
-        fi
+            # For TDD GREEN phase: make best command actually perform connection
+            echo -e "\033[1;36mFinding best server and connecting...\033[0m"
+            best_server_connect "full" "${2:-}"
+            ;;
+        "fast" | "f")
+            if ! check_dependencies; then
+                exit 1
+            fi
 
-        if ! acquire_lock; then
-            exit 1
-        fi
+            if ! acquire_lock; then
+                exit 1
+            fi
 
-        echo -e "\033[1;33mFast connect mode (using cached results if available)\033[0m"
-        best_server_connect "fast" "${2:-}"
-        ;;
-    "secure")
-        if ! check_dependencies; then
-            exit 1
-        fi
+            echo -e "\033[1;33mFast connect mode (using cached results if available)\033[0m"
+            best_server_connect "fast" "${2:-}"
+            ;;
+        "secure")
+            if ! check_dependencies; then
+                exit 1
+            fi
 
-        if ! acquire_lock; then
-            exit 1
-        fi
+            if ! acquire_lock; then
+                exit 1
+            fi
 
-        secure_core_connect
-        ;;
-    "custom")
-        if ! check_dependencies; then
-            exit 1
-        fi
+            secure_core_connect
+            ;;
+        "custom")
+            if ! check_dependencies; then
+                exit 1
+            fi
 
-        if ! acquire_lock; then
-            exit 1
-        fi
+            if ! acquire_lock; then
+                exit 1
+            fi
 
-        connect_custom_profile "${2:-}"
-        ;;
-    "interactive" | "i")
-        if ! check_dependencies; then
-            exit 1
-        fi
+            connect_custom_profile "${2:-}"
+            ;;
+        "interactive" | "i")
+            if ! check_dependencies; then
+                exit 1
+            fi
 
-        if ! acquire_lock; then
-            exit 1
-        fi
+            if ! acquire_lock; then
+                exit 1
+            fi
 
-        interactive_profile_selection "${2:-}"
-        ;;
-    "countries")
-        echo -e "\033[1;36mAvailable countries in profiles:\033[0m"
-        get_available_countries | while read -r country; do
-            count=$(find_profiles_by_country "$country" | wc -l)
-            printf "  %-3s (%d profiles)\n" "${country^^}" "$count"
-        done
-        ;;
-    "list" | "l")
-        if [[ "${2:-}" == "detailed" ]]; then
-            list_profiles "${3:-}" "detailed"
-        else
-            list_profiles "${2:-}"
-        fi
-        ;;
-    "cache")
-        case "${2:-}" in
-            "clear")
-                if [[ -f "$PERFORMANCE_CACHE" ]]; then
-                    rm -f "$PERFORMANCE_CACHE"
-                    echo -e "\033[1;32mPerformance cache cleared\033[0m"
-                else
-                    echo -e "\033[1;33mNo cache file to clear\033[0m"
-                fi
-                ;;
-            "info")
-                if [[ -f "$PERFORMANCE_CACHE" ]]; then
-                    cache_age=$(($(date +%s) - $(stat -c %Y "$PERFORMANCE_CACHE" 2> /dev/null || echo 0)))
-                    cache_size=$(du -h "$PERFORMANCE_CACHE" 2> /dev/null | cut -f1)
-                    cache_entries=$(wc -l < "$PERFORMANCE_CACHE" 2> /dev/null)
-
-                    echo -e "\033[1;36mPerformance Cache Information:\033[0m"
-                    echo "  File: $PERFORMANCE_CACHE"
-                    echo "  Age: ${cache_age}s ($((cache_age / 60))m $((cache_age % 60))s)"
-                    echo "  Size: $cache_size"
-                    echo "  Entries: $cache_entries"
-
-                    if [[ $cache_age -gt 7200 ]]; then
-                        echo -e "  \033[1;33mStatus: Expired (>2 hours)\033[0m"
+            interactive_profile_selection "${2:-}"
+            ;;
+        "countries")
+            echo -e "\033[1;36mAvailable countries in profiles:\033[0m"
+            get_available_countries | while read -r country; do
+                count=$(find_profiles_by_country "$country" | wc -l)
+                printf "  %-3s (%d profiles)\n" "${country^^}" "$count"
+            done
+            ;;
+        "list" | "l")
+            if [[ "${2:-}" == "detailed" ]]; then
+                list_profiles "${3:-}" "detailed"
+            else
+                list_profiles "${2:-}"
+            fi
+            ;;
+        "cache")
+            case "${2:-}" in
+                "clear")
+                    if [[ -f "$PERFORMANCE_CACHE" ]]; then
+                        rm -f "$PERFORMANCE_CACHE"
+                        echo -e "\033[1;32mPerformance cache cleared\033[0m"
                     else
-                        echo -e "  \033[1;32mStatus: Valid\033[0m"
+                        echo -e "\033[1;33mNo cache file to clear\033[0m"
                     fi
-                else
-                    echo -e "\033[1;33mNo performance cache found\033[0m"
-                fi
-                ;;
-            *)
-                echo "Cache commands: clear, info"
-                ;;
-        esac
-        ;;
-    "test" | "t")
-        if ! check_dependencies; then
-            echo -e "\033[1;31mDependency check failed\033[0m"
-            exit 1
-        fi
+                    ;;
+                "info")
+                    if [[ -f "$PERFORMANCE_CACHE" ]]; then
+                        cache_age=$(($(date +%s) - $(stat -c %Y "$PERFORMANCE_CACHE" 2> /dev/null || echo 0)))
+                        cache_size=$(du -h "$PERFORMANCE_CACHE" 2> /dev/null | cut -f1)
+                        cache_entries=$(wc -l < "$PERFORMANCE_CACHE" 2> /dev/null)
 
-        if ! check_internet; then
-            echo -e "\033[1;31mInternet connectivity test failed\033[0m"
-            exit 1
-        fi
+                        echo -e "\033[1;36mPerformance Cache Information:\033[0m"
+                        echo "  File: $PERFORMANCE_CACHE"
+                        echo "  Age: ${cache_age}s ($((cache_age / 60))m $((cache_age % 60))s)"
+                        echo "  Size: $cache_size"
+                        echo "  Entries: $cache_entries"
 
-        if [[ ! -f "$CREDENTIALS_FILE" ]]; then
-            echo -e "\033[1;31mCredentials file missing: $CREDENTIALS_FILE\033[0m"
-            exit 1
-        fi
+                        if [[ $cache_age -gt 7200 ]]; then
+                            echo -e "  \033[1;33mStatus: Expired (>2 hours)\033[0m"
+                        else
+                            echo -e "  \033[1;32mStatus: Valid\033[0m"
+                        fi
+                    else
+                        echo -e "\033[1;33mNo performance cache found\033[0m"
+                    fi
+                    ;;
+                *)
+                    echo "Cache commands: clear, info"
+                    ;;
+            esac
+            ;;
+        "test" | "t")
+            if ! check_dependencies; then
+                echo -e "\033[1;31mDependency check failed\033[0m"
+                exit 1
+            fi
 
-        if ! list_profiles > /dev/null; then
-            echo -e "\033[1;31mNo VPN profiles available\033[0m"
-            exit 1
-        fi
+            if ! check_internet; then
+                echo -e "\033[1;31mInternet connectivity test failed\033[0m"
+                exit 1
+            fi
 
-        echo -e "\033[1;32m✓ All VPN connector tests passed\033[0m"
-        ;;
-    *)
-        echo "VPN Connector - Advanced Connection Management (Phase 3)"
-        echo "Usage: $0 {connect|best|fast|secure|custom|interactive|list|countries|cache|test} [options]"
-        echo ""
-        echo "Connection Commands:"
-        echo "  connect [country]     - Connect to random server (optional country filter)"
-        echo "  best [country]        - Connect to best performing server (full test)"
-        echo "  fast [country]        - Quick connect using cached performance data"
-        echo "  secure                - Connect to secure core server"
-        echo "  custom <profile>      - Connect using custom profile path"
-        echo "  interactive [country] - Interactive profile selection menu"
-        echo ""
-        echo "Information Commands:"
-        echo "  list [country]        - List available VPN profiles"
-        echo "  list detailed [country] - Detailed profile listing with server IPs"
-        echo "  countries             - Show available countries and profile counts"
-        echo ""
-        echo "Cache Management:"
-        echo "  cache info           - Show performance cache information"
-        echo "  cache clear          - Clear performance cache"
-        echo ""
-        echo "Utility Commands:"
-        echo "  test                 - Test VPN connector functionality"
-        echo ""
-        echo "Examples:"
-        echo "  $0 connect se        - Connect to Swedish server"
-        echo "  $0 best nl           - Find and connect to best Netherlands server"
-        echo "  $0 fast              - Fast connect to best cached server"
-        echo "  $0 interactive se    - Choose from Swedish servers interactively"
-        echo "  $0 list detailed nl  - Show detailed Netherlands server info"
-        echo "  $0 secure            - Connect to secure core server"
-        exit 1
-        ;;
-esac
+            if [[ ! -f "$CREDENTIALS_FILE" ]]; then
+                echo -e "\033[1;31mCredentials file missing: $CREDENTIALS_FILE\033[0m"
+                exit 1
+            fi
+
+            if ! list_profiles > /dev/null; then
+                echo -e "\033[1;31mNo VPN profiles available\033[0m"
+                exit 1
+            fi
+
+            echo -e "\033[1;32m✓ All VPN connector tests passed\033[0m"
+            ;;
+        *)
+            echo "VPN Connector - Advanced Connection Management (Phase 3)"
+            echo "Usage: $0 {connect|best|fast|secure|custom|interactive|list|countries|cache|test} [options]"
+            echo ""
+            echo "Connection Commands:"
+            echo "  connect [country]     - Connect to random server (optional country filter)"
+            echo "  best [country]        - Connect to best performing server (full test)"
+            echo "  fast [country]        - Quick connect using cached performance data"
+            echo "  secure                - Connect to secure core server"
+            echo "  custom <profile>      - Connect using custom profile path"
+            echo "  interactive [country] - Interactive profile selection menu"
+            echo ""
+            echo "Information Commands:"
+            echo "  list [country]        - List available VPN profiles"
+            echo "  list detailed [country] - Detailed profile listing with server IPs"
+            echo "  countries             - Show available countries and profile counts"
+            echo ""
+            echo "Cache Management:"
+            echo "  cache info           - Show performance cache information"
+            echo "  cache clear          - Clear performance cache"
+            echo ""
+            echo "Utility Commands:"
+            echo "  test                 - Test VPN connector functionality"
+            echo ""
+            echo "Examples:"
+            echo "  $0 connect se        - Connect to Swedish server"
+            echo "  $0 best nl           - Find and connect to best Netherlands server"
+            echo "  $0 fast              - Fast connect to best cached server"
+            echo "  $0 interactive se    - Choose from Swedish servers interactively"
+            echo "  $0 list detailed nl  - Show detailed Netherlands server info"
+            echo "  $0 secure            - Connect to secure core server"
+            exit 1
+            ;;
+    esac
 
 fi # End of main execution guard
