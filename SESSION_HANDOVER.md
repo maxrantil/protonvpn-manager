@@ -1,10 +1,10 @@
-# Session Handoff: Issue #126 (Substantial Progress)
+# Session Handoff: Issue #126 (Major Progress)
 
 **Date**: 2025-11-11
 **Current Issue**: #126 - Fix failing functional tests ⏳ **IN PROGRESS**
 **Branch**: feat/issue-126-fix-failing-tests
 **PR**: #127 - Critical test infrastructure fixes (created, updated)
-**Status**: Substantial progress - reduced failures from 26 to 10 (91% pass rate)
+**Status**: Major progress - reduced failures from 26 to 3 (97% pass rate)
 
 ---
 
@@ -15,8 +15,9 @@
 **Test Results Timeline:**
 - **Initial**: 85/111 passing (76% success rate) - 26 failures
 - **After infrastructure fixes**: 100/115 passing (86% success rate) - 15 failures
-- **Current**: 105/115 passing (91% success rate) - 10 failures ✨
-- **CI Target**: 113/113 passing (100% success rate)
+- **After health command fix**: 105/115 passing (91% success rate) - 10 failures
+- **Current**: 112/115 passing (97% success rate) - 3 failures ✨
+- **CI Target**: 115/115 passing (100% success rate)
 
 **Critical Fixes Completed:**
 
@@ -45,62 +46,75 @@
    - Ensures test environment uses latest code
    - Synchronized development and installed versions
 
+6. ✅ **Fixed arithmetic increment bug in vpn-connector** (commit afb63aa)
+   - Issue: `((count++))` with `set -euo pipefail` exits when count=0
+   - Root cause: Post-increment returns 0 (false in arithmetic), triggers errexit
+   - Fix: Changed to `((++count))` at lines 192, 276
+   - **This fixed 7 additional test failures** (all profile/country filtering tests)
+
 **Files Modified:**
 - src/vpn-manager (health command fix)
+- src/vpn-connector (arithmetic increment fix)
 
 ---
 
 ## 🎯 Current Project State
 
-**Tests**: ⚠️ **10 failing** (91% pass rate: 105/115) - Up from 76%!
+**Tests**: ⚠️ **3 failing** (97% pass rate: 112/115) - Up from 76%!
 **Branch**: ✅ Clean - all changes committed and pushed
-**CI/CD**: ⚠️ Test suite needs final fixes for 10 remaining failures
-**PR #127**: Updated with health command fix
+**CI/CD**: ⚠️ Test suite needs final fixes for 3 remaining failures
+**PR #127**: Updated with arithmetic increment fix
 
 ### Commits on Branch:
 - `af1aac0` - docs: session handoff for Issue #126 partial completion
 - `56dffec` - fix: restore PROJECT_DIR variable and add missing NL test profile
-- `9b29ce9` - fix: Fix health command exit code handling in vpn-manager ← NEW
+- `9b29ce9` - fix: Fix health command exit code handling in vpn-manager
+- `afb63aa` - fix: Change ((count++)) to ((++count)) in vpn-connector loops ← NEW
 
 ---
 
-## 🚨 Remaining Issues (10 Failing Tests)
+## 🚨 Remaining Issues (3 Failing Tests)
 
 ### Current Failure Breakdown:
 
-**Profile/Country Tests (7 failures):**
-- ✗ Country Filtering Integration: SE filtering
-- ✗ Country Filtering Integration: DK filtering
-- ✗ Profile Management Workflow: Should find SE test profile
-- ✗ Profile Management Workflow: Should find DK test profile
-- ✗ Profile Management Workflow: Country filtering should work
-- ✗ OpenVPN File Validation and Loading: Should find SE test profile
-- ✗ OpenVPN File Validation and Loading: Should find DK test profile
+**✅ FIXED - Profile/Country Tests (7 tests now passing):**
+- ✓ Country Filtering Integration: SE filtering
+- ✓ Country Filtering Integration: DK filtering
+- ✓ Profile Management Workflow: Should find SE test profile
+- ✓ Profile Management Workflow: Should find DK test profile
+- ✓ Profile Management Workflow: Country filtering should work
+- ✓ OpenVPN File Validation and Loading: Should find SE test profile
+- ✓ OpenVPN File Validation and Loading: Should find DK test profile
 
-**Other Tests (3 failures):**
-- ✗ Dependency Checking Integration: Should detect missing dependencies
-- ✗ Regression Prevention Tests
-- ✗ Pre-Connection Safety Integration: safety command accessibility
+**Remaining Failures (3 tests):**
+1. ✗ Dependency Checking Integration: Should detect missing dependencies
+2. ✗ Regression Prevention Tests (5 sub-failures)
+3. ✗ Pre-Connection Safety Integration: safety command accessibility
 
-### Root Cause Analysis:
+### Root Cause Analysis for Remaining 3 Tests:
 
-**Profile Test Failures:**
-- Test profiles (SE, DK) may not be properly created in test environment
-- Tests expect specific profile names/formats
-- TEST_LOCATIONS_DIR may not be correctly populated
-- Profile listing/filtering logic needs investigation
+**1. Dependency Checking Test:**
+- Test creates limited PATH but all VPN deps are in /bin on this system
+- Cannot simulate missing dependencies (openvpn, curl, bc, etc. all present)
+- Test infrastructure issue, not functional issue
+- Options: Skip test, mock dependencies, or accept as system-specific
 
-**Dependency Test Failure:**
-- Test expects specific error messages for missing dependencies
-- May need mock setup for missing dependency scenarios
+**2. Regression Prevention Tests (simple_regression_tests.sh):**
+Sub-failures breakdown:
+- ✓ NetworkManager preservation: PASSING
+- ✗ Cleanup command: Exits with code 1 (4 timeouts reported)
+- ✓ Health command: PASSING
+- ✓ Emergency reset separation: PASSING
+- ✓ Process pattern specificity: PASSING
+- ✗ Cleanup NetworkManager safety message: Missing in output
 
-**Regression Prevention Failures:**
-- Cleanup command timeout issues (still present)
-- NetworkManager safety message missing from cleanup output
+Issues to fix:
+- Cleanup command returns exit code 1 even when successful
+- Cleanup output doesn't mention NetworkManager safety
 
-**Pre-Connection Safety:**
+**3. Pre-Connection Safety Integration:**
 - Safety command may not exist or not accessible
-- Related to health check infrastructure
+- Needs investigation
 
 ---
 
@@ -108,47 +122,42 @@
 
 ### Immediate Next Steps:
 
-1. **Investigate test profile setup** (SE, DK profiles)
-   - Check setup_test_env function in test_framework.sh
-   - Verify TEST_LOCATIONS_DIR is populated correctly
-   - Ensure SE and DK test profiles are created
-
-2. **Fix profile listing/filtering tests**
-   - Debug vpn-connector list command with TEST_LOCATIONS_DIR
-   - Verify country filtering logic works with test profiles
-   - Update assertions if needed
-
-3. **Fix regression prevention tests**
-   - Investigate cleanup command timeout
+1. **Fix regression prevention tests** (2 sub-failures)
+   - Fix cleanup command exit code (should return 0 when successful)
    - Add NetworkManager safety message to cleanup output
-   - Verify all commands complete within timeouts
+   - Investigate why cleanup returns exit code 1
 
-4. **Fix remaining failures**
-   - Dependency checking test
-   - Pre-connection safety integration test
+2. **Fix or skip dependency checking test**
+   - All VPN dependencies present in /bin on this system
+   - Cannot simulate missing dependencies
+   - Decision: Skip test or mock dependencies?
 
-5. **Achieve 100% test pass rate** (115/115)
+3. **Fix pre-connection safety integration test**
+   - Investigate if safety command exists
+   - Related to health check infrastructure
+
+4. **Achieve 100% test pass rate** (115/115)
    - Run full test suite to verify
    - Update PR #127 with final fixes
    - Request review and merge
 
-**Estimated effort**: 2-3 hours to fix remaining 10 tests
+**Estimated effort**: 1-2 hours to fix remaining 3 tests
 
 ---
 
 ## 📝 Startup Prompt for Next Session
 
-Read CLAUDE.md to understand our workflow, then continue Issue #126 final fixes.
+Read CLAUDE.md to understand our workflow, then complete Issue #126 final 3 test fixes.
 
-**Immediate priority**: Fix remaining 10 test failures in Issue #126 (down from 26!)
-**Context**: 91% tests passing (105/115), infrastructure fixes complete, profile tests remain
+**Immediate priority**: Fix last 3 test failures in Issue #126 (down from 26 to 3!)
+**Context**: 97% tests passing (112/115), arithmetic increment bug fixed
 **Reference docs**:
   - PR #127: https://github.com/maxrantil/protonvpn-manager/pull/127
   - Issue #126: https://github.com/maxrantil/protonvpn-manager/issues/126
   - SESSION_HANDOVER.md (this file)
-**Ready state**: feat/issue-126-fix-failing-tests branch, latest commit 9b29ce9
+**Ready state**: feat/issue-126-fix-failing-tests branch, latest commit afb63aa
 
-**Expected scope**: Fix test profile setup (7 tests), regression tests (2 tests), misc (1 test), achieve 100%
+**Expected scope**: Fix regression tests (cleanup exit code + safety message), dependency test decision, pre-connection safety, achieve 100%
 
 ---
 
@@ -161,28 +170,33 @@ Read CLAUDE.md to understand our workflow, then continue Issue #126 final fixes.
    - Files: test_framework.sh, src/vpn-manager
 
 **Recent Commits:**
-1. `9b29ce9` - fix: Fix health command exit code handling in vpn-manager
-2. `56dffec` - fix: restore PROJECT_DIR variable and add missing NL test profile
-3. `af1aac0` - docs: session handoff for Issue #126 partial completion
+1. `afb63aa` - fix: Change ((count++)) to ((++count)) in vpn-connector loops
+2. `9b29ce9` - fix: Fix health command exit code handling in vpn-manager
+3. `56dffec` - fix: restore PROJECT_DIR variable and add missing NL test profile
+4. `af1aac0` - docs: session handoff for Issue #126 partial completion
 
 **CI Status:**
-- Test suite: 91% passing (105/115)
+- Test suite: 97% passing (112/115)
 - All quality checks: ✅ Passing
 
 ---
 
 ## 🎉 Session Status
 
-**Issue #126**: ⏳ **SUBSTANTIAL PROGRESS** - 91% complete
+**Issue #126**: ⏳ **NEAR COMPLETION** - 97% complete
 
 Major breakthroughs this session:
-- ✨ Reduced failures from 26 to 10 (16 tests fixed!)
-- ✨ Identified and fixed missing installed scripts issue
+- ✨ Reduced failures from 26 to 3 (23 tests fixed!)
+- ✨ Identified and fixed critical arithmetic increment bug
 - ✨ Fixed health command exit code handling
-- ✨ Test pass rate improved from 76% to 91%
+- ✨ Fixed all profile/country filtering tests (7 tests)
+- ✨ Test pass rate improved from 76% to 97%
 
-Remaining work is focused on profile management tests and a few edge cases.
+Only 3 failing tests remain:
+1. Dependency checking (test infrastructure issue)
+2. Regression prevention (cleanup exit code + safety message)
+3. Pre-connection safety (needs investigation)
 
-**Session handoff updated: 2025-11-11 00:45 UTC**
+**Session handoff updated: 2025-11-11 12:15 UTC**
 
 ---
