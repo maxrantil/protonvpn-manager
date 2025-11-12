@@ -9,296 +9,296 @@ LOCATIONS_DIR="${LOCATIONS_DIR:-$CONFIG_DIR/locations}"
 
 # Script locations - robust detection for installed vs development mode
 if [[ -f "/usr/local/bin/vpn-manager" ]] && [[ -f "/usr/local/bin/vpn-error-handler" ]]; then
-    # Installed mode - all components in /usr/local/bin
-    VPN_DIR="/usr/local/bin"
-    VPN_MANAGER="$VPN_DIR/vpn-manager"
-    VPN_CONNECTOR="$VPN_DIR/vpn-connector"
+	# Installed mode - all components in /usr/local/bin
+	VPN_DIR="/usr/local/bin"
+	VPN_MANAGER="$VPN_DIR/vpn-manager"
+	VPN_CONNECTOR="$VPN_DIR/vpn-connector"
 else
-    # Development mode - use local paths relative to script location
-    VPN_DIR="$(dirname "$(realpath "$0")")"
-    VPN_MANAGER="$VPN_DIR/vpn-manager"
-    VPN_CONNECTOR="$VPN_DIR/vpn-connector"
+	# Development mode - use local paths relative to script location
+	VPN_DIR="$(dirname "$(realpath "$0")")"
+	VPN_MANAGER="$VPN_DIR/vpn-manager"
+	VPN_CONNECTOR="$VPN_DIR/vpn-connector"
 fi
 
 # Source centralized error handling
 source "$VPN_DIR/vpn-error-handler"
 
 show_banner() {
-    echo -e "\033[1;36m╔════════════════════════════════════════╗\033[0m"
-    echo -e "\033[1;36m║           VPN Manager v1.0.0           ║\033[0m"
-    echo -e "\033[1;36m║         Artix/Arch Linux Edition       ║\033[0m"
-    echo -e "\033[1;36m╚════════════════════════════════════════╝\033[0m"
-    echo
+	echo -e "\033[1;36m╔════════════════════════════════════════╗\033[0m"
+	echo -e "\033[1;36m║           VPN Manager v1.0.0           ║\033[0m"
+	echo -e "\033[1;36m║         Artix/Arch Linux Edition       ║\033[0m"
+	echo -e "\033[1;36m╚════════════════════════════════════════╝\033[0m"
+	echo
 }
 
 show_help() {
-    show_banner
-    echo -e "\033[1;33mUsage: vpn <command> [options]\033[0m"
-    echo
-    echo -e "\033[1;32mConnection Commands:\033[0m"
-    echo "  connect [country]    - Connect to VPN server (optional country code)"
-    echo "  disconnect          - Disconnect from VPN"
-    echo "  reconnect           - Reconnect to current VPN server"
-    echo "  status              - Show VPN connection status"
-    echo
-    echo -e "\033[1;32mServer Selection:\033[0m"
-    echo "  best                - Connect to best performing server"
-    echo "  fast [country]      - Quick connect using cached results"
-    echo "  secure              - Connect to secure core server"
-    echo "  custom <profile>    - Connect using custom profile path"
-    echo "  list                - List available VPN profiles"
-    echo
-    echo -e "\033[1;32mManagement:\033[0m"
-    echo "  kill                - Force kill all VPN processes"
-    echo "  cleanup             - Clean up VPN processes and routes (safe)"
-    echo "  emergency-reset     - Emergency network reset (restarts NetworkManager)"
-    echo "  health              - Check VPN process health"
-    echo "  test                - Test VPN performance"
-    echo "  logs [lines]        - View recent log entries (default: 50 lines)"
-    echo
-    echo -e "\033[1;32mConfiguration:\033[0m"
-    echo "  setup               - Initial VPN setup and configuration"
-    echo "  update              - Update VPN profiles"
-    echo "  download-configs    - Auto-download ProtonVPN configs"
-    echo "  service             - Manage background updater service"
-    echo "  help                - Show this help message"
-    echo
-    echo -e "\033[1;33mExamples:\033[0m"
-    echo "  vpn connect se      - Connect to Swedish server"
-    echo "  vpn best            - Connect to best server automatically"
-    echo "  vpn fast nl         - Quick connect to Netherlands"
-    echo
+	show_banner
+	echo -e "\033[1;33mUsage: vpn <command> [options]\033[0m"
+	echo
+	echo -e "\033[1;32mConnection Commands:\033[0m"
+	echo "  connect [country]    - Connect to VPN server (optional country code)"
+	echo "  disconnect          - Disconnect from VPN"
+	echo "  reconnect           - Reconnect to current VPN server"
+	echo "  status              - Show VPN connection status"
+	echo
+	echo -e "\033[1;32mServer Selection:\033[0m"
+	echo "  best                - Connect to best performing server"
+	echo "  fast [country]      - Quick connect using cached results"
+	echo "  secure              - Connect to secure core server"
+	echo "  custom <profile>    - Connect using custom profile path"
+	echo "  list                - List available VPN profiles"
+	echo
+	echo -e "\033[1;32mManagement:\033[0m"
+	echo "  kill                - Force kill all VPN processes"
+	echo "  cleanup             - Clean up VPN processes and routes (safe)"
+	echo "  emergency-reset     - Emergency network reset (restarts NetworkManager)"
+	echo "  health              - Check VPN process health"
+	echo "  test                - Test VPN performance"
+	echo "  logs [lines]        - View recent log entries (default: 50 lines)"
+	echo
+	echo -e "\033[1;32mConfiguration:\033[0m"
+	echo "  setup               - Initial VPN setup and configuration"
+	echo "  update              - Update VPN profiles"
+	echo "  download-configs    - Auto-download ProtonVPN configs"
+	echo "  service             - Manage background updater service"
+	echo "  help                - Show this help message"
+	echo
+	echo -e "\033[1;33mExamples:\033[0m"
+	echo "  vpn connect se      - Connect to Swedish server"
+	echo "  vpn best            - Connect to best server automatically"
+	echo "  vpn fast nl         - Quick connect to Netherlands"
+	echo
 }
 
 case "${1:-}" in
-    "connect" | "c")
-        if [[ -x "$VPN_CONNECTOR" ]]; then
-            # Check for process health issues before connecting
-            if [[ -x "$VPN_MANAGER" ]]; then
-                "$VPN_MANAGER" health > /dev/null 2>&1
-                if [[ $? -eq 1 ]]; then
-                    echo -e "\033[1;31m⚠️  CRITICAL: Multiple OpenVPN processes detected!\033[0m"
-                    echo -e "\033[1;33m   Performing automatic cleanup to prevent system issues...\033[0m"
-                    if ! "$VPN_MANAGER" cleanup; then
-                        critical_process_error "$COMP_VPN_MAIN" "unknown" "System stability at risk - manual intervention required"
-                        exit 1
-                    fi
-                    echo -e "\033[1;32m✓ Cleanup completed. Proceeding with connection...\033[0m"
-                fi
-            fi
-            "$VPN_CONNECTOR" connect "${2:-}"
-        else
-            file_not_found_error "$COMP_VPN_MAIN" "$VPN_CONNECTOR" "Check installation and file permissions"
-            exit 1
-        fi
-        ;;
-    "disconnect" | "d")
-        if [[ -x "$VPN_MANAGER" ]]; then
-            "$VPN_MANAGER" stop
-        else
-            file_not_found_error "$COMP_VPN_MAIN" "$VPN_MANAGER" "Check installation and file permissions"
-            exit 1
-        fi
-        ;;
-    "reconnect" | "r")
-        if [[ -x "$VPN_MANAGER" ]]; then
-            "$VPN_MANAGER" stop
-            sleep 2
-            "$VPN_CONNECTOR" connect "${2:-}"
-        else
-            file_not_found_error "$COMP_VPN_MAIN" "$VPN_MANAGER" "Check installation and file permissions"
-            exit 1
-        fi
-        ;;
-    "status" | "s")
-        if [[ -x "$VPN_MANAGER" ]]; then
-            if [[ "${2:-}" == "--accessible" ]]; then
-                VPN_ACCESSIBLE_MODE=1 "$VPN_MANAGER" status
-            else
-                "$VPN_MANAGER" status
-            fi
-        else
-            file_not_found_error "$COMP_VPN_MAIN" "$VPN_MANAGER" "Check installation and file permissions"
-            exit 1
-        fi
-        ;;
-    "best" | "b")
-        if [[ -x "$VPN_CONNECTOR" ]]; then
-            "$VPN_CONNECTOR" best
-        else
-            file_not_found_error "$COMP_VPN_MAIN" "$VPN_CONNECTOR" "Check installation and file permissions"
-            exit 1
-        fi
-        ;;
-    "fast" | "f")
-        if [[ -x "$VPN_CONNECTOR" ]]; then
-            "$VPN_CONNECTOR" fast "${2:-}"
-        else
-            file_not_found_error "$COMP_VPN_MAIN" "$VPN_CONNECTOR" "Check installation and file permissions"
-            exit 1
-        fi
-        ;;
-    "secure")
-        if [[ -x "$VPN_CONNECTOR" ]]; then
-            "$VPN_CONNECTOR" secure
-        else
-            file_not_found_error "$COMP_VPN_MAIN" "$VPN_CONNECTOR" "Check installation and file permissions"
-            exit 1
-        fi
-        ;;
-    "custom")
-        if [[ -x "$VPN_CONNECTOR" ]]; then
-            "$VPN_CONNECTOR" custom "${2:-}"
-        else
-            file_not_found_error "$COMP_VPN_MAIN" "$VPN_CONNECTOR" "Check installation and file permissions"
-            exit 1
-        fi
-        ;;
-    "list" | "l")
-        if [[ -d "$LOCATIONS_DIR" ]]; then
-            echo -e "\033[1;33mAvailable VPN Profiles:\033[0m"
-            find "$LOCATIONS_DIR" \( -name "*.ovpn" -o -name "*.conf" \) 2> /dev/null | sed 's|.*/||; s|\.ovpn$||; s|\.conf$||' | sort
-        else
-            file_not_found_error "$COMP_VPN_MAIN" "$LOCATIONS_DIR" "Create locations directory and add VPN profile files"
-            exit 1
-        fi
-        ;;
-    "kill" | "k")
-        if [[ -x "$VPN_MANAGER" ]]; then
-            "$VPN_MANAGER" kill-all
-        else
-            file_not_found_error "$COMP_VPN_MAIN" "$VPN_MANAGER" "Check installation and file permissions"
-            exit 1
-        fi
-        ;;
-    "cleanup")
-        if [[ -x "$VPN_MANAGER" ]]; then
-            "$VPN_MANAGER" cleanup
-        else
-            file_not_found_error "$COMP_VPN_MAIN" "$VPN_MANAGER" "Check installation and file permissions"
-            exit 1
-        fi
-        ;;
-    "emergency-reset")
-        if [[ -x "$VPN_MANAGER" ]]; then
-            "$VPN_MANAGER" emergency-reset
-        else
-            file_not_found_error "$COMP_VPN_MAIN" "$VPN_MANAGER" "Check installation and file permissions"
-            exit 1
-        fi
-        ;;
-    "health")
-        if [[ -x "$VPN_MANAGER" ]]; then
-            "$VPN_MANAGER" health
-        else
-            file_not_found_error "$COMP_VPN_MAIN" "$VPN_MANAGER" "Check installation and file permissions"
-            exit 1
-        fi
-        ;;
-    "logs" | "log")
-        if [[ -x "$VPN_MANAGER" ]]; then
-            "$VPN_MANAGER" logs "${2:-50}"
-        else
-            file_not_found_error "$COMP_VPN_MAIN" "$VPN_MANAGER" "Check installation and file permissions"
-            exit 1
-        fi
-        ;;
-    "test" | "t")
-        if [[ -x "$VPN_CONNECTOR" ]]; then
-            "$VPN_CONNECTOR" test
-        else
-            file_not_found_error "$COMP_VPN_MAIN" "$VPN_CONNECTOR" "Check installation and file permissions"
-            exit 1
-        fi
-        ;;
-    "setup")
-        echo -e "\033[1;33mVPN Setup\033[0m"
-        echo "1. Place your ProtonVPN .ovpn files in: $LOCATIONS_DIR"
-        echo "2. Create credentials file with username/password"
-        echo "3. Run: vpn test"
-        ;;
-    "update")
-        echo -e "\033[1;33mVPN Profile Update\033[0m"
-        echo "Download latest .ovpn files from your VPN provider"
-        echo "Place them in: $LOCATIONS_DIR"
-        echo ""
-        echo "For automated downloads, use: vpn download-configs"
-        ;;
-    "download-configs")
-        DOWNLOAD_ENGINE="$VPN_DIR/download-engine"
-        if [[ -x "$DOWNLOAD_ENGINE" ]]; then
-            case "${2:-status}" in
-                "help" | "h")
-                    "$DOWNLOAD_ENGINE" help
-                    ;;
-                "status" | "s")
-                    "$DOWNLOAD_ENGINE" status
-                    ;;
-                "country")
-                    if [[ -n "${3:-}" ]]; then
-                        "$DOWNLOAD_ENGINE" download-country "$3" "${@:4}"
-                    else
-                        echo "Usage: vpn download-configs country <CC> [options]"
-                        echo "Options:"
-                        echo "  --test-mode              Use test mode (no real downloads)"
-                        echo "  --protocol=udp|tcp       Choose protocol (default: udp)"
-                        echo "  --config-type=TYPE       Choose type (country|standard|secure-core)"
-                        echo ""
-                        echo "Examples:"
-                        echo "  vpn download-configs country dk"
-                        echo "  vpn download-configs country dk --test-mode"
-                        echo "  vpn download-configs country dk --protocol=tcp"
-                        echo "  vpn download-configs country dk --config-type=secure-core"
-                    fi
-                    ;;
-                "all")
-                    "$DOWNLOAD_ENGINE" download-all "${@:3}"
-                    ;;
-                *)
-                    "$DOWNLOAD_ENGINE" "$2" "${@:3}"
-                    ;;
-            esac
-        else
-            echo "Error: Download engine not found at $DOWNLOAD_ENGINE"
-            echo "Please ensure Phase 2 implementation is complete."
-            exit 1
-        fi
-        ;;
-    "service")
-        SERVICE_MANAGER="$VPN_DIR/proton-service"
-        if [[ -x "$SERVICE_MANAGER" ]]; then
-            case "${2:-help}" in
-                "help" | "h")
-                    "$SERVICE_MANAGER" help
-                    ;;
-                "start" | "stop" | "restart" | "status" | "logs" | "install" | "uninstall" | "update-now")
-                    "$SERVICE_MANAGER" "$2" "${@:3}"
-                    ;;
-                "config")
-                    if [[ $# -lt 4 ]]; then
-                        echo "Usage: vpn service config --interval 3600"
-                        echo "       vpn service config --notify on"
-                        exit 1
-                    fi
-                    "$SERVICE_MANAGER" config "$3" "$4"
-                    ;;
-                *)
-                    echo "Error: Unknown service command '${2:-}'"
-                    echo "Use 'vpn service help' for usage information"
-                    exit 1
-                    ;;
-            esac
-        else
-            echo "Error: Service manager not found at $SERVICE_MANAGER"
-            echo "Please ensure Phase 4 implementation is complete."
-            exit 1
-        fi
-        ;;
-    "help" | "h" | "")
-        show_help
-        ;;
-    *)
-        vpn_error "$ERROR_HIGH" "$COMP_VPN_MAIN" "INVALID_COMMAND" "Unknown command '${1:-}'" "" "Run 'vpn help' for usage information"
-        exit 1
-        ;;
+"connect" | "c")
+	if [[ -x "$VPN_CONNECTOR" ]]; then
+		# Check for process health issues before connecting
+		if [[ -x "$VPN_MANAGER" ]]; then
+			"$VPN_MANAGER" health >/dev/null 2>&1
+			if [[ $? -eq 1 ]]; then
+				echo -e "\033[1;31m⚠️  CRITICAL: Multiple OpenVPN processes detected!\033[0m"
+				echo -e "\033[1;33m   Performing automatic cleanup to prevent system issues...\033[0m"
+				if ! "$VPN_MANAGER" cleanup; then
+					critical_process_error "$COMP_VPN_MAIN" "unknown" "System stability at risk - manual intervention required"
+					exit 1
+				fi
+				echo -e "\033[1;32m✓ Cleanup completed. Proceeding with connection...\033[0m"
+			fi
+		fi
+		"$VPN_CONNECTOR" connect "${2:-}"
+	else
+		file_not_found_error "$COMP_VPN_MAIN" "$VPN_CONNECTOR" "Check installation and file permissions"
+		exit 1
+	fi
+	;;
+"disconnect" | "d")
+	if [[ -x "$VPN_MANAGER" ]]; then
+		"$VPN_MANAGER" stop
+	else
+		file_not_found_error "$COMP_VPN_MAIN" "$VPN_MANAGER" "Check installation and file permissions"
+		exit 1
+	fi
+	;;
+"reconnect" | "r")
+	if [[ -x "$VPN_MANAGER" ]]; then
+		"$VPN_MANAGER" stop
+		sleep 2
+		"$VPN_CONNECTOR" connect "${2:-}"
+	else
+		file_not_found_error "$COMP_VPN_MAIN" "$VPN_MANAGER" "Check installation and file permissions"
+		exit 1
+	fi
+	;;
+"status" | "s")
+	if [[ -x "$VPN_MANAGER" ]]; then
+		if [[ "${2:-}" == "--accessible" ]]; then
+			VPN_ACCESSIBLE_MODE=1 "$VPN_MANAGER" status
+		else
+			"$VPN_MANAGER" status
+		fi
+	else
+		file_not_found_error "$COMP_VPN_MAIN" "$VPN_MANAGER" "Check installation and file permissions"
+		exit 1
+	fi
+	;;
+"best" | "b")
+	if [[ -x "$VPN_CONNECTOR" ]]; then
+		"$VPN_CONNECTOR" best
+	else
+		file_not_found_error "$COMP_VPN_MAIN" "$VPN_CONNECTOR" "Check installation and file permissions"
+		exit 1
+	fi
+	;;
+"fast" | "f")
+	if [[ -x "$VPN_CONNECTOR" ]]; then
+		"$VPN_CONNECTOR" fast "${2:-}"
+	else
+		file_not_found_error "$COMP_VPN_MAIN" "$VPN_CONNECTOR" "Check installation and file permissions"
+		exit 1
+	fi
+	;;
+"secure")
+	if [[ -x "$VPN_CONNECTOR" ]]; then
+		"$VPN_CONNECTOR" secure
+	else
+		file_not_found_error "$COMP_VPN_MAIN" "$VPN_CONNECTOR" "Check installation and file permissions"
+		exit 1
+	fi
+	;;
+"custom")
+	if [[ -x "$VPN_CONNECTOR" ]]; then
+		"$VPN_CONNECTOR" custom "${2:-}"
+	else
+		file_not_found_error "$COMP_VPN_MAIN" "$VPN_CONNECTOR" "Check installation and file permissions"
+		exit 1
+	fi
+	;;
+"list" | "l")
+	if [[ -d "$LOCATIONS_DIR" ]]; then
+		echo -e "\033[1;33mAvailable VPN Profiles:\033[0m"
+		find "$LOCATIONS_DIR" \( -name "*.ovpn" -o -name "*.conf" \) 2>/dev/null | sed 's|.*/||; s|\.ovpn$||; s|\.conf$||' | sort
+	else
+		file_not_found_error "$COMP_VPN_MAIN" "$LOCATIONS_DIR" "Create locations directory and add VPN profile files"
+		exit 1
+	fi
+	;;
+"kill" | "k")
+	if [[ -x "$VPN_MANAGER" ]]; then
+		"$VPN_MANAGER" kill-all
+	else
+		file_not_found_error "$COMP_VPN_MAIN" "$VPN_MANAGER" "Check installation and file permissions"
+		exit 1
+	fi
+	;;
+"cleanup")
+	if [[ -x "$VPN_MANAGER" ]]; then
+		"$VPN_MANAGER" cleanup
+	else
+		file_not_found_error "$COMP_VPN_MAIN" "$VPN_MANAGER" "Check installation and file permissions"
+		exit 1
+	fi
+	;;
+"emergency-reset")
+	if [[ -x "$VPN_MANAGER" ]]; then
+		"$VPN_MANAGER" emergency-reset
+	else
+		file_not_found_error "$COMP_VPN_MAIN" "$VPN_MANAGER" "Check installation and file permissions"
+		exit 1
+	fi
+	;;
+"health")
+	if [[ -x "$VPN_MANAGER" ]]; then
+		"$VPN_MANAGER" health
+	else
+		file_not_found_error "$COMP_VPN_MAIN" "$VPN_MANAGER" "Check installation and file permissions"
+		exit 1
+	fi
+	;;
+"logs" | "log")
+	if [[ -x "$VPN_MANAGER" ]]; then
+		"$VPN_MANAGER" logs "${2:-50}"
+	else
+		file_not_found_error "$COMP_VPN_MAIN" "$VPN_MANAGER" "Check installation and file permissions"
+		exit 1
+	fi
+	;;
+"test" | "t")
+	if [[ -x "$VPN_CONNECTOR" ]]; then
+		"$VPN_CONNECTOR" test
+	else
+		file_not_found_error "$COMP_VPN_MAIN" "$VPN_CONNECTOR" "Check installation and file permissions"
+		exit 1
+	fi
+	;;
+"setup")
+	echo -e "\033[1;33mVPN Setup\033[0m"
+	echo "1. Place your ProtonVPN .ovpn files in: $LOCATIONS_DIR"
+	echo "2. Create credentials file with username/password"
+	echo "3. Run: vpn test"
+	;;
+"update")
+	echo -e "\033[1;33mVPN Profile Update\033[0m"
+	echo "Download latest .ovpn files from your VPN provider"
+	echo "Place them in: $LOCATIONS_DIR"
+	echo ""
+	echo "For automated downloads, use: vpn download-configs"
+	;;
+"download-configs")
+	DOWNLOAD_ENGINE="$VPN_DIR/download-engine"
+	if [[ -x "$DOWNLOAD_ENGINE" ]]; then
+		case "${2:-status}" in
+		"help" | "h")
+			"$DOWNLOAD_ENGINE" help
+			;;
+		"status" | "s")
+			"$DOWNLOAD_ENGINE" status
+			;;
+		"country")
+			if [[ -n "${3:-}" ]]; then
+				"$DOWNLOAD_ENGINE" download-country "$3" "${@:4}"
+			else
+				echo "Usage: vpn download-configs country <CC> [options]"
+				echo "Options:"
+				echo "  --test-mode              Use test mode (no real downloads)"
+				echo "  --protocol=udp|tcp       Choose protocol (default: udp)"
+				echo "  --config-type=TYPE       Choose type (country|standard|secure-core)"
+				echo ""
+				echo "Examples:"
+				echo "  vpn download-configs country dk"
+				echo "  vpn download-configs country dk --test-mode"
+				echo "  vpn download-configs country dk --protocol=tcp"
+				echo "  vpn download-configs country dk --config-type=secure-core"
+			fi
+			;;
+		"all")
+			"$DOWNLOAD_ENGINE" download-all "${@:3}"
+			;;
+		*)
+			"$DOWNLOAD_ENGINE" "$2" "${@:3}"
+			;;
+		esac
+	else
+		echo "Error: Download engine not found at $DOWNLOAD_ENGINE"
+		echo "Please ensure Phase 2 implementation is complete."
+		exit 1
+	fi
+	;;
+"service")
+	SERVICE_MANAGER="$VPN_DIR/proton-service"
+	if [[ -x "$SERVICE_MANAGER" ]]; then
+		case "${2:-help}" in
+		"help" | "h")
+			"$SERVICE_MANAGER" help
+			;;
+		"start" | "stop" | "restart" | "status" | "logs" | "install" | "uninstall" | "update-now")
+			"$SERVICE_MANAGER" "$2" "${@:3}"
+			;;
+		"config")
+			if [[ $# -lt 4 ]]; then
+				echo "Usage: vpn service config --interval 3600"
+				echo "       vpn service config --notify on"
+				exit 1
+			fi
+			"$SERVICE_MANAGER" config "$3" "$4"
+			;;
+		*)
+			echo "Error: Unknown service command '${2:-}'"
+			echo "Use 'vpn service help' for usage information"
+			exit 1
+			;;
+		esac
+	else
+		echo "Error: Service manager not found at $SERVICE_MANAGER"
+		echo "Please ensure Phase 4 implementation is complete."
+		exit 1
+	fi
+	;;
+"help" | "h" | "")
+	show_help
+	;;
+*)
+	vpn_error "$ERROR_HIGH" "$COMP_VPN_MAIN" "INVALID_COMMAND" "Unknown command '${1:-}'" "" "Run 'vpn help' for usage information"
+	exit 1
+	;;
 esac

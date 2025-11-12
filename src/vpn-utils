@@ -6,27 +6,27 @@
 # Usage: notify_event "event_type" ["arg1"] ["arg2"]
 # Output: [INFO] event_type: arg1 arg2
 notify_event() {
-    local event_type="$1"
-    local arg1="${2:-}"
-    local arg2="${3:-}"
-    echo "[INFO] $event_type: $arg1 $arg2" >&2
+	local event_type="$1"
+	local arg1="${2:-}"
+	local arg2="${3:-}"
+	echo "[INFO] $event_type: $arg1 $arg2" >&2
 }
 
 # Log message function with timestamp
 # Usage: log_message "message" "log_file_path"
 # Format: [YYYY-MM-DD HH:MM:SS] message
 log_message() {
-    local message="$1"
-    local log_file="$2"
+	local message="$1"
+	local log_file="$2"
 
-    # Try to write to log file
-    if echo "[$(date '+%Y-%m-%d %H:%M:%S')] $message" >> "$log_file" 2> /dev/null; then
-        return 0
-    else
-        # Fallback to stderr if log file not writable
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')] $message" >&2
-        return 1
-    fi
+	# Try to write to log file
+	if echo "[$(date '+%Y-%m-%d %H:%M:%S')] $message" >>"$log_file" 2>/dev/null; then
+		return 0
+	else
+		# Fallback to stderr if log file not writable
+		echo "[$(date '+%Y-%m-%d %H:%M:%S')] $message" >&2
+		return 1
+	fi
 }
 
 # Export functions for use in other scripts
