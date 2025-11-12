@@ -280,6 +280,16 @@ main() {
         exit 1
     fi
 
+    # Ensure all background processes from tests are cleaned up on exit
+    # shellcheck disable=SC2317,SC2329  # Trap function called indirectly
+    cleanup_test_processes() {
+        # Kill any remaining background jobs from all test suites
+        pkill -P $$ 2> /dev/null || true
+        jobs -p | xargs -r kill 2> /dev/null || true
+        wait 2> /dev/null || true
+    }
+    trap cleanup_test_processes EXIT INT TERM
+
     local start_time
 
     start_time=$(date +%s)
