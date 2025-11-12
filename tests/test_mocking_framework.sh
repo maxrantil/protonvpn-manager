@@ -12,33 +12,33 @@ MOCK_LOG_DIR="$MOCK_DIR/logs"
 
 # Initialize mock framework
 init_mock_framework() {
-    echo "Initializing ProtonVPN Mock Framework..."
+	echo "Initializing ProtonVPN Mock Framework..."
 
-    # Create mock directories
-    mkdir -p "$MOCK_DIR" "$MOCK_STATE_DIR" "$MOCK_BIN_DIR" "$MOCK_LOG_DIR"
+	# Create mock directories
+	mkdir -p "$MOCK_DIR" "$MOCK_STATE_DIR" "$MOCK_BIN_DIR" "$MOCK_LOG_DIR"
 
-    # Add mock bin directory to PATH
-    export PATH="$MOCK_BIN_DIR:$PATH"
+	# Add mock bin directory to PATH
+	export PATH="$MOCK_BIN_DIR:$PATH"
 
-    # Set mock environment variables
-    export MOCK_MODE="true"
-    export MOCK_DIR
-    export MOCK_STATE_DIR
-    export MOCK_LOG_DIR
+	# Set mock environment variables
+	export MOCK_MODE="true"
+	export MOCK_DIR
+	export MOCK_STATE_DIR
+	export MOCK_LOG_DIR
 
-    echo "Mock framework initialized at: $MOCK_DIR"
+	echo "Mock framework initialized at: $MOCK_DIR"
 }
 
 # Cleanup mock framework
 cleanup_mock_framework() {
-    echo "Cleaning up mock framework..."
-    rm -rf "$MOCK_DIR"
-    echo "Mock framework cleaned up"
+	echo "Cleaning up mock framework..."
+	rm -rf "$MOCK_DIR"
+	echo "Mock framework cleaned up"
 }
 
 # Create mock systemctl
 create_mock_systemctl() {
-    cat > "$MOCK_BIN_DIR/systemctl" << 'EOF'
+	cat >"$MOCK_BIN_DIR/systemctl" <<'EOF'
 #!/bin/bash
 # Mock systemctl for ProtonVPN testing
 
@@ -165,13 +165,13 @@ case "$1" in
 esac
 EOF
 
-    chmod +x "$MOCK_BIN_DIR/systemctl"
-    echo "Mock systemctl created"
+	chmod +x "$MOCK_BIN_DIR/systemctl"
+	echo "Mock systemctl created"
 }
 
 # Create mock useradd/usermod
 create_mock_user_commands() {
-    cat > "$MOCK_BIN_DIR/useradd" << 'EOF'
+	cat >"$MOCK_BIN_DIR/useradd" <<'EOF'
 #!/bin/bash
 # Mock useradd for testing
 
@@ -217,7 +217,7 @@ echo "$USERNAME:x:1001:1001:${COMMENT_ARG:-Mock User}:${HOME_ARG:-/home/$USERNAM
 echo "Mock: Created user $USERNAME"
 EOF
 
-    cat > "$MOCK_BIN_DIR/usermod" << 'EOF'
+	cat >"$MOCK_BIN_DIR/usermod" <<'EOF'
 #!/bin/bash
 # Mock usermod for testing
 
@@ -248,7 +248,7 @@ if [[ -n "$NEW_SHELL" && -n "$USERNAME" ]]; then
 fi
 EOF
 
-    cat > "$MOCK_BIN_DIR/userdel" << 'EOF'
+	cat >"$MOCK_BIN_DIR/userdel" <<'EOF'
 #!/bin/bash
 # Mock userdel for testing
 
@@ -265,7 +265,7 @@ else
 fi
 EOF
 
-    cat > "$MOCK_BIN_DIR/groupadd" << 'EOF'
+	cat >"$MOCK_BIN_DIR/groupadd" <<'EOF'
 #!/bin/bash
 # Mock groupadd for testing
 
@@ -296,7 +296,7 @@ echo "$GROUPNAME:x:1001:" >> "$GROUP_STATE_FILE"
 echo "Mock: Created group $GROUPNAME"
 EOF
 
-    cat > "$MOCK_BIN_DIR/groupdel" << 'EOF'
+	cat >"$MOCK_BIN_DIR/groupdel" <<'EOF'
 #!/bin/bash
 # Mock groupdel for testing
 
@@ -313,7 +313,7 @@ else
 fi
 EOF
 
-    cat > "$MOCK_BIN_DIR/getent" << 'EOF'
+	cat >"$MOCK_BIN_DIR/getent" <<'EOF'
 #!/bin/bash
 # Mock getent for testing
 
@@ -347,7 +347,7 @@ case "$1" in
 esac
 EOF
 
-    cat > "$MOCK_BIN_DIR/id" << 'EOF'
+	cat >"$MOCK_BIN_DIR/id" <<'EOF'
 #!/bin/bash
 # Mock id command for testing
 
@@ -367,14 +367,14 @@ case "$1" in
 esac
 EOF
 
-    chmod +x "$MOCK_BIN_DIR/useradd" "$MOCK_BIN_DIR/usermod" "$MOCK_BIN_DIR/userdel"
-    chmod +x "$MOCK_BIN_DIR/groupadd" "$MOCK_BIN_DIR/groupdel" "$MOCK_BIN_DIR/getent" "$MOCK_BIN_DIR/id"
-    echo "Mock user management commands created"
+	chmod +x "$MOCK_BIN_DIR/useradd" "$MOCK_BIN_DIR/usermod" "$MOCK_BIN_DIR/userdel"
+	chmod +x "$MOCK_BIN_DIR/groupadd" "$MOCK_BIN_DIR/groupdel" "$MOCK_BIN_DIR/getent" "$MOCK_BIN_DIR/id"
+	echo "Mock user management commands created"
 }
 
 # Create mock sudo
 create_mock_sudo() {
-    cat > "$MOCK_BIN_DIR/sudo" << 'EOF'
+	cat >"$MOCK_BIN_DIR/sudo" <<'EOF'
 #!/bin/bash
 # Mock sudo for testing - just execute the command
 
@@ -385,14 +385,14 @@ echo "Mock sudo: $*" >> "$MOCK_LOG_DIR/sudo.log"
 exec "$@"
 EOF
 
-    chmod +x "$MOCK_BIN_DIR/sudo"
-    echo "Mock sudo created"
+	chmod +x "$MOCK_BIN_DIR/sudo"
+	echo "Mock sudo created"
 }
 
 # Create mock file system commands
 create_mock_fs_commands() {
-    # Mock chown that doesn't require root
-    cat > "$MOCK_BIN_DIR/chown" << 'EOF'
+	# Mock chown that doesn't require root
+	cat >"$MOCK_BIN_DIR/chown" <<'EOF'
 #!/bin/bash
 # Mock chown for testing
 
@@ -401,8 +401,8 @@ echo "Mock chown: $*" >> "$MOCK_LOG_DIR/chown.log"
 exit 0
 EOF
 
-    # Mock chmod that logs but still works
-    cat > "$MOCK_BIN_DIR/chmod" << 'EOF'
+	# Mock chmod that logs but still works
+	cat >"$MOCK_BIN_DIR/chmod" <<'EOF'
 #!/bin/bash
 # Mock chmod for testing
 
@@ -411,13 +411,13 @@ echo "Mock chmod: $*" >> "$MOCK_LOG_DIR/chmod.log"
 exec /bin/chmod "$@"
 EOF
 
-    chmod +x "$MOCK_BIN_DIR/chown" "$MOCK_BIN_DIR/chmod"
-    echo "Mock filesystem commands created"
+	chmod +x "$MOCK_BIN_DIR/chown" "$MOCK_BIN_DIR/chmod"
+	echo "Mock filesystem commands created"
 }
 
 # Create mock network commands
 create_mock_network_commands() {
-    cat > "$MOCK_BIN_DIR/openvpn" << 'EOF'
+	cat >"$MOCK_BIN_DIR/openvpn" <<'EOF'
 #!/bin/bash
 # Mock OpenVPN for testing
 
@@ -449,7 +449,7 @@ else
 fi
 EOF
 
-    cat > "$MOCK_BIN_DIR/killall" << 'EOF'
+	cat >"$MOCK_BIN_DIR/killall" <<'EOF'
 #!/bin/bash
 # Mock killall for testing
 
@@ -463,80 +463,80 @@ fi
 exit 0
 EOF
 
-    chmod +x "$MOCK_BIN_DIR/openvpn" "$MOCK_BIN_DIR/killall"
-    echo "Mock network commands created"
+	chmod +x "$MOCK_BIN_DIR/openvpn" "$MOCK_BIN_DIR/killall"
+	echo "Mock network commands created"
 }
 
 # Test the mock framework
 test_mock_framework() {
-    echo "Testing Mock Framework..."
+	echo "Testing Mock Framework..."
 
-    # Test mock systemctl
-    echo "Testing mock systemctl:"
-    systemctl status protonvpn.target
-    systemctl stop protonvpn-daemon
-    systemctl is-active protonvpn-daemon
-    systemctl start protonvpn-daemon
-    systemctl is-active protonvpn-daemon
+	# Test mock systemctl
+	echo "Testing mock systemctl:"
+	systemctl status protonvpn.target
+	systemctl stop protonvpn-daemon
+	systemctl is-active protonvpn-daemon
+	systemctl start protonvpn-daemon
+	systemctl is-active protonvpn-daemon
 
-    # Test mock user commands
-    echo -e "\nTesting mock user commands:"
-    useradd --system testuser
-    getent passwd testuser
-    userdel testuser
+	# Test mock user commands
+	echo -e "\nTesting mock user commands:"
+	useradd --system testuser
+	getent passwd testuser
+	userdel testuser
 
-    # Test mock sudo
-    echo -e "\nTesting mock sudo:"
-    sudo echo "This should work"
+	# Test mock sudo
+	echo -e "\nTesting mock sudo:"
+	sudo echo "This should work"
 
-    echo -e "\nMock framework test complete!"
+	echo -e "\nMock framework test complete!"
 }
 
 # Main function
 main() {
-    local command="${1:-help}"
+	local command="${1:-help}"
 
-    case "$command" in
-        "init")
-            init_mock_framework
-            create_mock_systemctl
-            create_mock_user_commands
-            create_mock_sudo
-            create_mock_fs_commands
-            create_mock_network_commands
-            echo "Mock framework fully initialized"
-            ;;
-        "test")
-            test_mock_framework
-            ;;
-        "cleanup")
-            cleanup_mock_framework
-            ;;
-        "status")
-            if [[ -d "$MOCK_DIR" ]]; then
-                echo "Mock framework active at: $MOCK_DIR"
-                echo "Mock PATH: $MOCK_BIN_DIR"
-                echo "Available mocks:"
-                ls -la "$MOCK_BIN_DIR"
-            else
-                echo "Mock framework not initialized"
-            fi
-            ;;
-        "help" | *)
-            echo "ProtonVPN Mock Framework"
-            echo "Usage: $0 {init|test|cleanup|status|help}"
-            echo ""
-            echo "Commands:"
-            echo "  init    - Initialize mock framework"
-            echo "  test    - Test mock framework functionality"
-            echo "  cleanup - Clean up mock framework"
-            echo "  status  - Show mock framework status"
-            echo "  help    - Show this help"
-            ;;
-    esac
+	case "$command" in
+	"init")
+		init_mock_framework
+		create_mock_systemctl
+		create_mock_user_commands
+		create_mock_sudo
+		create_mock_fs_commands
+		create_mock_network_commands
+		echo "Mock framework fully initialized"
+		;;
+	"test")
+		test_mock_framework
+		;;
+	"cleanup")
+		cleanup_mock_framework
+		;;
+	"status")
+		if [[ -d "$MOCK_DIR" ]]; then
+			echo "Mock framework active at: $MOCK_DIR"
+			echo "Mock PATH: $MOCK_BIN_DIR"
+			echo "Available mocks:"
+			ls -la "$MOCK_BIN_DIR"
+		else
+			echo "Mock framework not initialized"
+		fi
+		;;
+	"help" | *)
+		echo "ProtonVPN Mock Framework"
+		echo "Usage: $0 {init|test|cleanup|status|help}"
+		echo ""
+		echo "Commands:"
+		echo "  init    - Initialize mock framework"
+		echo "  test    - Test mock framework functionality"
+		echo "  cleanup - Clean up mock framework"
+		echo "  status  - Show mock framework status"
+		echo "  help    - Show this help"
+		;;
+	esac
 }
 
 # Run if executed directly
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
-    main "$@"
+	main "$@"
 fi
