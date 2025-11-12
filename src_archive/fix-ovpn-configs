@@ -19,262 +19,262 @@ readonly BLUE='\033[1;36m'
 readonly NC='\033[0m'
 
 print_banner() {
-    echo -e "${BLUE}╔════════════════════════════════════════╗${NC}"
-    echo -e "${BLUE}║     OpenVPN Configuration Auto-Fixer   ║${NC}"
-    echo -e "${BLUE}║       Stability & Security Enhancer   ║${NC}"
-    echo -e "${BLUE}╚════════════════════════════════════════╝${NC}"
-    echo
+	echo -e "${BLUE}╔════════════════════════════════════════╗${NC}"
+	echo -e "${BLUE}║     OpenVPN Configuration Auto-Fixer   ║${NC}"
+	echo -e "${BLUE}║       Stability & Security Enhancer   ║${NC}"
+	echo -e "${BLUE}╚════════════════════════════════════════╝${NC}"
+	echo
 }
 
 show_help() {
-    print_banner
-    echo -e "${YELLOW}Usage: fix-ovpn-configs [options]${NC}"
-    echo
-    echo "Options:"
-    echo "  --check     Check which files need fixing (dry run)"
-    echo "  --backup    Create backups before fixing (default: enabled)"
-    echo "  --no-backup Skip backup creation"
-    echo "  --help      Show this help message"
-    echo
-    echo "Required settings added to .ovpn files:"
-    echo "  • auth-user-pass vpn-credentials.txt (credential integration)"
-    echo "  • auth-nocache (security enhancement)"
-    echo "  • mute-replay-warnings (reduce log noise)"
-    echo "  • replay-window 128 30 (connection stability)"
-    echo
+	print_banner
+	echo -e "${YELLOW}Usage: fix-ovpn-configs [options]${NC}"
+	echo
+	echo "Options:"
+	echo "  --check     Check which files need fixing (dry run)"
+	echo "  --backup    Create backups before fixing (default: enabled)"
+	echo "  --no-backup Skip backup creation"
+	echo "  --help      Show this help message"
+	echo
+	echo "Required settings added to .ovpn files:"
+	echo "  • auth-user-pass vpn-credentials.txt (credential integration)"
+	echo "  • auth-nocache (security enhancement)"
+	echo "  • mute-replay-warnings (reduce log noise)"
+	echo "  • replay-window 128 30 (connection stability)"
+	echo
 }
 
 check_dependencies() {
-    if [[ ! -d "$LOCATIONS_DIR" ]]; then
-        echo -e "${RED}Error: Locations directory not found: $LOCATIONS_DIR${NC}"
-        return 1
-    fi
+	if [[ ! -d "$LOCATIONS_DIR" ]]; then
+		echo -e "${RED}Error: Locations directory not found: $LOCATIONS_DIR${NC}"
+		return 1
+	fi
 
-    local ovpn_count
-    ovpn_count=$(find "$LOCATIONS_DIR" -name "*.ovpn" 2>/dev/null | wc -l)
+	local ovpn_count
+	ovpn_count=$(find "$LOCATIONS_DIR" -name "*.ovpn" 2>/dev/null | wc -l)
 
-    if [[ $ovpn_count -eq 0 ]]; then
-        echo -e "${YELLOW}No .ovpn files found in $LOCATIONS_DIR${NC}"
-        return 1
-    fi
+	if [[ $ovpn_count -eq 0 ]]; then
+		echo -e "${YELLOW}No .ovpn files found in $LOCATIONS_DIR${NC}"
+		return 1
+	fi
 
-    echo -e "${GREEN}Found $ovpn_count .ovpn files to process${NC}"
-    return 0
+	echo -e "${GREEN}Found $ovpn_count .ovpn files to process${NC}"
+	return 0
 }
 
 needs_fixing() {
-    local ovpn_file="$1"
+	local ovpn_file="$1"
 
-    # Check if file already has our required settings
-    if grep -q "^auth-user-pass vpn-credentials.txt" "$ovpn_file" && \
-       grep -q "^auth-nocache" "$ovpn_file" && \
-       grep -q "^mute-replay-warnings" "$ovpn_file" && \
-       grep -q "^replay-window 128 30" "$ovpn_file"; then
-        return 1  # Already fixed
-    fi
+	# Check if file already has our required settings
+	if grep -q "^auth-user-pass vpn-credentials.txt" "$ovpn_file" &&
+		grep -q "^auth-nocache" "$ovpn_file" &&
+		grep -q "^mute-replay-warnings" "$ovpn_file" &&
+		grep -q "^replay-window 128 30" "$ovpn_file"; then
+		return 1 # Already fixed
+	fi
 
-    return 0  # Needs fixing
+	return 0 # Needs fixing
 }
 
 create_backup() {
-    local ovpn_file="$1"
+	local ovpn_file="$1"
 
-    # Create backup directory if it doesn't exist
-    mkdir -p "$BACKUP_DIR"
+	# Create backup directory if it doesn't exist
+	mkdir -p "$BACKUP_DIR"
 
-    local backup_file="$BACKUP_DIR/$(basename "$ovpn_file").backup.$(date +%Y%m%d_%H%M%S)"
+	local backup_file="$BACKUP_DIR/$(basename "$ovpn_file").backup.$(date +%Y%m%d_%H%M%S)"
 
-    if cp "$ovpn_file" "$backup_file"; then
-        echo "  Backup created: $backup_file"
-        return 0
-    else
-        echo -e "${RED}Error: Failed to create backup for $(basename "$ovpn_file")${NC}"
-        return 1
-    fi
+	if cp "$ovpn_file" "$backup_file"; then
+		echo "  Backup created: $backup_file"
+		return 0
+	else
+		echo -e "${RED}Error: Failed to create backup for $(basename "$ovpn_file")${NC}"
+		return 1
+	fi
 }
 
 fix_ovpn_file() {
-    local ovpn_file="$1"
-    local create_backup_flag="$2"
+	local ovpn_file="$1"
+	local create_backup_flag="$2"
 
-    echo -e "${BLUE}Fixing: $(basename "$ovpn_file")${NC}"
+	echo -e "${BLUE}Fixing: $(basename "$ovpn_file")${NC}"
 
-    # Create backup if requested
-    if [[ "$create_backup_flag" == "true" ]]; then
-        if ! create_backup "$ovpn_file"; then
-            return 1
-        fi
-    fi
+	# Create backup if requested
+	if [[ "$create_backup_flag" == "true" ]]; then
+		if ! create_backup "$ovpn_file"; then
+			return 1
+		fi
+	fi
 
-    # Create temporary file with fixed content
-    local temp_file
-    temp_file=$(mktemp)
+	# Create temporary file with fixed content
+	local temp_file
+	temp_file=$(mktemp)
 
-    # Copy original content
-    cp "$ovpn_file" "$temp_file"
+	# Copy original content
+	cp "$ovpn_file" "$temp_file"
 
-    # Fix auth-user-pass line and add stability settings in proper location
-    if ! grep -q "^auth-user-pass vpn-credentials.txt" "$temp_file"; then
-        # If there's an existing auth-user-pass line, replace it and add settings after it
-        if grep -q "^auth-user-pass" "$temp_file"; then
-            # Replace existing auth-user-pass and add stability settings in correct location
-            sed -i '/^auth-user-pass$/c\
+	# Fix auth-user-pass line and add stability settings in proper location
+	if ! grep -q "^auth-user-pass vpn-credentials.txt" "$temp_file"; then
+		# If there's an existing auth-user-pass line, replace it and add settings after it
+		if grep -q "^auth-user-pass" "$temp_file"; then
+			# Replace existing auth-user-pass and add stability settings in correct location
+			sed -i '/^auth-user-pass$/c\
 auth-user-pass vpn-credentials.txt\
 auth-nocache\
 mute-replay-warnings\
 replay-window 128 30' "$temp_file"
-            echo "  Replaced: auth-user-pass with vpn-credentials.txt"
-            echo "  Added: auth-nocache, mute-replay-warnings, replay-window 128 30"
-        else
-            # No existing auth-user-pass, append all at end
-            {
-                echo "auth-user-pass vpn-credentials.txt"
-                echo "auth-nocache"
-                echo "mute-replay-warnings"
-                echo "replay-window 128 30"
-            } >> "$temp_file"
-            echo "  Added: auth-user-pass vpn-credentials.txt"
-            echo "  Added: auth-nocache, mute-replay-warnings, replay-window 128 30"
-        fi
-    else
-        # auth-user-pass vpn-credentials.txt already exists, just add missing settings nearby
-        local line_num
-        line_num=$(grep -n "^auth-user-pass vpn-credentials.txt" "$temp_file" | cut -d: -f1)
+			echo "  Replaced: auth-user-pass with vpn-credentials.txt"
+			echo "  Added: auth-nocache, mute-replay-warnings, replay-window 128 30"
+		else
+			# No existing auth-user-pass, append all at end
+			{
+				echo "auth-user-pass vpn-credentials.txt"
+				echo "auth-nocache"
+				echo "mute-replay-warnings"
+				echo "replay-window 128 30"
+			} >>"$temp_file"
+			echo "  Added: auth-user-pass vpn-credentials.txt"
+			echo "  Added: auth-nocache, mute-replay-warnings, replay-window 128 30"
+		fi
+	else
+		# auth-user-pass vpn-credentials.txt already exists, just add missing settings nearby
+		local line_num
+		line_num=$(grep -n "^auth-user-pass vpn-credentials.txt" "$temp_file" | cut -d: -f1)
 
-        # Add missing settings after auth-user-pass line
-        if ! grep -q "^auth-nocache" "$temp_file"; then
-            sed -i "${line_num}a\\auth-nocache" "$temp_file"
-            echo "  Added: auth-nocache"
-        fi
-        if ! grep -q "^mute-replay-warnings" "$temp_file"; then
-            sed -i "${line_num}a\\mute-replay-warnings" "$temp_file"
-            echo "  Added: mute-replay-warnings"
-        fi
-        if ! grep -q "^replay-window 128 30" "$temp_file"; then
-            sed -i "${line_num}a\\replay-window 128 30" "$temp_file"
-            echo "  Added: replay-window 128 30"
-        fi
-    fi
+		# Add missing settings after auth-user-pass line
+		if ! grep -q "^auth-nocache" "$temp_file"; then
+			sed -i "${line_num}a\\auth-nocache" "$temp_file"
+			echo "  Added: auth-nocache"
+		fi
+		if ! grep -q "^mute-replay-warnings" "$temp_file"; then
+			sed -i "${line_num}a\\mute-replay-warnings" "$temp_file"
+			echo "  Added: mute-replay-warnings"
+		fi
+		if ! grep -q "^replay-window 128 30" "$temp_file"; then
+			sed -i "${line_num}a\\replay-window 128 30" "$temp_file"
+			echo "  Added: replay-window 128 30"
+		fi
+	fi
 
-    # Replace original file with fixed version
-    if mv "$temp_file" "$ovpn_file"; then
-        echo -e "${GREEN}  ✓ Fixed: $(basename "$ovpn_file")${NC}"
-        return 0
-    else
-        echo -e "${RED}  ✗ Failed to fix: $(basename "$ovpn_file")${NC}"
-        rm -f "$temp_file"
-        return 1
-    fi
+	# Replace original file with fixed version
+	if mv "$temp_file" "$ovpn_file"; then
+		echo -e "${GREEN}  ✓ Fixed: $(basename "$ovpn_file")${NC}"
+		return 0
+	else
+		echo -e "${RED}  ✗ Failed to fix: $(basename "$ovpn_file")${NC}"
+		rm -f "$temp_file"
+		return 1
+	fi
 }
 
 check_files() {
-    echo -e "${BLUE}Checking .ovpn files for required settings...${NC}"
-    echo
+	echo -e "${BLUE}Checking .ovpn files for required settings...${NC}"
+	echo
 
-    local files_needing_fix=0
-    local files_already_fixed=0
+	local files_needing_fix=0
+	local files_already_fixed=0
 
-    find "$LOCATIONS_DIR" -name "*.ovpn" | while read -r ovpn_file; do
-        if needs_fixing "$ovpn_file"; then
-            echo -e "${YELLOW}NEEDS FIX:${NC} $(basename "$ovpn_file")"
-            files_needing_fix=$((files_needing_fix + 1))
-        else
-            echo -e "${GREEN}ALREADY OK:${NC} $(basename "$ovpn_file")"
-            files_already_fixed=$((files_already_fixed + 1))
-        fi
-    done
+	find "$LOCATIONS_DIR" -name "*.ovpn" | while read -r ovpn_file; do
+		if needs_fixing "$ovpn_file"; then
+			echo -e "${YELLOW}NEEDS FIX:${NC} $(basename "$ovpn_file")"
+			files_needing_fix=$((files_needing_fix + 1))
+		else
+			echo -e "${GREEN}ALREADY OK:${NC} $(basename "$ovpn_file")"
+			files_already_fixed=$((files_already_fixed + 1))
+		fi
+	done
 
-    echo
-    echo -e "${BLUE}Check Summary:${NC}"
-    echo -e "  Files needing fixes: ${YELLOW}$files_needing_fix${NC}"
-    echo -e "  Files already fixed: ${GREEN}$files_already_fixed${NC}"
+	echo
+	echo -e "${BLUE}Check Summary:${NC}"
+	echo -e "  Files needing fixes: ${YELLOW}$files_needing_fix${NC}"
+	echo -e "  Files already fixed: ${GREEN}$files_already_fixed${NC}"
 }
 
 fix_all_files() {
-    local create_backup_flag="$1"
+	local create_backup_flag="$1"
 
-    echo -e "${BLUE}Fixing all .ovpn files...${NC}"
-    echo
+	echo -e "${BLUE}Fixing all .ovpn files...${NC}"
+	echo
 
-    local fixed_count=0
-    local error_count=0
-    local skipped_count=0
+	local fixed_count=0
+	local error_count=0
+	local skipped_count=0
 
-    find "$LOCATIONS_DIR" -name "*.ovpn" | while read -r ovpn_file; do
-        if needs_fixing "$ovpn_file"; then
-            if fix_ovpn_file "$ovpn_file" "$create_backup_flag"; then
-                fixed_count=$((fixed_count + 1))
-            else
-                error_count=$((error_count + 1))
-            fi
-        else
-            echo -e "${GREEN}SKIP: $(basename "$ovpn_file") (already fixed)${NC}"
-            skipped_count=$((skipped_count + 1))
-        fi
-        echo
-    done
+	find "$LOCATIONS_DIR" -name "*.ovpn" | while read -r ovpn_file; do
+		if needs_fixing "$ovpn_file"; then
+			if fix_ovpn_file "$ovpn_file" "$create_backup_flag"; then
+				fixed_count=$((fixed_count + 1))
+			else
+				error_count=$((error_count + 1))
+			fi
+		else
+			echo -e "${GREEN}SKIP: $(basename "$ovpn_file") (already fixed)${NC}"
+			skipped_count=$((skipped_count + 1))
+		fi
+		echo
+	done
 
-    echo -e "${BLUE}Fix Summary:${NC}"
-    echo -e "  Files fixed: ${GREEN}$fixed_count${NC}"
-    echo -e "  Files skipped: ${YELLOW}$skipped_count${NC}"
-    echo -e "  Errors: ${RED}$error_count${NC}"
+	echo -e "${BLUE}Fix Summary:${NC}"
+	echo -e "  Files fixed: ${GREEN}$fixed_count${NC}"
+	echo -e "  Files skipped: ${YELLOW}$skipped_count${NC}"
+	echo -e "  Errors: ${RED}$error_count${NC}"
 
-    if [[ $error_count -eq 0 ]]; then
-        echo -e "${GREEN}✓ All fixes completed successfully!${NC}"
-        return 0
-    else
-        echo -e "${RED}✗ Some fixes failed. Check error messages above.${NC}"
-        return 1
-    fi
+	if [[ $error_count -eq 0 ]]; then
+		echo -e "${GREEN}✓ All fixes completed successfully!${NC}"
+		return 0
+	else
+		echo -e "${RED}✗ Some fixes failed. Check error messages above.${NC}"
+		return 1
+	fi
 }
 
 main() {
-    local check_only=false
-    local create_backup=true
+	local check_only=false
+	local create_backup=true
 
-    # Parse command line arguments
-    while [[ $# -gt 0 ]]; do
-        case $1 in
-            --check)
-                check_only=true
-                shift
-                ;;
-            --backup)
-                create_backup=true
-                shift
-                ;;
-            --no-backup)
-                create_backup=false
-                shift
-                ;;
-            --help|-h)
-                show_help
-                exit 0
-                ;;
-            *)
-                echo -e "${RED}Unknown option: $1${NC}"
-                show_help
-                exit 1
-                ;;
-        esac
-    done
+	# Parse command line arguments
+	while [[ $# -gt 0 ]]; do
+		case $1 in
+		--check)
+			check_only=true
+			shift
+			;;
+		--backup)
+			create_backup=true
+			shift
+			;;
+		--no-backup)
+			create_backup=false
+			shift
+			;;
+		--help | -h)
+			show_help
+			exit 0
+			;;
+		*)
+			echo -e "${RED}Unknown option: $1${NC}"
+			show_help
+			exit 1
+			;;
+		esac
+	done
 
-    print_banner
+	print_banner
 
-    if ! check_dependencies; then
-        exit 1
-    fi
+	if ! check_dependencies; then
+		exit 1
+	fi
 
-    echo
+	echo
 
-    if [[ "$check_only" == "true" ]]; then
-        check_files
-    else
-        fix_all_files "$create_backup"
-    fi
+	if [[ "$check_only" == "true" ]]; then
+		check_files
+	else
+		fix_all_files "$create_backup"
+	fi
 }
 
 # Only run if called directly
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
-    main "$@"
+	main "$@"
 fi

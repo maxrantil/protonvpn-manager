@@ -19,96 +19,96 @@ readonly SERVICE_DIR="/etc/service"
 
 # Input validation functions
 validate_service_name() {
-    local service="$1"
+	local service="$1"
 
-    # Allow 'all' or valid service names
-    if [[ "$service" == "all" ]]; then
-        return 0
-    fi
+	# Allow 'all' or valid service names
+	if [[ "$service" == "all" ]]; then
+		return 0
+	fi
 
-    # Validate service name against known services
-    local valid_service=false
-    for svc in "${SERVICES[@]}"; do
-        if [[ "$service" == "$svc" ]]; then
-            valid_service=true
-            break
-        fi
-    done
+	# Validate service name against known services
+	local valid_service=false
+	for svc in "${SERVICES[@]}"; do
+		if [[ "$service" == "$svc" ]]; then
+			valid_service=true
+			break
+		fi
+	done
 
-    if [[ "$valid_service" == "false" ]]; then
-        log_error "Invalid service name: $service"
-        log_error "Valid services: all, ${SERVICES[*]}"
-        return 1
-    fi
+	if [[ "$valid_service" == "false" ]]; then
+		log_error "Invalid service name: $service"
+		log_error "Valid services: all, ${SERVICES[*]}"
+		return 1
+	fi
 
-    # Additional regex validation for security
-    if [[ ! "$service" =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]*$ ]]; then
-        log_error "Service name contains invalid characters: $service"
-        return 1
-    fi
+	# Additional regex validation for security
+	if [[ ! "$service" =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]*$ ]]; then
+		log_error "Service name contains invalid characters: $service"
+		return 1
+	fi
 
-    return 0
+	return 0
 }
 
 # Logging functions with input sanitization
 sanitize_log_input() {
-    local input="$*"
-    # Remove ANSI escape sequences, newlines, and control characters
-    printf '%s' "$input" | tr -d '\r\n\t\033' | sed 's/\x1b\[[0-9;]*m//g'
+	local input="$*"
+	# Remove ANSI escape sequences, newlines, and control characters
+	printf '%s' "$input" | tr -d '\r\n\t\033' | sed 's/\x1b\[[0-9;]*m//g'
 }
 
 log_info() {
-    local sanitized_message
-    sanitized_message=$(sanitize_log_input "$*")
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] INFO: $sanitized_message" | tee -a "$VPN_LOG_DIR/service-manager.log"
+	local sanitized_message
+	sanitized_message=$(sanitize_log_input "$*")
+	echo "[$(date '+%Y-%m-%d %H:%M:%S')] INFO: $sanitized_message" | tee -a "$VPN_LOG_DIR/service-manager.log"
 }
 
 log_error() {
-    local sanitized_message
-    sanitized_message=$(sanitize_log_input "$*")
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: $sanitized_message" | tee -a "$VPN_LOG_DIR/service-manager.log" >&2
+	local sanitized_message
+	sanitized_message=$(sanitize_log_input "$*")
+	echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: $sanitized_message" | tee -a "$VPN_LOG_DIR/service-manager.log" >&2
 }
 
 log_warn() {
-    local sanitized_message
-    sanitized_message=$(sanitize_log_input "$*")
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] WARN: $sanitized_message" | tee -a "$VPN_LOG_DIR/service-manager.log"
+	local sanitized_message
+	sanitized_message=$(sanitize_log_input "$*")
+	echo "[$(date '+%Y-%m-%d %H:%M:%S')] WARN: $sanitized_message" | tee -a "$VPN_LOG_DIR/service-manager.log"
 }
 
 # Check if running as root
 check_root() {
-    if [[ $EUID -ne 0 ]]; then
-        log_error "This script must be run as root"
-        echo "Usage: sudo $0 <command>"
-        exit 1
-    fi
+	if [[ $EUID -ne 0 ]]; then
+		log_error "This script must be run as root"
+		echo "Usage: sudo $0 <command>"
+		exit 1
+	fi
 }
 
 # Initialize logging and PID directories
 init_directories() {
-    log_info "Initializing service directories..."
+	log_info "Initializing service directories..."
 
-    # Create directories if they don't exist
-    mkdir -p "$VPN_LOG_DIR" "$VPN_RUN_DIR"
+	# Create directories if they don't exist
+	mkdir -p "$VPN_LOG_DIR" "$VPN_RUN_DIR"
 
-    # Set proper ownership and permissions
-    chown "$VPN_USER:$VPN_GROUP" "$VPN_LOG_DIR" "$VPN_RUN_DIR"
-    chmod 0750 "$VPN_LOG_DIR"
-    chmod 0755 "$VPN_RUN_DIR"
+	# Set proper ownership and permissions
+	chown "$VPN_USER:$VPN_GROUP" "$VPN_LOG_DIR" "$VPN_RUN_DIR"
+	chmod 0750 "$VPN_LOG_DIR"
+	chmod 0755 "$VPN_RUN_DIR"
 
-    # Create service manager log
-    touch "$VPN_LOG_DIR/service-manager.log"
-    chown "$VPN_USER:$VPN_GROUP" "$VPN_LOG_DIR/service-manager.log"
-    chmod 0640 "$VPN_LOG_DIR/service-manager.log"
+	# Create service manager log
+	touch "$VPN_LOG_DIR/service-manager.log"
+	chown "$VPN_USER:$VPN_GROUP" "$VPN_LOG_DIR/service-manager.log"
+	chmod 0640 "$VPN_LOG_DIR/service-manager.log"
 
-    log_info "Service directories initialized successfully"
+	log_info "Service directories initialized successfully"
 }
 
 # Setup log rotation
 setup_log_rotation() {
-    log_info "Setting up log rotation..."
+	log_info "Setting up log rotation..."
 
-    cat > /etc/logrotate.d/protonvpn << 'EOF'
+	cat >/etc/logrotate.d/protonvpn <<'EOF'
 /var/log/protonvpn/*.log {
     daily
     rotate 7
@@ -123,300 +123,300 @@ setup_log_rotation() {
 }
 EOF
 
-    log_info "Log rotation configured"
+	log_info "Log rotation configured"
 }
 
 # Service status functions
 service_status() {
-    local service="${1:-all}"
+	local service="${1:-all}"
 
-    if [[ "$service" == "all" ]]; then
-        log_info "Checking status of all ProtonVPN services..."
+	if [[ "$service" == "all" ]]; then
+		log_info "Checking status of all ProtonVPN services..."
 
-        for svc in "${SERVICES[@]}"; do
-            local service_path="$SERVICE_DIR/$svc"
-            echo "--- $svc ---"
+		for svc in "${SERVICES[@]}"; do
+			local service_path="$SERVICE_DIR/$svc"
+			echo "--- $svc ---"
 
-            if [[ -L "$service_path" ]]; then
-                echo "Enabled: Yes (symlink exists)"
-                if sv status "$service_path" 2>/dev/null; then
-                    echo "Status: Running"
-                else
-                    echo "Status: Not running"
-                fi
-            else
-                echo "Enabled: No (no symlink in $SERVICE_DIR)"
-                echo "Status: Not available"
-            fi
-            echo ""
-        done
-    else
-        log_info "Checking status of $service..."
-        local service_path="$SERVICE_DIR/$service"
+			if [[ -L "$service_path" ]]; then
+				echo "Enabled: Yes (symlink exists)"
+				if sv status "$service_path" 2>/dev/null; then
+					echo "Status: Running"
+				else
+					echo "Status: Not running"
+				fi
+			else
+				echo "Enabled: No (no symlink in $SERVICE_DIR)"
+				echo "Status: Not available"
+			fi
+			echo ""
+		done
+	else
+		log_info "Checking status of $service..."
+		local service_path="$SERVICE_DIR/$service"
 
-        if [[ -L "$service_path" ]]; then
-            echo "Service: $service"
-            echo "Enabled: Yes"
-            sv status "$service_path" 2>/dev/null || echo "Status: Not running"
-        else
-            echo "Service: $service"
-            echo "Enabled: No (no symlink in $SERVICE_DIR)"
-            echo "Status: Not available"
-        fi
-    fi
+		if [[ -L "$service_path" ]]; then
+			echo "Service: $service"
+			echo "Enabled: Yes"
+			sv status "$service_path" 2>/dev/null || echo "Status: Not running"
+		else
+			echo "Service: $service"
+			echo "Enabled: No (no symlink in $SERVICE_DIR)"
+			echo "Status: Not available"
+		fi
+	fi
 }
 
 # Start services
 start_services() {
-    local service="${1:-all}"
+	local service="${1:-all}"
 
-    # Validate service name first
-    if ! validate_service_name "$service"; then
-        return 1
-    fi
+	# Validate service name first
+	if ! validate_service_name "$service"; then
+		return 1
+	fi
 
-    init_directories
+	init_directories
 
-    if [[ "$service" == "all" ]]; then
-        log_info "Starting all ProtonVPN services..."
-        local failed_services=0
+	if [[ "$service" == "all" ]]; then
+		log_info "Starting all ProtonVPN services..."
+		local failed_services=0
 
-        for svc in "${SERVICES[@]}"; do
-            local service_path="$SERVICE_DIR/$svc"
-            if [[ -L "$service_path" ]]; then
-                log_info "Starting service: $svc"
-                if sv up "$service_path" >/dev/null 2>&1; then
-                    log_info "Service $svc started successfully"
-                else
-                    log_error "Failed to start service: $svc"
-                    ((failed_services++))
-                fi
-            else
-                log_warn "Service not enabled: $svc (no symlink in $SERVICE_DIR)"
-            fi
-        done
+		for svc in "${SERVICES[@]}"; do
+			local service_path="$SERVICE_DIR/$svc"
+			if [[ -L "$service_path" ]]; then
+				log_info "Starting service: $svc"
+				if sv up "$service_path" >/dev/null 2>&1; then
+					log_info "Service $svc started successfully"
+				else
+					log_error "Failed to start service: $svc"
+					((failed_services++))
+				fi
+			else
+				log_warn "Service not enabled: $svc (no symlink in $SERVICE_DIR)"
+			fi
+		done
 
-        if [[ $failed_services -eq 0 ]]; then
-            log_info "All ProtonVPN services started successfully"
-        else
-            log_error "Failed to start $failed_services services"
-            exit 1
-        fi
-    else
-        log_info "Starting service: $service"
-        local service_path="$SERVICE_DIR/$service"
+		if [[ $failed_services -eq 0 ]]; then
+			log_info "All ProtonVPN services started successfully"
+		else
+			log_error "Failed to start $failed_services services"
+			exit 1
+		fi
+	else
+		log_info "Starting service: $service"
+		local service_path="$SERVICE_DIR/$service"
 
-        if [[ ! -L "$service_path" ]]; then
-            log_error "Service not enabled: $service (no symlink in $SERVICE_DIR)"
-            exit 1
-        fi
+		if [[ ! -L "$service_path" ]]; then
+			log_error "Service not enabled: $service (no symlink in $SERVICE_DIR)"
+			exit 1
+		fi
 
-        if sv up "$service_path" >/dev/null 2>&1; then
-            log_info "Service $service started successfully"
-        else
-            log_error "Failed to start service: $service"
-            exit 1
-        fi
-    fi
+		if sv up "$service_path" >/dev/null 2>&1; then
+			log_info "Service $service started successfully"
+		else
+			log_error "Failed to start service: $service"
+			exit 1
+		fi
+	fi
 }
 
 # Stop services
 stop_services() {
-    local service="${1:-all}"
+	local service="${1:-all}"
 
-    # Validate service name first
-    if ! validate_service_name "$service"; then
-        return 1
-    fi
+	# Validate service name first
+	if ! validate_service_name "$service"; then
+		return 1
+	fi
 
-    if [[ "$service" == "all" ]]; then
-        log_info "Stopping all ProtonVPN services..."
-        local failed_services=0
+	if [[ "$service" == "all" ]]; then
+		log_info "Stopping all ProtonVPN services..."
+		local failed_services=0
 
-        for svc in "${SERVICES[@]}"; do
-            local service_path="$SERVICE_DIR/$svc"
-            if [[ -L "$service_path" ]]; then
-                log_info "Stopping service: $svc"
-                if sv down "$service_path" >/dev/null 2>&1; then
-                    log_info "Service $svc stopped successfully"
-                else
-                    log_error "Failed to stop service: $svc"
-                    ((failed_services++))
-                fi
-            else
-                log_info "Service not enabled: $svc (skipping)"
-            fi
-        done
+		for svc in "${SERVICES[@]}"; do
+			local service_path="$SERVICE_DIR/$svc"
+			if [[ -L "$service_path" ]]; then
+				log_info "Stopping service: $svc"
+				if sv down "$service_path" >/dev/null 2>&1; then
+					log_info "Service $svc stopped successfully"
+				else
+					log_error "Failed to stop service: $svc"
+					((failed_services++))
+				fi
+			else
+				log_info "Service not enabled: $svc (skipping)"
+			fi
+		done
 
-        if [[ $failed_services -eq 0 ]]; then
-            log_info "All ProtonVPN services stopped successfully"
-        else
-            log_warn "$failed_services services failed to stop cleanly"
-        fi
-    else
-        log_info "Stopping service: $service"
-        local service_path="$SERVICE_DIR/$service"
+		if [[ $failed_services -eq 0 ]]; then
+			log_info "All ProtonVPN services stopped successfully"
+		else
+			log_warn "$failed_services services failed to stop cleanly"
+		fi
+	else
+		log_info "Stopping service: $service"
+		local service_path="$SERVICE_DIR/$service"
 
-        if [[ ! -L "$service_path" ]]; then
-            log_error "Service not enabled: $service (no symlink in $SERVICE_DIR)"
-            exit 1
-        fi
+		if [[ ! -L "$service_path" ]]; then
+			log_error "Service not enabled: $service (no symlink in $SERVICE_DIR)"
+			exit 1
+		fi
 
-        if sv down "$service_path" >/dev/null 2>&1; then
-            log_info "Service $service stopped successfully"
-        else
-            log_error "Failed to stop service: $service"
-            exit 1
-        fi
-    fi
+		if sv down "$service_path" >/dev/null 2>&1; then
+			log_info "Service $service stopped successfully"
+		else
+			log_error "Failed to stop service: $service"
+			exit 1
+		fi
+	fi
 }
 
 # Restart services
 restart_services() {
-    local service="${1:-all}"
+	local service="${1:-all}"
 
-    # Validate service name first
-    if ! validate_service_name "$service"; then
-        return 1
-    fi
+	# Validate service name first
+	if ! validate_service_name "$service"; then
+		return 1
+	fi
 
-    log_info "Restarting ProtonVPN services..."
-    stop_services "$service"
-    sleep 1
-    start_services "$service"
+	log_info "Restarting ProtonVPN services..."
+	stop_services "$service"
+	sleep 1
+	start_services "$service"
 }
 
 # Enable services at boot
 enable_services() {
-    log_info "Enabling ProtonVPN services at boot..."
+	log_info "Enabling ProtonVPN services at boot..."
 
-    # Ensure /etc/service directory exists
-    if [[ ! -d "$SERVICE_DIR" ]]; then
-        mkdir -p "$SERVICE_DIR"
-        log_info "Created service directory: $SERVICE_DIR"
-    fi
+	# Ensure /etc/service directory exists
+	if [[ ! -d "$SERVICE_DIR" ]]; then
+		mkdir -p "$SERVICE_DIR"
+		log_info "Created service directory: $SERVICE_DIR"
+	fi
 
-    for svc in "${SERVICES[@]}"; do
-        local service_source="/etc/sv/$svc"
-        local service_link="$SERVICE_DIR/$svc"
+	for svc in "${SERVICES[@]}"; do
+		local service_source="/etc/sv/$svc"
+		local service_link="$SERVICE_DIR/$svc"
 
-        if [[ -d "$service_source" ]]; then
-            if [[ ! -L "$service_link" ]]; then
-                ln -sf "$service_source" "$service_link"
-                log_info "Enabled service: $svc"
-            else
-                log_info "Service already enabled: $svc"
-            fi
-        else
-            log_error "Service definition not found: $service_source"
-        fi
-    done
+		if [[ -d "$service_source" ]]; then
+			if [[ ! -L "$service_link" ]]; then
+				ln -sf "$service_source" "$service_link"
+				log_info "Enabled service: $svc"
+			else
+				log_info "Service already enabled: $svc"
+			fi
+		else
+			log_error "Service definition not found: $service_source"
+		fi
+	done
 
-    log_info "Services enabled at boot"
+	log_info "Services enabled at boot"
 }
 
 # Disable services at boot
 disable_services() {
-    log_info "Disabling ProtonVPN services at boot..."
+	log_info "Disabling ProtonVPN services at boot..."
 
-    for svc in "${SERVICES[@]}"; do
-        local service_link="$SERVICE_DIR/$svc"
+	for svc in "${SERVICES[@]}"; do
+		local service_link="$SERVICE_DIR/$svc"
 
-        if [[ -L "$service_link" ]]; then
-            # Stop service first
-            sv down "$service_link" 2>/dev/null || true
-            # Remove symlink
-            rm -f "$service_link"
-            log_info "Disabled service: $svc"
-        else
-            log_info "Service already disabled: $svc"
-        fi
-    done
+		if [[ -L "$service_link" ]]; then
+			# Stop service first
+			sv down "$service_link" 2>/dev/null || true
+			# Remove symlink
+			rm -f "$service_link"
+			log_info "Disabled service: $svc"
+		else
+			log_info "Service already disabled: $svc"
+		fi
+	done
 
-    log_info "Services disabled at boot"
+	log_info "Services disabled at boot"
 }
 
 # Clean up PID and log files
 cleanup() {
-    log_info "Cleaning up service files..."
+	log_info "Cleaning up service files..."
 
-    # Validate signal source (prevent signal injection attacks)
-    if [[ "${BASH_SUBSHELL}" -gt 0 ]]; then
-        log_warn "Cleanup called from subshell - potential signal injection"
-        return 1
-    fi
+	# Validate signal source (prevent signal injection attacks)
+	if [[ "${BASH_SUBSHELL}" -gt 0 ]]; then
+		log_warn "Cleanup called from subshell - potential signal injection"
+		return 1
+	fi
 
-    # Stop all services first with timeout
-    if ! timeout 30 stop_services "all" 2>/dev/null; then
-        log_warn "Service stop timed out, forcing cleanup"
-    fi
+	# Stop all services first with timeout
+	if ! timeout 30 stop_services "all" 2>/dev/null; then
+		log_warn "Service stop timed out, forcing cleanup"
+	fi
 
-    # Verify processes are stopped before removing PID files
-    for svc in "${SERVICES[@]}"; do
-        if systemctl is-active --quiet "$svc" 2>/dev/null; then
-            log_warn "Service $svc still running during cleanup"
-        fi
-    done
+	# Verify processes are stopped before removing PID files
+	for svc in "${SERVICES[@]}"; do
+		if systemctl is-active --quiet "$svc" 2>/dev/null; then
+			log_warn "Service $svc still running during cleanup"
+		fi
+	done
 
-    # Remove PID files safely
-    if [[ -d "$VPN_RUN_DIR" ]]; then
-        find "$VPN_RUN_DIR" -name "*.pid" -type f -delete 2>/dev/null || true
-    fi
+	# Remove PID files safely
+	if [[ -d "$VPN_RUN_DIR" ]]; then
+		find "$VPN_RUN_DIR" -name "*.pid" -type f -delete 2>/dev/null || true
+	fi
 
-    # Clean old logs (keep last 3 days) with size limit check
-    if [[ -d "$VPN_LOG_DIR" ]]; then
-        find "$VPN_LOG_DIR" -name "*.log.*" -mtime +3 -size +100M -delete 2>/dev/null || true
-    fi
+	# Clean old logs (keep last 3 days) with size limit check
+	if [[ -d "$VPN_LOG_DIR" ]]; then
+		find "$VPN_LOG_DIR" -name "*.log.*" -mtime +3 -size +100M -delete 2>/dev/null || true
+	fi
 
-    log_info "Cleanup completed"
+	log_info "Cleanup completed"
 }
 
 # Health check
 health_check() {
-    log_info "Performing health check..."
+	log_info "Performing health check..."
 
-    local issues=0
+	local issues=0
 
-    # Check if directories exist with correct permissions
-    for dir in "$VPN_LOG_DIR" "$VPN_RUN_DIR" "$VPN_CONFIG_DIR"; do
-        if [[ ! -d "$dir" ]]; then
-            log_error "Directory missing: $dir"
-            ((issues++))
-        fi
-    done
+	# Check if directories exist with correct permissions
+	for dir in "$VPN_LOG_DIR" "$VPN_RUN_DIR" "$VPN_CONFIG_DIR"; do
+		if [[ ! -d "$dir" ]]; then
+			log_error "Directory missing: $dir"
+			((issues++))
+		fi
+	done
 
-    # Check service status
-    for svc in "${SERVICES[@]}"; do
-        local service_path="$SERVICE_DIR/$svc"
-        if [[ -L "$service_path" ]]; then
-            if ! sv status "$service_path" >/dev/null 2>&1; then
-                log_warn "Service not running: $svc"
-                ((issues++))
-            fi
-        else
-            log_warn "Service not enabled: $svc"
-            ((issues++))
-        fi
-    done
+	# Check service status
+	for svc in "${SERVICES[@]}"; do
+		local service_path="$SERVICE_DIR/$svc"
+		if [[ -L "$service_path" ]]; then
+			if ! sv status "$service_path" >/dev/null 2>&1; then
+				log_warn "Service not running: $svc"
+				((issues++))
+			fi
+		else
+			log_warn "Service not enabled: $svc"
+			((issues++))
+		fi
+	done
 
-    # Check log files
-    if [[ ! -f "$VPN_LOG_DIR/service-manager.log" ]]; then
-        log_error "Service manager log missing"
-        ((issues++))
-    fi
+	# Check log files
+	if [[ ! -f "$VPN_LOG_DIR/service-manager.log" ]]; then
+		log_error "Service manager log missing"
+		((issues++))
+	fi
 
-    if [[ $issues -eq 0 ]]; then
-        log_info "Health check passed - all systems operational"
-        return 0
-    else
-        log_error "Health check failed - $issues issues found"
-        return 1
-    fi
+	if [[ $issues -eq 0 ]]; then
+		log_info "Health check passed - all systems operational"
+		return 0
+	else
+		log_error "Health check failed - $issues issues found"
+		return 1
+	fi
 }
 
 # Show usage
 usage() {
-    cat << 'EOF'
+	cat <<'EOF'
 ProtonVPN Service Manager
 
 Usage: protonvpn-service-manager <command> [service]
@@ -450,70 +450,70 @@ EOF
 
 # Show logs
 show_logs() {
-    local service="${1:-all}"
+	local service="${1:-all}"
 
-    if [[ "$service" == "all" ]]; then
-        log_info "Showing recent logs for all services..."
-        journalctl -u protonvpn.target --since "1 hour ago" --no-pager
-    else
-        log_info "Showing recent logs for $service..."
-        journalctl -u "$service" --since "1 hour ago" --no-pager
-    fi
+	if [[ "$service" == "all" ]]; then
+		log_info "Showing recent logs for all services..."
+		journalctl -u protonvpn.target --since "1 hour ago" --no-pager
+	else
+		log_info "Showing recent logs for $service..."
+		journalctl -u "$service" --since "1 hour ago" --no-pager
+	fi
 }
 
 # Main function
 main() {
-    local command="${1:-help}"
-    local service="${2:-all}"
+	local command="${1:-help}"
+	local service="${2:-all}"
 
-    case "$command" in
-        start)
-            check_root
-            start_services "$service"
-            ;;
-        stop)
-            check_root
-            stop_services "$service"
-            ;;
-        restart)
-            check_root
-            restart_services "$service"
-            ;;
-        status)
-            service_status "$service"
-            ;;
-        enable)
-            check_root
-            enable_services
-            ;;
-        disable)
-            check_root
-            disable_services
-            ;;
-        health)
-            health_check
-            ;;
-        cleanup)
-            check_root
-            cleanup
-            ;;
-        init)
-            check_root
-            init_directories
-            setup_log_rotation
-            ;;
-        logs)
-            show_logs "$service"
-            ;;
-        help|--help|-h)
-            usage
-            ;;
-        *)
-            log_error "Unknown command: $command"
-            usage
-            exit 1
-            ;;
-    esac
+	case "$command" in
+	start)
+		check_root
+		start_services "$service"
+		;;
+	stop)
+		check_root
+		stop_services "$service"
+		;;
+	restart)
+		check_root
+		restart_services "$service"
+		;;
+	status)
+		service_status "$service"
+		;;
+	enable)
+		check_root
+		enable_services
+		;;
+	disable)
+		check_root
+		disable_services
+		;;
+	health)
+		health_check
+		;;
+	cleanup)
+		check_root
+		cleanup
+		;;
+	init)
+		check_root
+		init_directories
+		setup_log_rotation
+		;;
+	logs)
+		show_logs "$service"
+		;;
+	help | --help | -h)
+		usage
+		;;
+	*)
+		log_error "Unknown command: $command"
+		usage
+		exit 1
+		;;
+	esac
 }
 
 # Run main function with all arguments

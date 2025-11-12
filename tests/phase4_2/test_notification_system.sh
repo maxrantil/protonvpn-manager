@@ -40,8 +40,8 @@ assert_not_equals "0" "$result" "Configuration should contain required notificat
 start_test "notification_level_validation"
 # This will fail because validation doesn't exist
 for level in "${NOTIFICATION_LEVELS[@]}"; do
-    result=$(grep "NOTIFICATION_LEVEL.*$level" "$NOTIFICATION_CONFIG_FILE" 2>/dev/null || echo "missing")
-    assert_not_equals "missing" "$result" "Configuration should support $level notification level"
+	result=$(grep "NOTIFICATION_LEVEL.*$level" "$NOTIFICATION_CONFIG_FILE" 2>/dev/null || echo "missing")
+	assert_not_equals "missing" "$result" "Configuration should support $level notification level"
 done
 
 start_test "notification_config_security_permissions"
@@ -173,7 +173,7 @@ unset NOTIFICATION_LEVEL
 
 start_test "notification_level_configuration_priority"
 # This will fail because configuration priority doesn't exist
-echo "NOTIFICATION_LEVEL=WARN" > "$TEST_TEMP_DIR/test_notification.conf"
+echo "NOTIFICATION_LEVEL=WARN" >"$TEST_TEMP_DIR/test_notification.conf"
 result=$("$VPN_DIR/vpn-notify" config_update "Test update" --level=INFO --config="$TEST_TEMP_DIR/test_notification.conf" --dry-run 2>/dev/null || echo "")
 assert_equals "" "$result" "Configuration file should override environment variables"
 
@@ -254,7 +254,7 @@ assert_equals "recovered" "$result" "Notification system should support error re
 start_test "notification_service_rate_limiting"
 # This will fail because rate limiting doesn't exist
 for i in {1..10}; do
-    "$VPN_DIR/vpn-notify" config_update "Rapid update $i" --level=INFO >/dev/null 2>&1 &
+	"$VPN_DIR/vpn-notify" config_update "Rapid update $i" --level=INFO >/dev/null 2>&1 &
 done
 wait
 result=$(pgrep -f "vpn-notify" | wc -l)
@@ -326,8 +326,8 @@ start_test "e2e_notification_system_comprehensive_validation"
 # Test all notification types work together
 test_types=("config_update" "auth_warning" "security_alert" "service_status")
 for test_type in "${test_types[@]}"; do
-    result=$("$VPN_DIR/vpn-notify" "$test_type" "Test message" --level=INFO --dry-run 2>/dev/null || echo "")
-    assert_not_equals "" "$result" "$test_type notifications should work in comprehensive validation"
+	result=$("$VPN_DIR/vpn-notify" "$test_type" "Test message" --level=INFO --dry-run 2>/dev/null || echo "")
+	assert_not_equals "" "$result" "$test_type notifications should work in comprehensive validation"
 done
 
 cleanup_test_env

@@ -27,7 +27,7 @@ start_test "toml_config_manager_exists"
 assert_file_exists "$CONFIG_MANAGER" "Advanced configuration manager should exist"
 
 start_test "toml_configuration_parsing"
-cat > "$TEST_TEMP_DIR/test.toml" << 'EOF'
+cat >"$TEST_TEMP_DIR/test.toml" <<'EOF'
 [service]
 name = "ProtonVPN Service"
 update_interval = 300
@@ -47,7 +47,7 @@ $CONFIG_MANAGER validate "$TEST_TEMP_DIR/test.toml" >/dev/null 2>&1 && result="v
 assert_equals "valid" "$result" "Configuration manager should parse valid TOML configuration"
 
 start_test "toml_schema_validation"
-cat > "$TEST_TEMP_DIR/invalid.toml" << 'EOF'
+cat >"$TEST_TEMP_DIR/invalid.toml" <<'EOF'
 [service]
 name = "ProtonVPN Service"
 update_interval = "not_a_number"
@@ -58,7 +58,7 @@ $CONFIG_MANAGER validate "$TEST_TEMP_DIR/invalid.toml" >/dev/null 2>&1 && result
 assert_equals "invalid" "$result" "Configuration manager should reject invalid TOML configuration"
 
 start_test "toml_configuration_merging"
-cat > "$TEST_TEMP_DIR/system.toml" << 'EOF'
+cat >"$TEST_TEMP_DIR/system.toml" <<'EOF'
 [service]
 name = "ProtonVPN Service"
 update_interval = 300
@@ -67,7 +67,7 @@ update_interval = 300
 encryption = true
 EOF
 
-cat > "$TEST_TEMP_DIR/user.toml" << 'EOF'
+cat >"$TEST_TEMP_DIR/user.toml" <<'EOF'
 [service]
 update_interval = 600
 

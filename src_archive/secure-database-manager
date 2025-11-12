@@ -14,51 +14,51 @@ readonly LOG_FILE="/var/log/protonvpn/database.log"
 
 # Legacy insecure locations to migrate from
 readonly LEGACY_LOCATIONS=(
-    "$HOME/.local/share/protonvpn/service-history.db"
-    "/tmp/protonvpn-history.db"
-    "$(dirname "$0")/../data/service-history.db"
+	"$HOME/.local/share/protonvpn/service-history.db"
+	"/tmp/protonvpn-history.db"
+	"$(dirname "$0")/../data/service-history.db"
 )
 
 # Secure logging function
 log_secure() {
-    local level="$1"
-    local message="$2"
-    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
-    echo "[$timestamp] [$level] $message" | tee -a "$LOG_FILE"
+	local level="$1"
+	local message="$2"
+	local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+	echo "[$timestamp] [$level] $message" | tee -a "$LOG_FILE"
 }
 
 # Create secure directory structure
 create_secure_directories() {
-    log_secure "INFO" "Creating secure directory structure"
+	log_secure "INFO" "Creating secure directory structure"
 
-    # Create directories with secure permissions
-    sudo mkdir -p "$SECURE_DB_DIR" "$DB_BACKUP_DIR" "$(dirname "$LOG_FILE")"
+	# Create directories with secure permissions
+	sudo mkdir -p "$SECURE_DB_DIR" "$DB_BACKUP_DIR" "$(dirname "$LOG_FILE")"
 
-    # Set proper ownership and permissions
-    sudo chown "$SERVICE_USER:$SERVICE_GROUP" "$SECURE_DB_DIR" "$DB_BACKUP_DIR" "$(dirname "$LOG_FILE")"
-    sudo chmod 750 "$SECURE_DB_DIR" "$DB_BACKUP_DIR"
-    sudo chmod 755 "$(dirname "$LOG_FILE")"
+	# Set proper ownership and permissions
+	sudo chown "$SERVICE_USER:$SERVICE_GROUP" "$SECURE_DB_DIR" "$DB_BACKUP_DIR" "$(dirname "$LOG_FILE")"
+	sudo chmod 750 "$SECURE_DB_DIR" "$DB_BACKUP_DIR"
+	sudo chmod 755 "$(dirname "$LOG_FILE")"
 
-    # Set log file permissions
-    sudo touch "$LOG_FILE"
-    sudo chown "$SERVICE_USER:$SERVICE_GROUP" "$LOG_FILE"
-    sudo chmod 640 "$LOG_FILE"
+	# Set log file permissions
+	sudo touch "$LOG_FILE"
+	sudo chown "$SERVICE_USER:$SERVICE_GROUP" "$LOG_FILE"
+	sudo chmod 640 "$LOG_FILE"
 
-    log_secure "INFO" "Secure directories created successfully"
+	log_secure "INFO" "Secure directories created successfully"
 }
 
 # Database encryption functions
 encrypt_database() {
-    local db_file="$1"
-    local encrypted_file="${db_file}.encrypted"
+	local db_file="$1"
+	local encrypted_file="${db_file}.encrypted"
 
-    if command -v gpg >/dev/null 2>&1; then
-        log_secure "INFO" "Encrypting database: $db_file"
+	if command -v gpg >/dev/null 2>&1; then
+		log_secure "INFO" "Encrypting database: $db_file"
 
-        # Create encryption key if it doesn't exist
-        if ! gpg --list-secret-keys protonvpn-service >/dev/null 2>&1; then
-            log_secure "INFO" "Creating GPG key for database encryption"
-            gpg --batch --generate-key <<EOF
+		# Create encryption key if it doesn't exist
+		if ! gpg --list-secret-keys protonvpn-service >/dev/null 2>&1; then
+			log_secure "INFO" "Creating GPG key for database encryption"
+			gpg --batch --generate-key <<EOF
 Key-Type: RSA
 Key-Length: 2048
 Name-Real: ProtonVPN Service
@@ -67,75 +67,75 @@ Expire-Date: 0
 %no-protection
 %commit
 EOF
-        fi
+		fi
 
-        # Encrypt the database
-        gpg --trust-model always --encrypt --recipient protonvpn-service --output "$encrypted_file" "$db_file"
+		# Encrypt the database
+		gpg --trust-model always --encrypt --recipient protonvpn-service --output "$encrypted_file" "$db_file"
 
-        # Verify encryption
-        if [[ -f "$encrypted_file" ]]; then
-            log_secure "INFO" "Database encrypted successfully"
-            return 0
-        else
-            log_secure "ERROR" "Database encryption failed"
-            return 1
-        fi
-    else
-        log_secure "WARN" "GPG not available, skipping encryption (SECURITY RISK)"
-        return 1
-    fi
+		# Verify encryption
+		if [[ -f "$encrypted_file" ]]; then
+			log_secure "INFO" "Database encrypted successfully"
+			return 0
+		else
+			log_secure "ERROR" "Database encryption failed"
+			return 1
+		fi
+	else
+		log_secure "WARN" "GPG not available, skipping encryption (SECURITY RISK)"
+		return 1
+	fi
 }
 
 # Migrate legacy databases
 migrate_legacy_databases() {
-    log_secure "INFO" "Starting legacy database migration"
+	log_secure "INFO" "Starting legacy database migration"
 
-    local migrated=false
+	local migrated=false
 
-    for legacy_location in "${LEGACY_LOCATIONS[@]}"; do
-        if [[ -f "$legacy_location" ]]; then
-            log_secure "INFO" "Found legacy database: $legacy_location"
+	for legacy_location in "${LEGACY_LOCATIONS[@]}"; do
+		if [[ -f "$legacy_location" ]]; then
+			log_secure "INFO" "Found legacy database: $legacy_location"
 
-            # Verify database integrity
-            if sqlite3 "$legacy_location" "PRAGMA integrity_check;" | grep -q "ok"; then
-                log_secure "INFO" "Legacy database integrity verified"
+			# Verify database integrity
+			if sqlite3 "$legacy_location" "PRAGMA integrity_check;" | grep -q "ok"; then
+				log_secure "INFO" "Legacy database integrity verified"
 
-                # Create backup
-                local backup_name="legacy_$(basename "$legacy_location")_$(date +%Y%m%d_%H%M%S)"
-                cp "$legacy_location" "$DB_BACKUP_DIR/$backup_name"
+				# Create backup
+				local backup_name="legacy_$(basename "$legacy_location")_$(date +%Y%m%d_%H%M%S)"
+				cp "$legacy_location" "$DB_BACKUP_DIR/$backup_name"
 
-                # Move to secure location
-                sudo cp "$legacy_location" "$SECURE_DB_FILE"
-                sudo chown "$SERVICE_USER:$SERVICE_GROUP" "$SECURE_DB_FILE"
-                sudo chmod 600 "$SECURE_DB_FILE"
+				# Move to secure location
+				sudo cp "$legacy_location" "$SECURE_DB_FILE"
+				sudo chown "$SERVICE_USER:$SERVICE_GROUP" "$SECURE_DB_FILE"
+				sudo chmod 600 "$SECURE_DB_FILE"
 
-                # Encrypt if possible
-                encrypt_database "$SECURE_DB_FILE" || log_secure "WARN" "Database encryption skipped"
+				# Encrypt if possible
+				encrypt_database "$SECURE_DB_FILE" || log_secure "WARN" "Database encryption skipped"
 
-                # Remove legacy file for security
-                rm -f "$legacy_location"
+				# Remove legacy file for security
+				rm -f "$legacy_location"
 
-                log_secure "INFO" "Successfully migrated: $legacy_location -> $SECURE_DB_FILE"
-                migrated=true
-                break
-            else
-                log_secure "ERROR" "Legacy database corrupted: $legacy_location"
-            fi
-        fi
-    done
+				log_secure "INFO" "Successfully migrated: $legacy_location -> $SECURE_DB_FILE"
+				migrated=true
+				break
+			else
+				log_secure "ERROR" "Legacy database corrupted: $legacy_location"
+			fi
+		fi
+	done
 
-    if [[ "$migrated" == "false" ]]; then
-        log_secure "INFO" "No legacy databases found, creating new secure database"
-        initialize_secure_database
-    fi
+	if [[ "$migrated" == "false" ]]; then
+		log_secure "INFO" "No legacy databases found, creating new secure database"
+		initialize_secure_database
+	fi
 }
 
 # Initialize new secure database
 initialize_secure_database() {
-    log_secure "INFO" "Initializing new secure database"
+	log_secure "INFO" "Initializing new secure database"
 
-    # Create database with secure schema
-    sqlite3 "$SECURE_DB_FILE" <<EOF
+	# Create database with secure schema
+	sqlite3 "$SECURE_DB_FILE" <<EOF
 -- Service update history tracking
 CREATE TABLE IF NOT EXISTS update_history (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -191,118 +191,118 @@ INSERT INTO security_events (event_type, severity, description)
 VALUES ('database_initialized', 'info', 'Secure database initialized successfully');
 EOF
 
-    # Set secure permissions
-    sudo chown "$SERVICE_USER:$SERVICE_GROUP" "$SECURE_DB_FILE"
-    sudo chmod 600 "$SECURE_DB_FILE"
+	# Set secure permissions
+	sudo chown "$SERVICE_USER:$SERVICE_GROUP" "$SECURE_DB_FILE"
+	sudo chmod 600 "$SECURE_DB_FILE"
 
-    log_secure "INFO" "Secure database initialized successfully"
+	log_secure "INFO" "Secure database initialized successfully"
 }
 
 # Database integrity check
 check_database_integrity() {
-    log_secure "INFO" "Performing database integrity check"
+	log_secure "INFO" "Performing database integrity check"
 
-    if [[ -f "$SECURE_DB_FILE" ]]; then
-        if sqlite3 "$SECURE_DB_FILE" "PRAGMA integrity_check;" | grep -q "ok"; then
-            log_secure "INFO" "Database integrity check passed"
-            return 0
-        else
-            log_secure "ERROR" "Database integrity check failed"
-            return 1
-        fi
-    else
-        log_secure "WARN" "Database file not found: $SECURE_DB_FILE"
-        return 1
-    fi
+	if [[ -f "$SECURE_DB_FILE" ]]; then
+		if sqlite3 "$SECURE_DB_FILE" "PRAGMA integrity_check;" | grep -q "ok"; then
+			log_secure "INFO" "Database integrity check passed"
+			return 0
+		else
+			log_secure "ERROR" "Database integrity check failed"
+			return 1
+		fi
+	else
+		log_secure "WARN" "Database file not found: $SECURE_DB_FILE"
+		return 1
+	fi
 }
 
 # Backup database
 backup_database() {
-    local backup_name="secure_backup_$(date +%Y%m%d_%H%M%S).db"
-    local backup_path="$DB_BACKUP_DIR/$backup_name"
+	local backup_name="secure_backup_$(date +%Y%m%d_%H%M%S).db"
+	local backup_path="$DB_BACKUP_DIR/$backup_name"
 
-    log_secure "INFO" "Creating database backup: $backup_name"
+	log_secure "INFO" "Creating database backup: $backup_name"
 
-    if [[ -f "$SECURE_DB_FILE" ]]; then
-        # Use SQLite backup command for consistency
-        sqlite3 "$SECURE_DB_FILE" ".backup $backup_path"
+	if [[ -f "$SECURE_DB_FILE" ]]; then
+		# Use SQLite backup command for consistency
+		sqlite3 "$SECURE_DB_FILE" ".backup $backup_path"
 
-        # Verify backup
-        if sqlite3 "$backup_path" "PRAGMA integrity_check;" | grep -q "ok"; then
-            log_secure "INFO" "Database backup created successfully: $backup_path"
+		# Verify backup
+		if sqlite3 "$backup_path" "PRAGMA integrity_check;" | grep -q "ok"; then
+			log_secure "INFO" "Database backup created successfully: $backup_path"
 
-            # Encrypt backup
-            encrypt_database "$backup_path" || log_secure "WARN" "Backup encryption skipped"
+			# Encrypt backup
+			encrypt_database "$backup_path" || log_secure "WARN" "Backup encryption skipped"
 
-            # Cleanup old backups (keep last 7 days)
-            find "$DB_BACKUP_DIR" -name "secure_backup_*.db" -mtime +7 -delete
+			# Cleanup old backups (keep last 7 days)
+			find "$DB_BACKUP_DIR" -name "secure_backup_*.db" -mtime +7 -delete
 
-            return 0
-        else
-            log_secure "ERROR" "Backup verification failed"
-            rm -f "$backup_path"
-            return 1
-        fi
-    else
-        log_secure "ERROR" "Source database not found: $SECURE_DB_FILE"
-        return 1
-    fi
+			return 0
+		else
+			log_secure "ERROR" "Backup verification failed"
+			rm -f "$backup_path"
+			return 1
+		fi
+	else
+		log_secure "ERROR" "Source database not found: $SECURE_DB_FILE"
+		return 1
+	fi
 }
 
 # Main command handler
 main() {
-    local command="${1:-help}"
+	local command="${1:-help}"
 
-    case "$command" in
-        "migrate")
-            create_secure_directories
-            migrate_legacy_databases
-            check_database_integrity
-            ;;
-        "init")
-            create_secure_directories
-            initialize_secure_database
-            ;;
-        "backup")
-            backup_database
-            ;;
-        "check")
-            check_database_integrity
-            ;;
-        "status")
-            if [[ -f "$SECURE_DB_FILE" ]]; then
-                echo "Database: $SECURE_DB_FILE"
-                echo "Size: $(du -h "$SECURE_DB_FILE" | cut -f1)"
-                echo "Permissions: $(stat -c "%a %U:%G" "$SECURE_DB_FILE")"
-                echo "Last modified: $(stat -c "%y" "$SECURE_DB_FILE")"
-                check_database_integrity && echo "Integrity: OK" || echo "Integrity: FAILED"
-            else
-                echo "Database not found: $SECURE_DB_FILE"
-                exit 1
-            fi
-            ;;
-        "help"|*)
-            echo "Usage: $0 {migrate|init|backup|check|status}"
-            echo ""
-            echo "Commands:"
-            echo "  migrate  - Migrate legacy databases to secure location"
-            echo "  init     - Initialize new secure database"
-            echo "  backup   - Create encrypted backup of database"
-            echo "  check    - Verify database integrity"
-            echo "  status   - Show database information"
-            echo "  help     - Show this help message"
-            ;;
-    esac
+	case "$command" in
+	"migrate")
+		create_secure_directories
+		migrate_legacy_databases
+		check_database_integrity
+		;;
+	"init")
+		create_secure_directories
+		initialize_secure_database
+		;;
+	"backup")
+		backup_database
+		;;
+	"check")
+		check_database_integrity
+		;;
+	"status")
+		if [[ -f "$SECURE_DB_FILE" ]]; then
+			echo "Database: $SECURE_DB_FILE"
+			echo "Size: $(du -h "$SECURE_DB_FILE" | cut -f1)"
+			echo "Permissions: $(stat -c "%a %U:%G" "$SECURE_DB_FILE")"
+			echo "Last modified: $(stat -c "%y" "$SECURE_DB_FILE")"
+			check_database_integrity && echo "Integrity: OK" || echo "Integrity: FAILED"
+		else
+			echo "Database not found: $SECURE_DB_FILE"
+			exit 1
+		fi
+		;;
+	"help" | *)
+		echo "Usage: $0 {migrate|init|backup|check|status}"
+		echo ""
+		echo "Commands:"
+		echo "  migrate  - Migrate legacy databases to secure location"
+		echo "  init     - Initialize new secure database"
+		echo "  backup   - Create encrypted backup of database"
+		echo "  check    - Verify database integrity"
+		echo "  status   - Show database information"
+		echo "  help     - Show this help message"
+		;;
+	esac
 }
 
 # Check if running as root for secure operations
 if [[ $EUID -eq 0 ]]; then
-    log_secure "INFO" "Running with administrative privileges for secure setup"
+	log_secure "INFO" "Running with administrative privileges for secure setup"
 elif [[ "$(id -un)" == "$SERVICE_USER" ]]; then
-    log_secure "INFO" "Running as service user: $SERVICE_USER"
+	log_secure "INFO" "Running as service user: $SERVICE_USER"
 else
-    log_secure "ERROR" "Must run as root or $SERVICE_USER for secure operations"
-    exit 1
+	log_secure "ERROR" "Must run as root or $SERVICE_USER for secure operations"
+	exit 1
 fi
 
 # Execute main function
