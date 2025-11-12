@@ -127,7 +127,7 @@ vpn_error() {
     # Action guidance - critical for accessibility
     if [[ -n "$suggestion" ]]; then
         echo -e "${YELLOW}NEXT STEPS: $suggestion${NC}" >&2
-    elif [[ -n "${ERROR_ACTIONS[$category]}" ]]; then
+    elif [[ -n "${ERROR_ACTIONS[$category]:-}" ]]; then
         echo -e "${YELLOW}NEXT STEPS: ${ERROR_ACTIONS[$category]}${NC}" >&2
     fi
 
