@@ -376,6 +376,14 @@ main() {
 
     generate_test_report
 
+    # Debug logging for CI investigation
+    echo "" >&2
+    echo "DEBUG: Final exit code calculation:" >&2
+    echo "  TESTS_PASSED=$TESTS_PASSED" >&2
+    echo "  TESTS_FAILED=$TESTS_FAILED" >&2
+    echo "  overall_exit_code=$overall_exit_code" >&2
+    echo "  About to exit with code: $overall_exit_code" >&2
+
     # Disable trap before explicit exit to prevent interference
     trap - EXIT INT TERM
 
