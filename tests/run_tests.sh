@@ -375,6 +375,10 @@ main() {
     log_test "INFO" "All test suites completed in ${total_duration}s"
 
     generate_test_report
+
+    # Disable trap before explicit exit to prevent interference
+    trap - EXIT INT TERM
+
     exit $overall_exit_code
 }
 
