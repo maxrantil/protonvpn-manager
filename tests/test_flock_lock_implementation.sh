@@ -792,6 +792,15 @@ test_t2_4_stress_test() {
 # ============================================================================
 
 main() {
+    # Ensure all background processes are cleaned up on exit
+    # shellcheck disable=SC2317,SC2329  # Trap function called indirectly
+    cleanup_background_processes() {
+        # Kill any remaining background jobs spawned by this script
+        jobs -p | xargs -r kill 2>/dev/null || true
+        wait 2>/dev/null || true
+    }
+    trap cleanup_background_processes EXIT
+
     echo "========================================"
     echo "  Flock Lock Implementation Tests"
     echo "  Issue #60 - TOCTOU Coverage"
