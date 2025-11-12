@@ -23,7 +23,8 @@ declare -a FAILED_TESTS=()
 # Simple test runner - run command in subshell, capture output
 run_test() {
     local cmd="$1"
-    local temp_log=$(mktemp -d)
+    local temp_log
+    temp_log=$(mktemp -d)
     bash -c "
         set +e
         export VPN_LOG_DIR='$temp_log'
