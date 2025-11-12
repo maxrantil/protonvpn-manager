@@ -83,12 +83,8 @@ test_backoff_intervals_defined || true
 echo -e "\n${YELLOW}Testing Total Wait Time Reduction${NC}"
 
 test_total_backoff_time() {
-    # Expected: 1+1+2+2+3+4+5+6 = 24 seconds
-    # Old: 3×4 + 8×4 = 44 seconds
+    # Expected: 1+1+2+2+3+4+5+6 = 24 seconds (vs old: 3×4 + 8×4 = 44 seconds)
     # Reduction: (44-24)/44 = 45% improvement
-
-    local expected_total=24
-    local old_total=44
 
     # Check if code uses the new backoff timing by looking for the backoff loop
     if grep -A 20 "Establishing connection" "$VPN_DIR/vpn-connector" 2>/dev/null | grep -q 'for interval in.*BACKOFF_INTERVALS'; then
