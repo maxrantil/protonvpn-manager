@@ -1,7 +1,7 @@
 name: PR Title Check
 on:
   pull_request:
-    types: [opened, edited, synchronize]
+    types: [opened, edited, synchronize, reopened, ready_for_review]
     branches:
       - master
 
