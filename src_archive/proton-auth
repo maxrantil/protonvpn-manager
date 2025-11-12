@@ -27,19 +27,19 @@ readonly ERR_SESSION_EXPIRED=5
 readonly ERR_CONFIG_ERROR=6
 
 # Rate limiting configuration with exponential backoff
-readonly RATE_LIMIT_BASE_INTERVAL=${PROTON_AUTH_RATE_LIMIT:-300}  # 5 minutes base
+readonly RATE_LIMIT_BASE_INTERVAL=${PROTON_AUTH_RATE_LIMIT:-300} # 5 minutes base
 readonly RATE_LIMIT_STATE_FILE="$CACHE_DIR/rate-limit-state"
 readonly RATE_LIMIT_MAX_VIOLATIONS=5
-readonly RATE_LIMIT_MAX_BACKOFF=3600  # 1 hour maximum
+readonly RATE_LIMIT_MAX_BACKOFF=3600 # 1 hour maximum
 
 # TOTP replay protection configuration
 readonly TOTP_USED_CODES_FILE="$CACHE_DIR/totp-used-codes"
-readonly TOTP_CODE_WINDOW=30  # 30-second TOTP window
-readonly TOTP_MAX_STORED_CODES=10  # Keep last 10 codes to prevent replay
+readonly TOTP_CODE_WINDOW=30      # 30-second TOTP window
+readonly TOTP_MAX_STORED_CODES=10 # Keep last 10 codes to prevent replay
 
 # Atomic operation configuration
 readonly AUTH_LOCK_DIR="$CACHE_DIR/locks"
-readonly AUTH_LOCK_TIMEOUT=30  # 30 seconds max lock timeout
+readonly AUTH_LOCK_TIMEOUT=30 # 30 seconds max lock timeout
 
 # Create required directories
 mkdir -p "$SESSION_DIR" "$CREDENTIALS_DIR" "$AUTH_LOCK_DIR"
@@ -47,14 +47,14 @@ chmod 700 "$SESSION_DIR" "$CREDENTIALS_DIR" "$AUTH_LOCK_DIR"
 
 # Logging function
 log_message() {
-    local level="$1"
-    local message="$2"
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [$level] $message" >&2
+	local level="$1"
+	local message="$2"
+	echo "[$(date '+%Y-%m-%d %H:%M:%S')] [$level] $message" >&2
 }
 
 # Show help information
 show_help() {
-    cat << 'EOF'
+	cat <<'EOF'
 ProtonVPN Authentication Module - Phase 1
 
 USAGE:
@@ -87,415 +87,419 @@ EOF
 
 # Load rate limiting state
 load_rate_limit_state() {
-    if [[ -f "$RATE_LIMIT_STATE_FILE" ]]; then
-        # shellcheck source=/dev/null
-        source "$RATE_LIMIT_STATE_FILE"
-    else
-        # Initialize default state
-        LAST_REQUEST_TIME=0
-        VIOLATION_COUNT=0
-        CURRENT_BACKOFF_INTERVAL=$RATE_LIMIT_BASE_INTERVAL
-        LAST_VIOLATION_TIME=0
-    fi
+	if [[ -f "$RATE_LIMIT_STATE_FILE" ]]; then
+		# shellcheck source=/dev/null
+		source "$RATE_LIMIT_STATE_FILE"
+	else
+		# Initialize default state
+		LAST_REQUEST_TIME=0
+		VIOLATION_COUNT=0
+		CURRENT_BACKOFF_INTERVAL=$RATE_LIMIT_BASE_INTERVAL
+		LAST_VIOLATION_TIME=0
+	fi
 }
 
 # Save rate limiting state (persistent across restarts)
 save_rate_limit_state() {
-    cat > "$RATE_LIMIT_STATE_FILE" << EOF
+	cat >"$RATE_LIMIT_STATE_FILE" <<EOF
 LAST_REQUEST_TIME=$1
 VIOLATION_COUNT=$2
 CURRENT_BACKOFF_INTERVAL=$3
 LAST_VIOLATION_TIME=${4:-0}
 EOF
-    chmod 600 "$RATE_LIMIT_STATE_FILE"
+	chmod 600 "$RATE_LIMIT_STATE_FILE"
 }
 
 # Calculate exponential backoff interval
 calculate_backoff_interval() {
-    local violation_count="$1"
-    local base_interval="$RATE_LIMIT_BASE_INTERVAL"
+	local violation_count="$1"
+	local base_interval="$RATE_LIMIT_BASE_INTERVAL"
 
-    # Exponential backoff: base * (2 ^ violation_count)
-    local backoff_interval=$base_interval
+	# Exponential backoff: base * (2 ^ violation_count)
+	local backoff_interval=$base_interval
 
-    for ((i = 0; i < violation_count && i < 10; i++)); do
-        backoff_interval=$((backoff_interval * 2))
+	for ((i = 0; i < violation_count && i < 10; i++)); do
+		backoff_interval=$((backoff_interval * 2))
 
-        # Cap at maximum backoff
-        if (( backoff_interval > RATE_LIMIT_MAX_BACKOFF )); then
-            backoff_interval=$RATE_LIMIT_MAX_BACKOFF
-            break
-        fi
-    done
+		# Cap at maximum backoff
+		if ((backoff_interval > RATE_LIMIT_MAX_BACKOFF)); then
+			backoff_interval=$RATE_LIMIT_MAX_BACKOFF
+			break
+		fi
+	done
 
-    echo "$backoff_interval"
+	echo "$backoff_interval"
 }
 
 # Check persistent rate limiting with exponential backoff
 check_rate_limit() {
-    local current_time
-    current_time=$(date +%s)
+	local current_time
+	current_time=$(date +%s)
 
-    # Load persistent state
-    load_rate_limit_state
+	# Load persistent state
+	load_rate_limit_state
 
-    # Check if we need to reset violation count (24 hours without violations)
-    local reset_time=$((24 * 3600))  # 24 hours
-    if [[ -n "$LAST_VIOLATION_TIME" && $LAST_VIOLATION_TIME -gt 0 ]]; then
-        local time_since_violation=$((current_time - LAST_VIOLATION_TIME))
-        if (( time_since_violation > reset_time )); then
-            log_message "INFO" "Rate limit violation count reset after 24 hours"
-            VIOLATION_COUNT=0
-            CURRENT_BACKOFF_INTERVAL=$RATE_LIMIT_BASE_INTERVAL
-        fi
-    fi
+	# Check if we need to reset violation count (24 hours without violations)
+	local reset_time=$((24 * 3600)) # 24 hours
+	if [[ -n "$LAST_VIOLATION_TIME" && $LAST_VIOLATION_TIME -gt 0 ]]; then
+		local time_since_violation=$((current_time - LAST_VIOLATION_TIME))
+		if ((time_since_violation > reset_time)); then
+			log_message "INFO" "Rate limit violation count reset after 24 hours"
+			VIOLATION_COUNT=0
+			CURRENT_BACKOFF_INTERVAL=$RATE_LIMIT_BASE_INTERVAL
+		fi
+	fi
 
-    # Check if enough time has passed since last request
-    if [[ $LAST_REQUEST_TIME -gt 0 ]]; then
-        local time_diff=$((current_time - LAST_REQUEST_TIME))
+	# Check if enough time has passed since last request
+	if [[ $LAST_REQUEST_TIME -gt 0 ]]; then
+		local time_diff=$((current_time - LAST_REQUEST_TIME))
 
-        if (( time_diff < CURRENT_BACKOFF_INTERVAL )); then
-            local wait_time=$((CURRENT_BACKOFF_INTERVAL - time_diff))
+		if ((time_diff < CURRENT_BACKOFF_INTERVAL)); then
+			local wait_time=$((CURRENT_BACKOFF_INTERVAL - time_diff))
 
-            # Increment violation count and calculate new backoff
-            ((VIOLATION_COUNT++))
+			# Increment violation count and calculate new backoff
+			((VIOLATION_COUNT++))
 
-            if (( VIOLATION_COUNT > RATE_LIMIT_MAX_VIOLATIONS )); then
-                log_message "ERROR" "Maximum rate limit violations exceeded. Account may be temporarily blocked."
-                CURRENT_BACKOFF_INTERVAL=$RATE_LIMIT_MAX_BACKOFF
-            else
-                CURRENT_BACKOFF_INTERVAL=$(calculate_backoff_interval "$VIOLATION_COUNT")
-            fi
+			if ((VIOLATION_COUNT > RATE_LIMIT_MAX_VIOLATIONS)); then
+				log_message "ERROR" "Maximum rate limit violations exceeded. Account may be temporarily blocked."
+				CURRENT_BACKOFF_INTERVAL=$RATE_LIMIT_MAX_BACKOFF
+			else
+				CURRENT_BACKOFF_INTERVAL=$(calculate_backoff_interval "$VIOLATION_COUNT")
+			fi
 
-            # Save updated state with violation
-            save_rate_limit_state "$LAST_REQUEST_TIME" "$VIOLATION_COUNT" "$CURRENT_BACKOFF_INTERVAL" "$current_time"
+			# Save updated state with violation
+			save_rate_limit_state "$LAST_REQUEST_TIME" "$VIOLATION_COUNT" "$CURRENT_BACKOFF_INTERVAL" "$current_time"
 
-            log_message "WARN" "Rate limit enforced (violation #$VIOLATION_COUNT). Please wait $wait_time seconds before retrying."
-            log_message "INFO" "Next backoff interval: $CURRENT_BACKOFF_INTERVAL seconds"
+			log_message "WARN" "Rate limit enforced (violation #$VIOLATION_COUNT). Please wait $wait_time seconds before retrying."
+			log_message "INFO" "Next backoff interval: $CURRENT_BACKOFF_INTERVAL seconds"
 
-            return 1
-        fi
-    fi
+			return 1
+		fi
+	fi
 
-    return 0
+	return 0
 }
 
 # Log successful rate limiting request
 log_rate_limit_request() {
-    local current_time
-    current_time=$(date +%s)
+	local current_time
+	current_time=$(date +%s)
 
-    # Load current state
-    load_rate_limit_state
+	# Load current state
+	load_rate_limit_state
 
-    # Save successful request (reset violation count on success)
-    if [[ $VIOLATION_COUNT -gt 0 ]]; then
-        log_message "INFO" "Successful request - reducing violation count from $VIOLATION_COUNT to $((VIOLATION_COUNT - 1))"
-        ((VIOLATION_COUNT--))
-        CURRENT_BACKOFF_INTERVAL=$(calculate_backoff_interval "$VIOLATION_COUNT")
-    fi
+	# Save successful request (reset violation count on success)
+	if [[ $VIOLATION_COUNT -gt 0 ]]; then
+		log_message "INFO" "Successful request - reducing violation count from $VIOLATION_COUNT to $((VIOLATION_COUNT - 1))"
+		((VIOLATION_COUNT--))
+		CURRENT_BACKOFF_INTERVAL=$(calculate_backoff_interval "$VIOLATION_COUNT")
+	fi
 
-    # Save state
-    save_rate_limit_state "$current_time" "$VIOLATION_COUNT" "$CURRENT_BACKOFF_INTERVAL"
+	# Save state
+	save_rate_limit_state "$current_time" "$VIOLATION_COUNT" "$CURRENT_BACKOFF_INTERVAL"
 
-    # Also log to legacy rate limit log for backward compatibility
-    echo "$current_time request" >> "$RATE_LIMIT_LOG"
+	# Also log to legacy rate limit log for backward compatibility
+	echo "$current_time request" >>"$RATE_LIMIT_LOG"
 }
 
 # TOTP replay protection functions
 check_totp_replay() {
-    local totp_code="$1"
-    local current_time
-    current_time=$(date +%s)
+	local totp_code="$1"
+	local current_time
+	current_time=$(date +%s)
 
-    # Create used codes file if it doesn't exist
-    if [[ ! -f "$TOTP_USED_CODES_FILE" ]]; then
-        touch "$TOTP_USED_CODES_FILE"
-        chmod 600 "$TOTP_USED_CODES_FILE"
-        return 0
-    fi
+	# Create used codes file if it doesn't exist
+	if [[ ! -f "$TOTP_USED_CODES_FILE" ]]; then
+		touch "$TOTP_USED_CODES_FILE"
+		chmod 600 "$TOTP_USED_CODES_FILE"
+		return 0
+	fi
 
-    # Check if code was already used in current or previous window
-    local time_window_start=$((current_time - (TOTP_CODE_WINDOW * 2)))  # Check last 2 windows
+	# Check if code was already used in current or previous window
+	local time_window_start=$((current_time - (TOTP_CODE_WINDOW * 2))) # Check last 2 windows
 
-    # Clean old entries first
-    local temp_file
-    temp_file=$(mktemp)
-    while IFS=' ' read -r timestamp code; do
-        if [[ $timestamp -gt $time_window_start ]]; then
-            echo "$timestamp $code" >> "$temp_file"
-        fi
-    done < "$TOTP_USED_CODES_FILE"
+	# Clean old entries first
+	local temp_file
+	temp_file=$(mktemp)
+	while IFS=' ' read -r timestamp code; do
+		if [[ $timestamp -gt $time_window_start ]]; then
+			echo "$timestamp $code" >>"$temp_file"
+		fi
+	done <"$TOTP_USED_CODES_FILE"
 
-    mv "$temp_file" "$TOTP_USED_CODES_FILE"
-    chmod 600 "$TOTP_USED_CODES_FILE"
+	mv "$temp_file" "$TOTP_USED_CODES_FILE"
+	chmod 600 "$TOTP_USED_CODES_FILE"
 
-    # Check if the current code was already used
-    if grep -q " $totp_code$" "$TOTP_USED_CODES_FILE" 2>/dev/null; then
-        log_message "ERROR" "TOTP code replay detected - code already used"
-        return 1
-    fi
+	# Check if the current code was already used
+	if grep -q " $totp_code$" "$TOTP_USED_CODES_FILE" 2>/dev/null; then
+		log_message "ERROR" "TOTP code replay detected - code already used"
+		return 1
+	fi
 
-    return 0
+	return 0
 }
 
 # Record used TOTP code
 record_totp_usage() {
-    local totp_code="$1"
-    local current_time
-    current_time=$(date +%s)
+	local totp_code="$1"
+	local current_time
+	current_time=$(date +%s)
 
-    # Add the used code
-    echo "$current_time $totp_code" >> "$TOTP_USED_CODES_FILE"
+	# Add the used code
+	echo "$current_time $totp_code" >>"$TOTP_USED_CODES_FILE"
 
-    # Keep only the last N codes to prevent file growth
-    local temp_file
-    temp_file=$(mktemp)
-    tail -n "$TOTP_MAX_STORED_CODES" "$TOTP_USED_CODES_FILE" > "$temp_file"
-    mv "$temp_file" "$TOTP_USED_CODES_FILE"
-    chmod 600 "$TOTP_USED_CODES_FILE"
+	# Keep only the last N codes to prevent file growth
+	local temp_file
+	temp_file=$(mktemp)
+	tail -n "$TOTP_MAX_STORED_CODES" "$TOTP_USED_CODES_FILE" >"$temp_file"
+	mv "$temp_file" "$TOTP_USED_CODES_FILE"
+	chmod 600 "$TOTP_USED_CODES_FILE"
 }
 
 # Validate TOTP code format and timing
 validate_totp_code() {
-    local totp_code="$1"
+	local totp_code="$1"
 
-    # Format validation (6 digits)
-    if [[ ! "$totp_code" =~ ^[0-9]{6}$ ]]; then
-        log_message "ERROR" "Invalid TOTP code format (must be 6 digits)"
-        return 1
-    fi
+	# Format validation (6 digits)
+	if [[ ! "$totp_code" =~ ^[0-9]{6}$ ]]; then
+		log_message "ERROR" "Invalid TOTP code format (must be 6 digits)"
+		return 1
+	fi
 
-    # Check for replay
-    if ! check_totp_replay "$totp_code"; then
-        return 1
-    fi
+	# Check for replay
+	if ! check_totp_replay "$totp_code"; then
+		return 1
+	fi
 
-    # Use constant-time comparison to prevent timing attacks
-    local current_time
-    current_time=$(date +%s)
-    local time_step=$((current_time / TOTP_CODE_WINDOW))
+	# Use constant-time comparison to prevent timing attacks
+	local current_time
+	current_time=$(date +%s)
+	local time_step=$((current_time / TOTP_CODE_WINDOW))
 
-    # Generate expected codes for current and previous time windows
-    local expected_codes=()
+	# Generate expected codes for current and previous time windows
+	local expected_codes=()
 
-    # Get TOTP secret from secure storage
-    local totp_secret
-    if [[ -f "$SECURITY_DIR/totp-authenticator" ]]; then
-        # This should integrate with the existing totp-authenticator
-        # For now, we'll validate the format and replay, actual TOTP validation
-        # will be done by the existing totp-authenticator
-        log_message "INFO" "TOTP format and replay validation passed"
-        return 0
-    else
-        log_message "ERROR" "TOTP authenticator not available"
-        return 1
-    fi
+	# Get TOTP secret from secure storage
+	local totp_secret
+	if [[ -f "$SECURITY_DIR/totp-authenticator" ]]; then
+		# This should integrate with the existing totp-authenticator
+		# For now, we'll validate the format and replay, actual TOTP validation
+		# will be done by the existing totp-authenticator
+		log_message "INFO" "TOTP format and replay validation passed"
+		return 0
+	else
+		log_message "ERROR" "TOTP authenticator not available"
+		return 1
+	fi
 }
 
 # Comprehensive input validation framework
 validate_email() {
-    local email="$1"
+	local email="$1"
 
-    # Length check
-    if [[ ${#email} -gt 254 ]]; then
-        log_message "ERROR" "Email address too long (max 254 characters)"
-        return 1
-    fi
+	# Length check
+	if [[ ${#email} -gt 254 ]]; then
+		log_message "ERROR" "Email address too long (max 254 characters)"
+		return 1
+	fi
 
-    # Basic format validation (RFC 5322 simplified)
-    if [[ ! "$email" =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; then
-        log_message "ERROR" "Invalid email format"
-        return 1
-    fi
+	# Basic format validation (RFC 5322 simplified)
+	if [[ ! "$email" =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; then
+		log_message "ERROR" "Invalid email format"
+		return 1
+	fi
 
-    # Check for common injection patterns using character class
-    if [[ "$email" =~ [\<\>\"\']|[\\\;]|[\|]|[\&]|[\`]|[\$]|[\(]|[\)] ]]; then
-        log_message "ERROR" "Email contains forbidden characters"
-        return 1
-    fi
+	# Check for common injection patterns using character class
+	if [[ "$email" =~ [\<\>\"\']|[\\\;]|[\|]|[\&]|[\`]|[\$]|[\(]|[\)] ]]; then
+		log_message "ERROR" "Email contains forbidden characters"
+		return 1
+	fi
 
-    return 0
+	return 0
 }
 
 validate_password() {
-    local password="$1"
+	local password="$1"
 
-    # Length check
-    if [[ ${#password} -lt 6 ]]; then
-        log_message "ERROR" "Password too short (minimum 6 characters)"
-        return 1
-    fi
+	# Length check
+	if [[ ${#password} -lt 6 ]]; then
+		log_message "ERROR" "Password too short (minimum 6 characters)"
+		return 1
+	fi
 
-    if [[ ${#password} -gt 128 ]]; then
-        log_message "ERROR" "Password too long (maximum 128 characters)"
-        return 1
-    fi
+	if [[ ${#password} -gt 128 ]]; then
+		log_message "ERROR" "Password too long (maximum 128 characters)"
+		return 1
+	fi
 
-    # Note: More validation can be added here as needed
-    # Currently allowing all passwords except empty ones
+	# Note: More validation can be added here as needed
+	# Currently allowing all passwords except empty ones
 
-    return 0
+	return 0
 }
 
 validate_session_id() {
-    local session_id="$1"
+	local session_id="$1"
 
-    # Format validation (alphanumeric, underscore, hyphen only)
-    if [[ ! "$session_id" =~ ^[a-zA-Z0-9_-]+$ ]]; then
-        log_message "ERROR" "Invalid session ID format"
-        return 1
-    fi
+	# Format validation (alphanumeric, underscore, hyphen only)
+	if [[ ! "$session_id" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+		log_message "ERROR" "Invalid session ID format"
+		return 1
+	fi
 
-    # Length check
-    if [[ ${#session_id} -lt 10 || ${#session_id} -gt 64 ]]; then
-        log_message "ERROR" "Session ID length invalid (10-64 characters)"
-        return 1
-    fi
+	# Length check
+	if [[ ${#session_id} -lt 10 || ${#session_id} -gt 64 ]]; then
+		log_message "ERROR" "Session ID length invalid (10-64 characters)"
+		return 1
+	fi
 
-    return 0
+	return 0
 }
 
 validate_csrf_token() {
-    local csrf_token="$1"
+	local csrf_token="$1"
 
-    # Format validation (alphanumeric and underscore only)
-    if [[ ! "$csrf_token" =~ ^[a-zA-Z0-9_]+$ ]]; then
-        log_message "ERROR" "Invalid CSRF token format"
-        return 1
-    fi
+	# Format validation (alphanumeric and underscore only)
+	if [[ ! "$csrf_token" =~ ^[a-zA-Z0-9_]+$ ]]; then
+		log_message "ERROR" "Invalid CSRF token format"
+		return 1
+	fi
 
-    # Length check
-    if [[ ${#csrf_token} -lt 16 || ${#csrf_token} -gt 64 ]]; then
-        log_message "ERROR" "CSRF token length invalid (16-64 characters)"
-        return 1
-    fi
+	# Length check
+	if [[ ${#csrf_token} -lt 16 || ${#csrf_token} -gt 64 ]]; then
+		log_message "ERROR" "CSRF token length invalid (16-64 characters)"
+		return 1
+	fi
 
-    return 0
+	return 0
 }
 
 validate_username() {
-    local username="$1"
+	local username="$1"
 
-    # For ProtonVPN, username is typically an email
-    validate_email "$username"
+	# For ProtonVPN, username is typically an email
+	validate_email "$username"
 }
 
 # Sanitize log messages to prevent log injection
 sanitize_log_message() {
-    local message="$1"
+	local message="$1"
 
-    # Remove control characters and newlines
-    echo "$message" | tr -d '\000-\011\013\014\016-\037\177-\377' | tr '\012\015' ' '
+	# Remove control characters and newlines
+	echo "$message" | tr -d '\000-\011\013\014\016-\037\177-\377' | tr '\012\015' ' '
 }
 
 # Atomic operation functions with file locking
 acquire_auth_lock() {
-    local lock_name="$1"
-    local lock_file="$AUTH_LOCK_DIR/${lock_name}.lock"
-    local pid_file="$AUTH_LOCK_DIR/${lock_name}.pid"
-    local start_time
-    start_time=$(date +%s)
+	local lock_name="$1"
+	local lock_file="$AUTH_LOCK_DIR/${lock_name}.lock"
+	local pid_file="$AUTH_LOCK_DIR/${lock_name}.pid"
+	local start_time
+	start_time=$(date +%s)
 
-    # Check if lock already exists and is stale
-    if [[ -f "$lock_file" ]]; then
-        local lock_time
-        lock_time=$(stat -c %Y "$lock_file" 2>/dev/null || echo "0")
-        local current_time
-        current_time=$(date +%s)
+	# Check if lock already exists and is stale
+	if [[ -f "$lock_file" ]]; then
+		local lock_time
+		lock_time=$(stat -c %Y "$lock_file" 2>/dev/null || echo "0")
+		local current_time
+		current_time=$(date +%s)
 
-        # If lock is older than timeout, remove it
-        if (( current_time - lock_time > AUTH_LOCK_TIMEOUT )); then
-            log_message "WARN" "Removing stale lock: $lock_name"
-            rm -f "$lock_file" "$pid_file"
-        fi
-    fi
+		# If lock is older than timeout, remove it
+		if ((current_time - lock_time > AUTH_LOCK_TIMEOUT)); then
+			log_message "WARN" "Removing stale lock: $lock_name"
+			rm -f "$lock_file" "$pid_file"
+		fi
+	fi
 
-    # Try to acquire lock with timeout
-    while (( $(date +%s) - start_time < AUTH_LOCK_TIMEOUT )); do
-        if (set -C; echo $$ > "$lock_file") 2>/dev/null; then
-            echo $$ > "$pid_file"
-            log_message "INFO" "Acquired lock: $lock_name"
-            return 0
-        fi
+	# Try to acquire lock with timeout
+	while (($(date +%s) - start_time < AUTH_LOCK_TIMEOUT)); do
+		if (
+			set -C
+			echo $$ >"$lock_file"
+		) 2>/dev/null; then
+			echo $$ >"$pid_file"
+			log_message "INFO" "Acquired lock: $lock_name"
+			return 0
+		fi
 
-        # Check if the process holding the lock is still alive
-        if [[ -f "$pid_file" ]]; then
-            local lock_pid
-            lock_pid=$(cat "$pid_file" 2>/dev/null)
-            if [[ -n "$lock_pid" ]] && ! kill -0 "$lock_pid" 2>/dev/null; then
-                log_message "WARN" "Removing lock from dead process: $lock_pid"
-                rm -f "$lock_file" "$pid_file"
-                continue
-            fi
-        fi
+		# Check if the process holding the lock is still alive
+		if [[ -f "$pid_file" ]]; then
+			local lock_pid
+			lock_pid=$(cat "$pid_file" 2>/dev/null)
+			if [[ -n "$lock_pid" ]] && ! kill -0 "$lock_pid" 2>/dev/null; then
+				log_message "WARN" "Removing lock from dead process: $lock_pid"
+				rm -f "$lock_file" "$pid_file"
+				continue
+			fi
+		fi
 
-        sleep 0.1
-    done
+		sleep 0.1
+	done
 
-    log_message "ERROR" "Failed to acquire lock: $lock_name (timeout after ${AUTH_LOCK_TIMEOUT}s)"
-    return 1
+	log_message "ERROR" "Failed to acquire lock: $lock_name (timeout after ${AUTH_LOCK_TIMEOUT}s)"
+	return 1
 }
 
 release_auth_lock() {
-    local lock_name="$1"
-    local lock_file="$AUTH_LOCK_DIR/${lock_name}.lock"
-    local pid_file="$AUTH_LOCK_DIR/${lock_name}.pid"
+	local lock_name="$1"
+	local lock_file="$AUTH_LOCK_DIR/${lock_name}.lock"
+	local pid_file="$AUTH_LOCK_DIR/${lock_name}.pid"
 
-    # Verify we own the lock
-    if [[ -f "$pid_file" ]]; then
-        local lock_pid
-        lock_pid=$(cat "$pid_file" 2>/dev/null)
-        if [[ "$lock_pid" != "$$" ]]; then
-            log_message "ERROR" "Cannot release lock owned by different process: $lock_pid"
-            return 1
-        fi
-    fi
+	# Verify we own the lock
+	if [[ -f "$pid_file" ]]; then
+		local lock_pid
+		lock_pid=$(cat "$pid_file" 2>/dev/null)
+		if [[ "$lock_pid" != "$$" ]]; then
+			log_message "ERROR" "Cannot release lock owned by different process: $lock_pid"
+			return 1
+		fi
+	fi
 
-    rm -f "$lock_file" "$pid_file"
-    log_message "INFO" "Released lock: $lock_name"
-    return 0
+	rm -f "$lock_file" "$pid_file"
+	log_message "INFO" "Released lock: $lock_name"
+	return 0
 }
 
 # Execute function with atomic lock
 with_auth_lock() {
-    local lock_name="$1"
-    local func_name="$2"
-    shift 2
-    local args=("$@")
+	local lock_name="$1"
+	local func_name="$2"
+	shift 2
+	local args=("$@")
 
-    if acquire_auth_lock "$lock_name"; then
-        # Set trap to ensure lock is released on exit
-        # shellcheck disable=SC2064
-        trap "release_auth_lock '$lock_name'" EXIT
+	if acquire_auth_lock "$lock_name"; then
+		# Set trap to ensure lock is released on exit
+		# shellcheck disable=SC2064
+		trap "release_auth_lock '$lock_name'" EXIT
 
-        # Execute the function
-        local result
-        "$func_name" "${args[@]}"
-        result=$?
+		# Execute the function
+		local result
+		"$func_name" "${args[@]}"
+		result=$?
 
-        # Release lock and clear trap
-        release_auth_lock "$lock_name"
-        trap - EXIT
+		# Release lock and clear trap
+		release_auth_lock "$lock_name"
+		trap - EXIT
 
-        return $result
-    else
-        log_message "ERROR" "Failed to acquire lock for atomic operation: $lock_name"
-        return 1
-    fi
+		return $result
+	else
+		log_message "ERROR" "Failed to acquire lock for atomic operation: $lock_name"
+		return 1
+	fi
 }
 
 # Create encrypted session file
 create_session() {
-    local username="$1"
-    local session_id="session_$(date +%s)_$$"
-    local csrf_token="csrf_$(openssl rand -hex 16)"
-    local expires_at
-    expires_at=$(date -d '+15 minutes' '+%Y-%m-%dT%H:%M:%SZ')
+	local username="$1"
+	local session_id="session_$(date +%s)_$$"
+	local csrf_token="csrf_$(openssl rand -hex 16)"
+	local expires_at
+	expires_at=$(date -d '+15 minutes' '+%Y-%m-%dT%H:%M:%SZ')
 
-    # Create session data
-    local session_data
-    session_data=$(cat << EOF
+	# Create session data
+	local session_data
+	session_data=$(
+		cat <<EOF
 SESSION_ID=$session_id
 USERNAME=$username
 CSRF_TOKEN=$csrf_token
@@ -504,183 +508,183 @@ SESSION_VALID=true
 CREATED_AT=$(date '+%Y-%m-%dT%H:%M:%SZ')
 SESSION_FINGERPRINT=$(echo "$session_id$username" | sha256sum | cut -d' ' -f1)
 EOF
-)
+	)
 
-    # Encrypt session data using GPG (integrating with Phase 0 security)
-    if command -v gpg >/dev/null 2>&1; then
-        echo "$session_data" | gpg --symmetric --cipher-algo AES256 --compress-algo 1 \
-            --s2k-mode 3 --s2k-count 65536 --s2k-digest-algo SHA512 \
-            --batch --quiet --passphrase "vpn-session-$(whoami)" \
-            --output "$SESSION_FILE.gpg" 2>/dev/null || {
-            log_message "WARN" "GPG encryption failed, falling back to OpenSSL"
-            encrypt_session_openssl "$session_data"
-        }
-    else
-        log_message "WARN" "GPG not available, using OpenSSL encryption"
-        encrypt_session_openssl "$session_data"
-    fi
+	# Encrypt session data using GPG (integrating with Phase 0 security)
+	if command -v gpg >/dev/null 2>&1; then
+		echo "$session_data" | gpg --symmetric --cipher-algo AES256 --compress-algo 1 \
+			--s2k-mode 3 --s2k-count 65536 --s2k-digest-algo SHA512 \
+			--batch --quiet --passphrase "vpn-session-$(whoami)" \
+			--output "$SESSION_FILE.gpg" 2>/dev/null || {
+			log_message "WARN" "GPG encryption failed, falling back to OpenSSL"
+			encrypt_session_openssl "$session_data"
+		}
+	else
+		log_message "WARN" "GPG not available, using OpenSSL encryption"
+		encrypt_session_openssl "$session_data"
+	fi
 
-    # Set secure permissions
-    chmod 600 "$SESSION_FILE"* 2>/dev/null
+	# Set secure permissions
+	chmod 600 "$SESSION_FILE"* 2>/dev/null
 
-    # Store CSRF token separately (also encrypted)
-    echo "$csrf_token" | gpg --symmetric --batch --quiet \
-        --passphrase "vpn-csrf-$(whoami)" \
-        --output "$CSRF_TOKEN_FILE.gpg" 2>/dev/null || {
-        echo "$csrf_token" | openssl enc -aes-256-cbc -salt -pbkdf2 \
-            -pass pass:"vpn-csrf-$(whoami)" > "$CSRF_TOKEN_FILE.enc" 2>/dev/null
-    }
+	# Store CSRF token separately (also encrypted)
+	echo "$csrf_token" | gpg --symmetric --batch --quiet \
+		--passphrase "vpn-csrf-$(whoami)" \
+		--output "$CSRF_TOKEN_FILE.gpg" 2>/dev/null || {
+		echo "$csrf_token" | openssl enc -aes-256-cbc -salt -pbkdf2 \
+			-pass pass:"vpn-csrf-$(whoami)" >"$CSRF_TOKEN_FILE.enc" 2>/dev/null
+	}
 
-    chmod 600 "$CSRF_TOKEN_FILE"* 2>/dev/null
+	chmod 600 "$CSRF_TOKEN_FILE"* 2>/dev/null
 
-    log_message "INFO" "Encrypted session created successfully for user: $username"
+	log_message "INFO" "Encrypted session created successfully for user: $username"
 }
 
 # OpenSSL fallback encryption for session data
 encrypt_session_openssl() {
-    local session_data="$1"
-    echo "$session_data" | openssl enc -aes-256-cbc -salt -pbkdf2 \
-        -pass pass:"vpn-session-$(whoami)" > "$SESSION_FILE.enc" 2>/dev/null || {
-        log_message "ERROR" "Both GPG and OpenSSL encryption failed"
-        return 1
-    }
+	local session_data="$1"
+	echo "$session_data" | openssl enc -aes-256-cbc -salt -pbkdf2 \
+		-pass pass:"vpn-session-$(whoami)" >"$SESSION_FILE.enc" 2>/dev/null || {
+		log_message "ERROR" "Both GPG and OpenSSL encryption failed"
+		return 1
+	}
 }
 
 # Perform real ProtonVPN web authentication
 perform_real_protonvpn_login() {
-    local username="$1"
-    local password="$2"
-    local totp_code="${3:-}"  # Optional 2FA code
+	local username="$1"
+	local password="$2"
+	local totp_code="${3:-}" # Optional 2FA code
 
-    log_message "INFO" "Performing real ProtonVPN web authentication"
+	log_message "INFO" "Performing real ProtonVPN web authentication"
 
-    local cookie_jar="/tmp/proton_auth_cookies_$$.jar"
-    local login_url="https://account.protonvpn.com/login"
+	local cookie_jar="/tmp/proton_auth_cookies_$$.jar"
+	local login_url="https://account.protonvpn.com/login"
 
-    # Step 1: Get login page to extract CSRF token and session
-    log_message "INFO" "Getting login page for CSRF token"
-    local login_page
-    login_page=$(curl -s -c "$cookie_jar" \
-        -H "User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36" \
-        -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8" \
-        "$login_url" 2>/dev/null)
+	# Step 1: Get login page to extract CSRF token and session
+	log_message "INFO" "Getting login page for CSRF token"
+	local login_page
+	login_page=$(curl -s -c "$cookie_jar" \
+		-H "User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36" \
+		-H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8" \
+		"$login_url" 2>/dev/null)
 
-    if [[ -z "$login_page" ]]; then
-        log_message "ERROR" "Failed to fetch ProtonVPN login page"
-        rm -f "$cookie_jar"
-        return 1
-    fi
+	if [[ -z "$login_page" ]]; then
+		log_message "ERROR" "Failed to fetch ProtonVPN login page"
+		rm -f "$cookie_jar"
+		return 1
+	fi
 
-    # Extract CSRF token from login page
-    local csrf_token
-    csrf_token=$(echo "$login_page" | grep -oE 'name="_token"[^>]*value="[^"]*"' | grep -oE 'value="[^"]*"' | cut -d'"' -f2)
+	# Extract CSRF token from login page
+	local csrf_token
+	csrf_token=$(echo "$login_page" | grep -oE 'name="_token"[^>]*value="[^"]*"' | grep -oE 'value="[^"]*"' | cut -d'"' -f2)
 
-    if [[ -z "$csrf_token" ]]; then
-        log_message "WARN" "Could not extract CSRF token, attempting login without it"
-        csrf_token="dummy"
-    else
-        log_message "INFO" "Extracted CSRF token successfully"
-    fi
+	if [[ -z "$csrf_token" ]]; then
+		log_message "WARN" "Could not extract CSRF token, attempting login without it"
+		csrf_token="dummy"
+	else
+		log_message "INFO" "Extracted CSRF token successfully"
+	fi
 
-    # Step 2: Perform login with credentials
-    log_message "INFO" "Submitting login credentials"
-    local login_response
-    login_response=$(curl -s -b "$cookie_jar" -c "$cookie_jar" \
-        -X POST \
-        -H "User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36" \
-        -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8" \
-        -H "Content-Type: application/x-www-form-urlencoded" \
-        -H "Referer: $login_url" \
-        --data-urlencode "_token=$csrf_token" \
-        --data-urlencode "username=$username" \
-        --data-urlencode "password=$password" \
-        "$login_url" 2>/dev/null)
+	# Step 2: Perform login with credentials
+	log_message "INFO" "Submitting login credentials"
+	local login_response
+	login_response=$(curl -s -b "$cookie_jar" -c "$cookie_jar" \
+		-X POST \
+		-H "User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36" \
+		-H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8" \
+		-H "Content-Type: application/x-www-form-urlencoded" \
+		-H "Referer: $login_url" \
+		--data-urlencode "_token=$csrf_token" \
+		--data-urlencode "username=$username" \
+		--data-urlencode "password=$password" \
+		"$login_url" 2>/dev/null)
 
-    # Step 3: Check if 2FA is required
-    if echo "$login_response" | grep -qi "two.factor\|2fa\|totp\|authenticator"; then
-        if [[ -z "$totp_code" ]]; then
-            log_message "ERROR" "2FA required but no TOTP code provided"
-            rm -f "$cookie_jar"
-            return 1
-        fi
+	# Step 3: Check if 2FA is required
+	if echo "$login_response" | grep -qi "two.factor\|2fa\|totp\|authenticator"; then
+		if [[ -z "$totp_code" ]]; then
+			log_message "ERROR" "2FA required but no TOTP code provided"
+			rm -f "$cookie_jar"
+			return 1
+		fi
 
-        log_message "INFO" "2FA required, submitting TOTP code"
-        # Submit 2FA code (URL might be different, need to extract from response)
-        local tfa_url="https://account.protonvpn.com/login/totp"
-        login_response=$(curl -s -b "$cookie_jar" -c "$cookie_jar" \
-            -X POST \
-            -H "User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36" \
-            -H "Content-Type: application/x-www-form-urlencoded" \
-            --data-urlencode "_token=$csrf_token" \
-            --data-urlencode "totp=$totp_code" \
-            "$tfa_url" 2>/dev/null)
-    fi
+		log_message "INFO" "2FA required, submitting TOTP code"
+		# Submit 2FA code (URL might be different, need to extract from response)
+		local tfa_url="https://account.protonvpn.com/login/totp"
+		login_response=$(curl -s -b "$cookie_jar" -c "$cookie_jar" \
+			-X POST \
+			-H "User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36" \
+			-H "Content-Type: application/x-www-form-urlencoded" \
+			--data-urlencode "_token=$csrf_token" \
+			--data-urlencode "totp=$totp_code" \
+			"$tfa_url" 2>/dev/null)
+	fi
 
-    # Step 4: Check if login was successful (look for dashboard/account content)
-    log_message "INFO" "DEBUG: Login response length: ${#login_response} characters"
-    log_message "INFO" "DEBUG: Login response sample: $(echo "$login_response" | head -c 200)"
+	# Step 4: Check if login was successful (look for dashboard/account content)
+	log_message "INFO" "DEBUG: Login response length: ${#login_response} characters"
+	log_message "INFO" "DEBUG: Login response sample: $(echo "$login_response" | head -c 200)"
 
-    if echo "$login_response" | grep -qi "dashboard\|account\|logout\|welcome"; then
-        log_message "INFO" "Login successful, extracting session cookies"
+	if echo "$login_response" | grep -qi "dashboard\|account\|logout\|welcome"; then
+		log_message "INFO" "Login successful, extracting session cookies"
 
-        # Debug: Show what cookies were actually set
-        log_message "INFO" "DEBUG: Cookie jar contents:"
-        if [[ -f "$cookie_jar" ]]; then
-            while read -r line; do
-                if [[ "$line" != "#"* && -n "$line" ]]; then
-                    log_message "INFO" "DEBUG COOKIE: $line"
-                fi
-            done < "$cookie_jar"
-        fi
+		# Debug: Show what cookies were actually set
+		log_message "INFO" "DEBUG: Cookie jar contents:"
+		if [[ -f "$cookie_jar" ]]; then
+			while read -r line; do
+				if [[ "$line" != "#"* && -n "$line" ]]; then
+					log_message "INFO" "DEBUG COOKIE: $line"
+				fi
+			done <"$cookie_jar"
+		fi
 
-        # Save cookies to our session format
-        if store_real_session_cookies "$cookie_jar" "$username"; then
-            log_message "INFO" "Real ProtonVPN session cookies stored successfully"
-            rm -f "$cookie_jar"
-            return 0
-        else
-            log_message "ERROR" "Failed to store session cookies"
-            rm -f "$cookie_jar"
-            return 1
-        fi
-    else
-        log_message "ERROR" "Login failed - invalid credentials or other error"
-        rm -f "$cookie_jar"
-        return 1
-    fi
+		# Save cookies to our session format
+		if store_real_session_cookies "$cookie_jar" "$username"; then
+			log_message "INFO" "Real ProtonVPN session cookies stored successfully"
+			rm -f "$cookie_jar"
+			return 0
+		else
+			log_message "ERROR" "Failed to store session cookies"
+			rm -f "$cookie_jar"
+			return 1
+		fi
+	else
+		log_message "ERROR" "Login failed - invalid credentials or other error"
+		rm -f "$cookie_jar"
+		return 1
+	fi
 }
 
 # Store real session cookies in our encrypted format
 store_real_session_cookies() {
-    local cookie_jar="$1"
-    local username="$2"
+	local cookie_jar="$1"
+	local username="$2"
 
-    if [[ ! -f "$cookie_jar" ]]; then
-        log_message "ERROR" "Cookie jar not found: $cookie_jar"
-        return 1
-    fi
+	if [[ ! -f "$cookie_jar" ]]; then
+		log_message "ERROR" "Cookie jar not found: $cookie_jar"
+		return 1
+	fi
 
-    # Extract any available cookies from jar
-    local session_id csrf_token tag_cookie
-    session_id=$(grep "Session-Id\|SessionId\|session" "$cookie_jar" 2>/dev/null | head -1 | awk '{print $7}')
-    csrf_token=$(grep -i "csrf\|token" "$cookie_jar" 2>/dev/null | head -1 | awk '{print $7}')
-    tag_cookie=$(grep "Tag" "$cookie_jar" 2>/dev/null | awk '{print $7}')
+	# Extract any available cookies from jar
+	local session_id csrf_token tag_cookie
+	session_id=$(grep "Session-Id\|SessionId\|session" "$cookie_jar" 2>/dev/null | head -1 | awk '{print $7}')
+	csrf_token=$(grep -i "csrf\|token" "$cookie_jar" 2>/dev/null | head -1 | awk '{print $7}')
+	tag_cookie=$(grep "Tag" "$cookie_jar" 2>/dev/null | awk '{print $7}')
 
-    # Use Tag cookie as session if no traditional session found
-    if [[ -z "$session_id" && -n "$tag_cookie" ]]; then
-        log_message "INFO" "Using Tag cookie as session identifier: $tag_cookie"
-        session_id="proton_tag_$tag_cookie"
-    fi
+	# Use Tag cookie as session if no traditional session found
+	if [[ -z "$session_id" && -n "$tag_cookie" ]]; then
+		log_message "INFO" "Using Tag cookie as session identifier: $tag_cookie"
+		session_id="proton_tag_$tag_cookie"
+	fi
 
-    if [[ -z "$session_id" ]]; then
-        log_message "WARN" "No usable session cookies found"
-        # Use timestamp as fallback
-        session_id="proton_fallback_$(date +%s)"
-    fi
+	if [[ -z "$session_id" ]]; then
+		log_message "WARN" "No usable session cookies found"
+		# Use timestamp as fallback
+		session_id="proton_fallback_$(date +%s)"
+	fi
 
-    # Create session data in our expected format
-    local session_data
-    session_data="TIMESTAMP=$(date +%s)
+	# Create session data in our expected format
+	local session_data
+	session_data="TIMESTAMP=$(date +%s)
 USERNAME=$username
 SESSION_ID=$session_id
 CSRF_TOKEN=$csrf_token
@@ -688,116 +692,117 @@ SESSION_VALID=true
 SESSION_TYPE=real_protonvpn
 SESSION_FINGERPRINT=$(echo "$username:$session_id" | sha256sum | cut -d' ' -f1)"
 
-    # Store encrypted session
-    local session_file="$SESSION_DIR/proton-session.state"
+	# Store encrypted session
+	local session_file="$SESSION_DIR/proton-session.state"
 
-    # Try GPG encryption first
-    if echo "$session_data" | gpg --symmetric --cipher-algo AES256 --compress-algo 1 \
-        --s2k-mode 3 --s2k-count 65536 --s2k-digest-algo SHA512 \
-        --batch --quiet --passphrase "vpn-session-$(whoami)" \
-        --output "$session_file.gpg" 2>/dev/null; then
-        log_message "INFO" "Session stored with GPG encryption"
-    else
-        log_message "WARN" "GPG encryption failed, falling back to OpenSSL"
-        echo "$session_data" | openssl enc -aes-256-cbc -salt -pbkdf2 \
-            -pass pass:"vpn-session-$(whoami)" > "$session_file.enc" 2>/dev/null || {
-            log_message "ERROR" "Both GPG and OpenSSL encryption failed"
-            return 1
-        }
-    fi
+	# Try GPG encryption first
+	if echo "$session_data" | gpg --symmetric --cipher-algo AES256 --compress-algo 1 \
+		--s2k-mode 3 --s2k-count 65536 --s2k-digest-algo SHA512 \
+		--batch --quiet --passphrase "vpn-session-$(whoami)" \
+		--output "$session_file.gpg" 2>/dev/null; then
+		log_message "INFO" "Session stored with GPG encryption"
+	else
+		log_message "WARN" "GPG encryption failed, falling back to OpenSSL"
+		echo "$session_data" | openssl enc -aes-256-cbc -salt -pbkdf2 \
+			-pass pass:"vpn-session-$(whoami)" >"$session_file.enc" 2>/dev/null || {
+			log_message "ERROR" "Both GPG and OpenSSL encryption failed"
+			return 1
+		}
+	fi
 
-    # Set secure permissions
-    chmod 600 "$session_file"* 2>/dev/null
+	# Set secure permissions
+	chmod 600 "$session_file"* 2>/dev/null
 
-    return 0
+	return 0
 }
 
 # Internal authentication function (called with lock)
 _authenticate_internal() {
-    local username="$1"
-    local password="$2"
+	local username="$1"
+	local password="$2"
 
-    log_message "INFO" "Starting ProtonVPN authentication for user: $(sanitize_log_message "$username")"
+	log_message "INFO" "Starting ProtonVPN authentication for user: $(sanitize_log_message "$username")"
 
-    # Check rate limiting
-    if ! check_rate_limit; then
-        return $ERR_RATE_LIMITED
-    fi
+	# Check rate limiting
+	if ! check_rate_limit; then
+		return $ERR_RATE_LIMITED
+	fi
 
-    # Log the request
-    log_rate_limit_request
+	# Log the request
+	log_rate_limit_request
 
-    # Comprehensive input validation
-    if [[ -z "$username" || -z "$password" ]]; then
-        log_message "ERROR" "Username and password required"
-        return $ERR_AUTH_FAILED
-    fi
+	# Comprehensive input validation
+	if [[ -z "$username" || -z "$password" ]]; then
+		log_message "ERROR" "Username and password required"
+		return $ERR_AUTH_FAILED
+	fi
 
-    # Validate username (email format)
-    if ! validate_username "$username"; then
-        return $ERR_AUTH_FAILED
-    fi
+	# Validate username (email format)
+	if ! validate_username "$username"; then
+		return $ERR_AUTH_FAILED
+	fi
 
-    # Validate password
-    if ! validate_password "$password"; then
-        return $ERR_AUTH_FAILED
-    fi
+	# Validate password
+	if ! validate_password "$password"; then
+		return $ERR_AUTH_FAILED
+	fi
 
-    # Perform real ProtonVPN web authentication
-    if perform_real_protonvpn_login "$username" "$password"; then
-        log_message "INFO" "Authentication successful"
-        return $ERR_SUCCESS
-    else
-        log_message "ERROR" "ProtonVPN authentication failed"
-        return $ERR_AUTH_FAILED
-    fi
+	# Perform real ProtonVPN web authentication
+	if perform_real_protonvpn_login "$username" "$password"; then
+		log_message "INFO" "Authentication successful"
+		return $ERR_SUCCESS
+	else
+		log_message "ERROR" "ProtonVPN authentication failed"
+		return $ERR_AUTH_FAILED
+	fi
 }
 
 # Enhanced authentication with atomic operations
 authenticate() {
-    local username="$1"
-    local password="$2"
+	local username="$1"
+	local password="$2"
 
-    # Use atomic lock to prevent concurrent authentication
-    with_auth_lock "auth-$(echo "$username" | sha256sum | cut -d' ' -f1)" _authenticate_internal "$username" "$password"
+	# Use atomic lock to prevent concurrent authentication
+	with_auth_lock "auth-$(echo "$username" | sha256sum | cut -d' ' -f1)" _authenticate_internal "$username" "$password"
 }
 
 # 2FA authentication with TOTP and replay protection
 authenticate_2fa() {
-    local username="$1"
-    local password="$2"
-    local totp_code="$3"
+	local username="$1"
+	local password="$2"
+	local totp_code="$3"
 
-    log_message "INFO" "Starting ProtonVPN 2FA authentication for user: $username"
+	log_message "INFO" "Starting ProtonVPN 2FA authentication for user: $username"
 
-    # Check rate limiting
-    if ! check_rate_limit; then
-        return $ERR_RATE_LIMITED
-    fi
+	# Check rate limiting
+	if ! check_rate_limit; then
+		return $ERR_RATE_LIMITED
+	fi
 
-    # Comprehensive TOTP validation (format, replay, timing)
-    if ! validate_totp_code "$totp_code"; then
-        log_message "ERROR" "TOTP validation failed"
-        return $ERR_2FA_REQUIRED
-    fi
+	# Comprehensive TOTP validation (format, replay, timing)
+	if ! validate_totp_code "$totp_code"; then
+		log_message "ERROR" "TOTP validation failed"
+		return $ERR_2FA_REQUIRED
+	fi
 
-    # Perform real ProtonVPN authentication with 2FA
-    if ! perform_real_protonvpn_login "$username" "$password" "$totp_code"; then
-        log_message "ERROR" "ProtonVPN 2FA authentication failed"
-        return $ERR_AUTH_FAILED
-    fi
+	# Perform real ProtonVPN authentication with 2FA
+	if ! perform_real_protonvpn_login "$username" "$password" "$totp_code"; then
+		log_message "ERROR" "ProtonVPN 2FA authentication failed"
+		return $ERR_AUTH_FAILED
+	fi
 
-    # Record TOTP usage to prevent replay
-    record_totp_usage "$totp_code"
+	# Record TOTP usage to prevent replay
+	record_totp_usage "$totp_code"
 
-    # Add 2FA validation to session (but don't store the actual code)
-    if [[ -f "$SESSION_FILE.gpg" || -f "$SESSION_FILE.enc" || -f "$SESSION_FILE" ]]; then
-        # Load and update session data
-        if load_session_data; then
-            # Create updated session data
-            local session_data
-            # shellcheck disable=SC2153
-            session_data=$(cat << EOF
+	# Add 2FA validation to session (but don't store the actual code)
+	if [[ -f "$SESSION_FILE.gpg" || -f "$SESSION_FILE.enc" || -f "$SESSION_FILE" ]]; then
+		# Load and update session data
+		if load_session_data; then
+			# Create updated session data
+			local session_data
+			# shellcheck disable=SC2153
+			session_data=$(
+				cat <<EOF
 SESSION_ID=${SESSION_ID}
 USERNAME=${USERNAME}
 CSRF_TOKEN=${CSRF_TOKEN}
@@ -808,270 +813,270 @@ SESSION_FINGERPRINT=${SESSION_FINGERPRINT}
 2FA_VALIDATED=true
 2FA_VALIDATED_AT=$(date '+%Y-%m-%dT%H:%M:%SZ')
 EOF
-)
+			)
 
-            # Re-encrypt the updated session
-            if command -v gpg >/dev/null 2>&1; then
-                echo "$session_data" | gpg --symmetric --cipher-algo AES256 --compress-algo 1 \
-                    --s2k-mode 3 --s2k-count 65536 --s2k-digest-algo SHA512 \
-                    --batch --quiet --passphrase "vpn-session-$(whoami)" \
-                    --output "$SESSION_FILE.gpg" 2>/dev/null || {
-                    log_message "WARN" "GPG encryption failed, falling back to OpenSSL"
-                    echo "$session_data" | openssl enc -aes-256-cbc -salt -pbkdf2 \
-                        -pass pass:"vpn-session-$(whoami)" > "$SESSION_FILE.enc" 2>/dev/null
-                }
-            else
-                echo "$session_data" | openssl enc -aes-256-cbc -salt -pbkdf2 \
-                    -pass pass:"vpn-session-$(whoami)" > "$SESSION_FILE.enc" 2>/dev/null
-            fi
-        fi
-    fi
+			# Re-encrypt the updated session
+			if command -v gpg >/dev/null 2>&1; then
+				echo "$session_data" | gpg --symmetric --cipher-algo AES256 --compress-algo 1 \
+					--s2k-mode 3 --s2k-count 65536 --s2k-digest-algo SHA512 \
+					--batch --quiet --passphrase "vpn-session-$(whoami)" \
+					--output "$SESSION_FILE.gpg" 2>/dev/null || {
+					log_message "WARN" "GPG encryption failed, falling back to OpenSSL"
+					echo "$session_data" | openssl enc -aes-256-cbc -salt -pbkdf2 \
+						-pass pass:"vpn-session-$(whoami)" >"$SESSION_FILE.enc" 2>/dev/null
+				}
+			else
+				echo "$session_data" | openssl enc -aes-256-cbc -salt -pbkdf2 \
+					-pass pass:"vpn-session-$(whoami)" >"$SESSION_FILE.enc" 2>/dev/null
+			fi
+		fi
+	fi
 
-    log_message "INFO" "2FA authentication successful with replay protection"
-    return $ERR_SUCCESS
+	log_message "INFO" "2FA authentication successful with replay protection"
+	return $ERR_SUCCESS
 }
 
 # Decrypt and load session data
 load_session_data() {
-    local session_content=""
+	local session_content=""
 
-    # Try to decrypt GPG session first
-    if [[ -f "$SESSION_FILE.gpg" ]]; then
-        session_content=$(gpg --decrypt --batch --quiet \
-            --passphrase "vpn-session-$(whoami)" \
-            "$SESSION_FILE.gpg" 2>/dev/null) || {
-            log_message "WARN" "GPG decryption failed, trying OpenSSL"
-        }
-    fi
+	# Try to decrypt GPG session first
+	if [[ -f "$SESSION_FILE.gpg" ]]; then
+		session_content=$(gpg --decrypt --batch --quiet \
+			--passphrase "vpn-session-$(whoami)" \
+			"$SESSION_FILE.gpg" 2>/dev/null) || {
+			log_message "WARN" "GPG decryption failed, trying OpenSSL"
+		}
+	fi
 
-    # Fallback to OpenSSL encrypted session
-    if [[ -z "$session_content" && -f "$SESSION_FILE.enc" ]]; then
-        session_content=$(openssl enc -aes-256-cbc -d -salt -pbkdf2 \
-            -pass pass:"vpn-session-$(whoami)" \
-            -in "$SESSION_FILE.enc" 2>/dev/null) || {
-            log_message "ERROR" "Failed to decrypt session data"
-            return 1
-        }
-    fi
+	# Fallback to OpenSSL encrypted session
+	if [[ -z "$session_content" && -f "$SESSION_FILE.enc" ]]; then
+		session_content=$(openssl enc -aes-256-cbc -d -salt -pbkdf2 \
+			-pass pass:"vpn-session-$(whoami)" \
+			-in "$SESSION_FILE.enc" 2>/dev/null) || {
+			log_message "ERROR" "Failed to decrypt session data"
+			return 1
+		}
+	fi
 
-    # Fallback to plaintext session (for backward compatibility)
-    if [[ -z "$session_content" && -f "$SESSION_FILE" ]]; then
-        session_content=$(cat "$SESSION_FILE" 2>/dev/null) || {
-            log_message "ERROR" "Failed to read session file"
-            return 1
-        }
-    fi
+	# Fallback to plaintext session (for backward compatibility)
+	if [[ -z "$session_content" && -f "$SESSION_FILE" ]]; then
+		session_content=$(cat "$SESSION_FILE" 2>/dev/null) || {
+			log_message "ERROR" "Failed to read session file"
+			return 1
+		}
+	fi
 
-    if [[ -z "$session_content" ]]; then
-        log_message "ERROR" "No valid session data found"
-        return 1
-    fi
+	if [[ -z "$session_content" ]]; then
+		log_message "ERROR" "No valid session data found"
+		return 1
+	fi
 
-    # Export session variables
-    eval "$session_content"
-    return 0
+	# Export session variables
+	eval "$session_content"
+	return 0
 }
 
 # Validate current session
 validate_session() {
-    # Check if any session files exist
-    if [[ ! -f "$SESSION_FILE.gpg" && ! -f "$SESSION_FILE.enc" && ! -f "$SESSION_FILE" ]]; then
-        log_message "ERROR" "No active session found"
-        return $ERR_SESSION_EXPIRED
-    fi
+	# Check if any session files exist
+	if [[ ! -f "$SESSION_FILE.gpg" && ! -f "$SESSION_FILE.enc" && ! -f "$SESSION_FILE" ]]; then
+		log_message "ERROR" "No active session found"
+		return $ERR_SESSION_EXPIRED
+	fi
 
-    # Load and decrypt session data
-    if ! load_session_data; then
-        log_message "ERROR" "Failed to load session data"
-        return $ERR_SESSION_EXPIRED
-    fi
+	# Load and decrypt session data
+	if ! load_session_data; then
+		log_message "ERROR" "Failed to load session data"
+		return $ERR_SESSION_EXPIRED
+	fi
 
-    # Check session validity
-    if [[ "$SESSION_VALID" != "true" ]]; then
-        log_message "ERROR" "Session is not valid"
-        return $ERR_SESSION_EXPIRED
-    fi
+	# Check session validity
+	if [[ "$SESSION_VALID" != "true" ]]; then
+		log_message "ERROR" "Session is not valid"
+		return $ERR_SESSION_EXPIRED
+	fi
 
-    # Validate session fingerprint (anti-hijacking protection)
-    if [[ -n "$SESSION_FINGERPRINT" ]]; then
-        local expected_fingerprint
-        # shellcheck disable=SC2153
-        expected_fingerprint=$(echo "$SESSION_ID$USERNAME" | sha256sum | cut -d' ' -f1)
-        if [[ "$SESSION_FINGERPRINT" != "$expected_fingerprint" ]]; then
-            log_message "ERROR" "Session fingerprint mismatch - possible hijacking attempt"
-            # Invalidate compromised session
-            logout >/dev/null 2>&1
-            return $ERR_SESSION_EXPIRED
-        fi
-    fi
+	# Validate session fingerprint (anti-hijacking protection)
+	if [[ -n "$SESSION_FINGERPRINT" ]]; then
+		local expected_fingerprint
+		# shellcheck disable=SC2153
+		expected_fingerprint=$(echo "$SESSION_ID$USERNAME" | sha256sum | cut -d' ' -f1)
+		if [[ "$SESSION_FINGERPRINT" != "$expected_fingerprint" ]]; then
+			log_message "ERROR" "Session fingerprint mismatch - possible hijacking attempt"
+			# Invalidate compromised session
+			logout >/dev/null 2>&1
+			return $ERR_SESSION_EXPIRED
+		fi
+	fi
 
-    # Check expiration
-    local current_time
-    current_time=$(date +%s)
-    local expires_timestamp
-    # shellcheck disable=SC2153
-    expires_timestamp=$(date -d "$EXPIRES_AT" +%s 2>/dev/null || echo "0")
+	# Check expiration
+	local current_time
+	current_time=$(date +%s)
+	local expires_timestamp
+	# shellcheck disable=SC2153
+	expires_timestamp=$(date -d "$EXPIRES_AT" +%s 2>/dev/null || echo "0")
 
-    if (( current_time > expires_timestamp )); then
-        log_message "ERROR" "Session has expired"
-        return $ERR_SESSION_EXPIRED
-    fi
+	if ((current_time > expires_timestamp)); then
+		log_message "ERROR" "Session has expired"
+		return $ERR_SESSION_EXPIRED
+	fi
 
-    # Output session information
-    # shellcheck disable=SC2153
-    echo "SESSION_ID=$SESSION_ID"
-    # shellcheck disable=SC2153
-    echo "CSRF_TOKEN=$CSRF_TOKEN"
-    # shellcheck disable=SC2153
-    echo "EXPIRES_AT=$EXPIRES_AT"
-    # shellcheck disable=SC2153
-    echo "SESSION_VALID=$SESSION_VALID"
-    echo "RATE_LIMIT_REMAINING=2"  # Placeholder for GREEN phase
+	# Output session information
+	# shellcheck disable=SC2153
+	echo "SESSION_ID=$SESSION_ID"
+	# shellcheck disable=SC2153
+	echo "CSRF_TOKEN=$CSRF_TOKEN"
+	# shellcheck disable=SC2153
+	echo "EXPIRES_AT=$EXPIRES_AT"
+	# shellcheck disable=SC2153
+	echo "SESSION_VALID=$SESSION_VALID"
+	echo "RATE_LIMIT_REMAINING=2" # Placeholder for GREEN phase
 
-    return $ERR_SUCCESS
+	return $ERR_SUCCESS
 }
 
 # Get session information
 get_session_info() {
-    validate_session
+	validate_session
 }
 
 # Test integration with Phase 0 components
 test_integration() {
-    log_message "INFO" "Testing integration with Phase 0 security components"
+	log_message "INFO" "Testing integration with Phase 0 security components"
 
-    # Test secure credential manager
-    local cred_manager="$SECURITY_DIR/secure-credential-manager"
-    if [[ ! -x "$cred_manager" ]]; then
-        log_message "ERROR" "Secure credential manager not found or not executable"
-        return $ERR_CONFIG_ERROR
-    fi
+	# Test secure credential manager
+	local cred_manager="$SECURITY_DIR/secure-credential-manager"
+	if [[ ! -x "$cred_manager" ]]; then
+		log_message "ERROR" "Secure credential manager not found or not executable"
+		return $ERR_CONFIG_ERROR
+	fi
 
-    # Test TOTP authenticator
-    local totp_auth="$SECURITY_DIR/totp-authenticator"
-    if [[ ! -x "$totp_auth" ]]; then
-        log_message "ERROR" "TOTP authenticator not found or not executable"
-        return $ERR_CONFIG_ERROR
-    fi
+	# Test TOTP authenticator
+	local totp_auth="$SECURITY_DIR/totp-authenticator"
+	if [[ ! -x "$totp_auth" ]]; then
+		log_message "ERROR" "TOTP authenticator not found or not executable"
+		return $ERR_CONFIG_ERROR
+	fi
 
-    # Test basic functionality
-    if ! "$cred_manager" help > /dev/null 2>&1; then
-        log_message "ERROR" "Credential manager help command failed"
-        return $ERR_CONFIG_ERROR
-    fi
+	# Test basic functionality
+	if ! "$cred_manager" help >/dev/null 2>&1; then
+		log_message "ERROR" "Credential manager help command failed"
+		return $ERR_CONFIG_ERROR
+	fi
 
-    if ! "$totp_auth" help > /dev/null 2>&1; then
-        log_message "ERROR" "TOTP authenticator help command failed"
-        return $ERR_CONFIG_ERROR
-    fi
+	if ! "$totp_auth" help >/dev/null 2>&1; then
+		log_message "ERROR" "TOTP authenticator help command failed"
+		return $ERR_CONFIG_ERROR
+	fi
 
-    log_message "INFO" "Phase 0 integration test successful"
-    return $ERR_SUCCESS
+	log_message "INFO" "Phase 0 integration test successful"
+	return $ERR_SUCCESS
 }
 
 # Refresh session (placeholder for GREEN phase)
 refresh_session() {
-    log_message "INFO" "Refreshing session (placeholder implementation)"
-    validate_session
+	log_message "INFO" "Refreshing session (placeholder implementation)"
+	validate_session
 }
 
 # Logout and clean session (secure cleanup)
 logout() {
-    log_message "INFO" "Logging out and cleaning session"
+	log_message "INFO" "Logging out and cleaning session"
 
-    # Securely remove all session files
-    local files_removed=0
+	# Securely remove all session files
+	local files_removed=0
 
-    # Remove GPG encrypted sessions
-    if [[ -f "$SESSION_FILE.gpg" ]]; then
-        shred -vfz -n 3 "$SESSION_FILE.gpg" 2>/dev/null || rm -f "$SESSION_FILE.gpg"
-        ((files_removed++))
-    fi
+	# Remove GPG encrypted sessions
+	if [[ -f "$SESSION_FILE.gpg" ]]; then
+		shred -vfz -n 3 "$SESSION_FILE.gpg" 2>/dev/null || rm -f "$SESSION_FILE.gpg"
+		((files_removed++))
+	fi
 
-    # Remove OpenSSL encrypted sessions
-    if [[ -f "$SESSION_FILE.enc" ]]; then
-        shred -vfz -n 3 "$SESSION_FILE.enc" 2>/dev/null || rm -f "$SESSION_FILE.enc"
-        ((files_removed++))
-    fi
+	# Remove OpenSSL encrypted sessions
+	if [[ -f "$SESSION_FILE.enc" ]]; then
+		shred -vfz -n 3 "$SESSION_FILE.enc" 2>/dev/null || rm -f "$SESSION_FILE.enc"
+		((files_removed++))
+	fi
 
-    # Remove plaintext sessions (legacy)
-    if [[ -f "$SESSION_FILE" ]]; then
-        shred -vfz -n 3 "$SESSION_FILE" 2>/dev/null || rm -f "$SESSION_FILE"
-        ((files_removed++))
-    fi
+	# Remove plaintext sessions (legacy)
+	if [[ -f "$SESSION_FILE" ]]; then
+		shred -vfz -n 3 "$SESSION_FILE" 2>/dev/null || rm -f "$SESSION_FILE"
+		((files_removed++))
+	fi
 
-    # Remove CSRF token files
-    if [[ -f "$CSRF_TOKEN_FILE.gpg" ]]; then
-        shred -vfz -n 3 "$CSRF_TOKEN_FILE.gpg" 2>/dev/null || rm -f "$CSRF_TOKEN_FILE.gpg"
-        ((files_removed++))
-    fi
+	# Remove CSRF token files
+	if [[ -f "$CSRF_TOKEN_FILE.gpg" ]]; then
+		shred -vfz -n 3 "$CSRF_TOKEN_FILE.gpg" 2>/dev/null || rm -f "$CSRF_TOKEN_FILE.gpg"
+		((files_removed++))
+	fi
 
-    if [[ -f "$CSRF_TOKEN_FILE.enc" ]]; then
-        shred -vfz -n 3 "$CSRF_TOKEN_FILE.enc" 2>/dev/null || rm -f "$CSRF_TOKEN_FILE.enc"
-        ((files_removed++))
-    fi
+	if [[ -f "$CSRF_TOKEN_FILE.enc" ]]; then
+		shred -vfz -n 3 "$CSRF_TOKEN_FILE.enc" 2>/dev/null || rm -f "$CSRF_TOKEN_FILE.enc"
+		((files_removed++))
+	fi
 
-    if [[ -f "$CSRF_TOKEN_FILE" ]]; then
-        shred -vfz -n 3 "$CSRF_TOKEN_FILE" 2>/dev/null || rm -f "$CSRF_TOKEN_FILE"
-        ((files_removed++))
-    fi
+	if [[ -f "$CSRF_TOKEN_FILE" ]]; then
+		shred -vfz -n 3 "$CSRF_TOKEN_FILE" 2>/dev/null || rm -f "$CSRF_TOKEN_FILE"
+		((files_removed++))
+	fi
 
-    if [[ $files_removed -gt 0 ]]; then
-        log_message "INFO" "Session cleaned successfully ($files_removed files removed)"
-    else
-        log_message "INFO" "No session files found to clean"
-    fi
+	if [[ $files_removed -gt 0 ]]; then
+		log_message "INFO" "Session cleaned successfully ($files_removed files removed)"
+	else
+		log_message "INFO" "No session files found to clean"
+	fi
 
-    return $ERR_SUCCESS
+	return $ERR_SUCCESS
 }
 
 # Main command dispatcher
 main() {
-    local command="${1:-help}"
+	local command="${1:-help}"
 
-    case "$command" in
-        help|--help|-h)
-            show_help
-            return $ERR_SUCCESS
-            ;;
-        authenticate)
-            if [[ $# -lt 3 ]]; then
-                log_message "ERROR" "authenticate requires username and password"
-                return $ERR_CONFIG_ERROR
-            fi
-            authenticate "$2" "$3"
-            ;;
-        authenticate-2fa)
-            if [[ $# -lt 4 ]]; then
-                log_message "ERROR" "authenticate-2fa requires username, password, and TOTP code"
-                return $ERR_CONFIG_ERROR
-            fi
-            authenticate_2fa "$2" "$3" "$4"
-            ;;
-        validate-session)
-            validate_session
-            ;;
-        get-session-info)
-            get_session_info
-            ;;
-        test-integration)
-            test_integration
-            ;;
-        refresh-session)
-            refresh_session
-            ;;
-        logout)
-            logout
-            ;;
-        *)
-            log_message "ERROR" "Unknown command: $command"
-            log_message "INFO" "Use 'proton-auth help' for usage information"
-            return $ERR_CONFIG_ERROR
-            ;;
-    esac
+	case "$command" in
+	help | --help | -h)
+		show_help
+		return $ERR_SUCCESS
+		;;
+	authenticate)
+		if [[ $# -lt 3 ]]; then
+			log_message "ERROR" "authenticate requires username and password"
+			return $ERR_CONFIG_ERROR
+		fi
+		authenticate "$2" "$3"
+		;;
+	authenticate-2fa)
+		if [[ $# -lt 4 ]]; then
+			log_message "ERROR" "authenticate-2fa requires username, password, and TOTP code"
+			return $ERR_CONFIG_ERROR
+		fi
+		authenticate_2fa "$2" "$3" "$4"
+		;;
+	validate-session)
+		validate_session
+		;;
+	get-session-info)
+		get_session_info
+		;;
+	test-integration)
+		test_integration
+		;;
+	refresh-session)
+		refresh_session
+		;;
+	logout)
+		logout
+		;;
+	*)
+		log_message "ERROR" "Unknown command: $command"
+		log_message "INFO" "Use 'proton-auth help' for usage information"
+		return $ERR_CONFIG_ERROR
+		;;
+	esac
 }
 
 # Run main function if script is executed directly
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
-    main "$@"
+	main "$@"
 fi

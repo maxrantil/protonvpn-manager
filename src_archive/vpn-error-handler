@@ -16,10 +16,10 @@ readonly NC='\033[0m'
 
 # Text-based indicators for accessibility (screen readers)
 readonly ERROR_SYMBOLS=(
-    [1]="[CRITICAL]"
-    [2]="[ERROR]"
-    [3]="[WARNING]"
-    [4]="[INFO]"
+	[1]="[CRITICAL]"
+	[2]="[ERROR]"
+	[3]="[WARNING]"
+	[4]="[INFO]"
 )
 
 # Error categories for better organization
@@ -39,26 +39,26 @@ readonly COMP_FIX_OVPN="OVPN-FIXER"
 
 # Error message templates for common scenarios
 declare -A ERROR_TEMPLATES=(
-    ["FILE_NOT_FOUND"]="Configuration file not found"
-    ["PERMISSION_DENIED"]="Permission denied for operation"
-    ["NETWORK_UNAVAILABLE"]="Network connection not available"
-    ["PROCESS_FAILED"]="Process operation failed"
-    ["CONFIG_INVALID"]="Configuration file contains errors"
-    ["DEPENDENCY_MISSING"]="Required system dependencies missing"
-    ["CREDENTIALS_MISSING"]="VPN credentials file not found"
-    ["MULTIPLE_PROCESSES"]="Multiple VPN processes detected"
+	["FILE_NOT_FOUND"]="Configuration file not found"
+	["PERMISSION_DENIED"]="Permission denied for operation"
+	["NETWORK_UNAVAILABLE"]="Network connection not available"
+	["PROCESS_FAILED"]="Process operation failed"
+	["CONFIG_INVALID"]="Configuration file contains errors"
+	["DEPENDENCY_MISSING"]="Required system dependencies missing"
+	["CREDENTIALS_MISSING"]="VPN credentials file not found"
+	["MULTIPLE_PROCESSES"]="Multiple VPN processes detected"
 )
 
 # Action suggestions for common error scenarios
 declare -A ERROR_ACTIONS=(
-    ["FILE_NOT_FOUND"]="Verify file path exists and check read permissions"
-    ["PERMISSION_DENIED"]="Run with 'sudo' or check file ownership and permissions"
-    ["NETWORK_UNAVAILABLE"]="Check network connection and DNS settings"
-    ["PROCESS_FAILED"]="Try running cleanup command or restart VPN service"
-    ["CONFIG_INVALID"]="Check configuration file syntax and required fields"
-    ["DEPENDENCY_MISSING"]="Install missing packages with your system package manager"
-    ["CREDENTIALS_MISSING"]="Create credentials file with username and password (one per line)"
-    ["MULTIPLE_PROCESSES"]="Run 'vpn cleanup' to resolve process conflicts"
+	["FILE_NOT_FOUND"]="Verify file path exists and check read permissions"
+	["PERMISSION_DENIED"]="Run with 'sudo' or check file ownership and permissions"
+	["NETWORK_UNAVAILABLE"]="Check network connection and DNS settings"
+	["PROCESS_FAILED"]="Try running cleanup command or restart VPN service"
+	["CONFIG_INVALID"]="Check configuration file syntax and required fields"
+	["DEPENDENCY_MISSING"]="Install missing packages with your system package manager"
+	["CREDENTIALS_MISSING"]="Create credentials file with username and password (one per line)"
+	["MULTIPLE_PROCESSES"]="Run 'vpn cleanup' to resolve process conflicts"
 )
 
 # Central error logging directory (allow override for testing)
@@ -67,209 +67,224 @@ ERROR_LOG="$VPN_LOG_DIR/vpn_errors.log"
 
 # Main error reporting function - WCAG AA compliant
 vpn_error() {
-    local severity="$1"
-    local component="$2"
-    local category="$3"
-    local message="$4"
-    local context="${5:-}"
-    local suggestion="${6:-}"
-    local error_id="${7:-}"
+	local severity="$1"
+	local component="$2"
+	local category="$3"
+	local message="$4"
+	local context="${5:-}"
+	local suggestion="${6:-}"
+	local error_id="${7:-}"
 
-    # Input validation - allow empty context, suggestion, error_id
-    if [[ -z "$severity" || -z "$component" || -z "$category" || -z "$message" ]]; then
-        echo "[INTERNAL ERROR] vpn_error called with insufficient parameters (severity='$severity' component='$component' category='$category' message='$message')" >&2
-        return 1
-    fi
+	# Input validation - allow empty context, suggestion, error_id
+	if [[ -z "$severity" || -z "$component" || -z "$category" || -z "$message" ]]; then
+		echo "[INTERNAL ERROR] vpn_error called with insufficient parameters (severity='$severity' component='$component' category='$category' message='$message')" >&2
+		return 1
+	fi
 
-    # Map severity to display properties
-    local level_text color_code
-    case "$severity" in
-        "$ERROR_CRITICAL") level_text="CRITICAL"; color_code="$RED" ;;
-        "$ERROR_HIGH")     level_text="ERROR";    color_code="$RED" ;;
-        "$ERROR_MEDIUM")   level_text="WARNING";  color_code="$YELLOW" ;;
-        "$ERROR_INFO")     level_text="INFO";     color_code="$BLUE" ;;
-        *) level_text="ERROR"; color_code="$RED" ;;
-    esac
+	# Map severity to display properties
+	local level_text color_code
+	case "$severity" in
+	"$ERROR_CRITICAL")
+		level_text="CRITICAL"
+		color_code="$RED"
+		;;
+	"$ERROR_HIGH")
+		level_text="ERROR"
+		color_code="$RED"
+		;;
+	"$ERROR_MEDIUM")
+		level_text="WARNING"
+		color_code="$YELLOW"
+		;;
+	"$ERROR_INFO")
+		level_text="INFO"
+		color_code="$BLUE"
+		;;
+	*)
+		level_text="ERROR"
+		color_code="$RED"
+		;;
+	esac
 
-    # Accessible error format (screen reader friendly)
-    local symbol="${ERROR_SYMBOLS[$severity]:-[ERROR]}"
+	# Accessible error format (screen reader friendly)
+	local symbol="${ERROR_SYMBOLS[$severity]:-[ERROR]}"
 
-    # Primary error message - always shown
-    echo -e "${color_code}${symbol} ${category}: ${message}${NC}" >&2
-    echo "COMPONENT: $component" >&2
+	# Primary error message - always shown
+	echo -e "${color_code}${symbol} ${category}: ${message}${NC}" >&2
+	echo "COMPONENT: $component" >&2
 
-    # Additional context if provided
-    [[ -n "$context" ]] && echo "DETAILS: $context" >&2
+	# Additional context if provided
+	[[ -n "$context" ]] && echo "DETAILS: $context" >&2
 
-    # Action guidance - critical for accessibility
-    if [[ -n "$suggestion" ]]; then
-        echo -e "${YELLOW}NEXT STEPS: $suggestion${NC}" >&2
-    elif [[ -n "${ERROR_ACTIONS[$category]}" ]]; then
-        echo -e "${YELLOW}NEXT STEPS: ${ERROR_ACTIONS[$category]}${NC}" >&2
-    fi
+	# Action guidance - critical for accessibility
+	if [[ -n "$suggestion" ]]; then
+		echo -e "${YELLOW}NEXT STEPS: $suggestion${NC}" >&2
+	elif [[ -n "${ERROR_ACTIONS[$category]}" ]]; then
+		echo -e "${YELLOW}NEXT STEPS: ${ERROR_ACTIONS[$category]}${NC}" >&2
+	fi
 
-    # Error ID for help system
-    [[ -n "$error_id" ]] && echo "ERROR ID: $error_id (run 'vpn help error $error_id' for details)" >&2
+	# Error ID for help system
+	[[ -n "$error_id" ]] && echo "ERROR ID: $error_id (run 'vpn help error $error_id' for details)" >&2
 
-    # Always log errors for debugging and analytics
-    log_error "$level_text" "$component" "$category" "$message" "$context"
+	# Always log errors for debugging and analytics
+	log_error "$level_text" "$component" "$category" "$message" "$context"
 
-    # Return appropriate exit code
-    case "$severity" in
-        "$ERROR_CRITICAL"|"$ERROR_HIGH") return 1 ;;
-        "$ERROR_MEDIUM") return 2 ;;
-        "$ERROR_INFO") return 0 ;;
-    esac
+	# Return appropriate exit code
+	case "$severity" in
+	"$ERROR_CRITICAL" | "$ERROR_HIGH") return 1 ;;
+	"$ERROR_MEDIUM") return 2 ;;
+	"$ERROR_INFO") return 0 ;;
+	esac
 }
 
 # Specialized error functions for common scenarios
 file_not_found_error() {
-    local component="$1"
-    local file_path="$2"
-    local suggestion="${3:-}"
+	local component="$1"
+	local file_path="$2"
+	local suggestion="${3:-}"
 
-    vpn_error "$ERROR_HIGH" "$component" "$ERR_FILE_ACCESS" \
-        "${ERROR_TEMPLATES[FILE_NOT_FOUND]}" \
-        "Location: $file_path" \
-        "$suggestion"
+	vpn_error "$ERROR_HIGH" "$component" "$ERR_FILE_ACCESS" \
+		"${ERROR_TEMPLATES[FILE_NOT_FOUND]}" \
+		"Location: $file_path" \
+		"$suggestion"
 }
 
 permission_error() {
-    local component="$1"
-    local operation="$2"
-    local resource="$3"
+	local component="$1"
+	local operation="$2"
+	local resource="$3"
 
-    vpn_error "$ERROR_HIGH" "$component" "$ERR_PERMISSION" \
-        "${ERROR_TEMPLATES[PERMISSION_DENIED]}" \
-        "Operation: $operation on $resource" \
-        "${ERROR_ACTIONS[PERMISSION_DENIED]}"
+	vpn_error "$ERROR_HIGH" "$component" "$ERR_PERMISSION" \
+		"${ERROR_TEMPLATES[PERMISSION_DENIED]}" \
+		"Operation: $operation on $resource" \
+		"${ERROR_ACTIONS[PERMISSION_DENIED]}"
 }
 
 network_error() {
-    local component="$1"
-    local details="$2"
-    local suggestion="${3:-${ERROR_ACTIONS[NETWORK_UNAVAILABLE]}}"
+	local component="$1"
+	local details="$2"
+	local suggestion="${3:-${ERROR_ACTIONS[NETWORK_UNAVAILABLE]}}"
 
-    vpn_error "$ERROR_HIGH" "$component" "$ERR_NETWORK" \
-        "${ERROR_TEMPLATES[NETWORK_UNAVAILABLE]}" \
-        "$details" \
-        "$suggestion"
+	vpn_error "$ERROR_HIGH" "$component" "$ERR_NETWORK" \
+		"${ERROR_TEMPLATES[NETWORK_UNAVAILABLE]}" \
+		"$details" \
+		"$suggestion"
 }
 
 process_error() {
-    local component="$1"
-    local operation="$2"
-    local details="$3"
-    local suggestion="${4:-${ERROR_ACTIONS[PROCESS_FAILED]}}"
+	local component="$1"
+	local operation="$2"
+	local details="$3"
+	local suggestion="${4:-${ERROR_ACTIONS[PROCESS_FAILED]}}"
 
-    vpn_error "$ERROR_HIGH" "$component" "$ERR_PROCESS" \
-        "${ERROR_TEMPLATES[PROCESS_FAILED]}" \
-        "Operation: $operation - $details" \
-        "$suggestion"
+	vpn_error "$ERROR_HIGH" "$component" "$ERR_PROCESS" \
+		"${ERROR_TEMPLATES[PROCESS_FAILED]}" \
+		"Operation: $operation - $details" \
+		"$suggestion"
 }
 
 config_error() {
-    local component="$1"
-    local config_type="$2"
-    local issue="$3"
-    local suggestion="${4:-${ERROR_ACTIONS[CONFIG_INVALID]}}"
+	local component="$1"
+	local config_type="$2"
+	local issue="$3"
+	local suggestion="${4:-${ERROR_ACTIONS[CONFIG_INVALID]}}"
 
-    vpn_error "$ERROR_HIGH" "$component" "$ERR_CONFIG" \
-        "${ERROR_TEMPLATES[CONFIG_INVALID]}" \
-        "Type: $config_type - Issue: $issue" \
-        "$suggestion"
+	vpn_error "$ERROR_HIGH" "$component" "$ERR_CONFIG" \
+		"${ERROR_TEMPLATES[CONFIG_INVALID]}" \
+		"Type: $config_type - Issue: $issue" \
+		"$suggestion"
 }
 
 dependency_error() {
-    local component="$1"
-    local missing_deps="$2"
-    local install_cmd="${3:-}"
+	local component="$1"
+	local missing_deps="$2"
+	local install_cmd="${3:-}"
 
-    local suggestion="${ERROR_ACTIONS[DEPENDENCY_MISSING]}"
-    [[ -n "$install_cmd" ]] && suggestion="Install with: $install_cmd"
+	local suggestion="${ERROR_ACTIONS[DEPENDENCY_MISSING]}"
+	[[ -n "$install_cmd" ]] && suggestion="Install with: $install_cmd"
 
-    vpn_error "$ERROR_HIGH" "$component" "$ERR_DEPENDENCY" \
-        "${ERROR_TEMPLATES[DEPENDENCY_MISSING]}" \
-        "Missing: $missing_deps" \
-        "$suggestion"
+	vpn_error "$ERROR_HIGH" "$component" "$ERR_DEPENDENCY" \
+		"${ERROR_TEMPLATES[DEPENDENCY_MISSING]}" \
+		"Missing: $missing_deps" \
+		"$suggestion"
 }
 
 # Critical process health error
 critical_process_error() {
-    local component="$1"
-    local process_count="$2"
-    local impact="$3"
+	local component="$1"
+	local process_count="$2"
+	local impact="$3"
 
-    vpn_error "$ERROR_CRITICAL" "$component" "$ERR_PROCESS" \
-        "${ERROR_TEMPLATES[MULTIPLE_PROCESSES]} ($process_count active)" \
-        "Impact: $impact" \
-        "IMMEDIATE ACTION: Run 'vpn cleanup' to resolve safely"
+	vpn_error "$ERROR_CRITICAL" "$component" "$ERR_PROCESS" \
+		"${ERROR_TEMPLATES[MULTIPLE_PROCESSES]} ($process_count active)" \
+		"Impact: $impact" \
+		"IMMEDIATE ACTION: Run 'vpn cleanup' to resolve safely"
 }
 
 # Information message (non-error)
 vpn_info() {
-    local component="$1"
-    local message="$2"
-    local details="${3:-}"
+	local component="$1"
+	local message="$2"
+	local details="${3:-}"
 
-    echo -e "${BLUE}[INFO] $component: $message${NC}"
-    [[ -n "$details" ]] && echo "Details: $details"
+	echo -e "${BLUE}[INFO] $component: $message${NC}"
+	[[ -n "$details" ]] && echo "Details: $details"
 }
 
 # Success message
 vpn_success() {
-    local component="$1"
-    local message="$2"
+	local component="$1"
+	local message="$2"
 
-    echo -e "\033[1;32m[SUCCESS] $component: $message\033[0m"
+	echo -e "\033[1;32m[SUCCESS] $component: $message\033[0m"
 }
 
 # Warning message (non-blocking)
 vpn_warn() {
-    local component="$1"
-    local message="$2"
-    local suggestion="${3:-}"
+	local component="$1"
+	local message="$2"
+	local suggestion="${3:-}"
 
-    echo -e "${YELLOW}[WARNING] $component: $message${NC}" >&2
-    [[ -n "$suggestion" ]] && echo -e "${YELLOW}Consider: $suggestion${NC}" >&2
+	echo -e "${YELLOW}[WARNING] $component: $message${NC}" >&2
+	[[ -n "$suggestion" ]] && echo -e "${YELLOW}Consider: $suggestion${NC}" >&2
 }
 
 # Private logging function
 log_error() {
-    local level="$1"
-    local component="$2"
-    local category="$3"
-    local message="$4"
-    local context="${5:-}"
+	local level="$1"
+	local component="$2"
+	local category="$3"
+	local message="$4"
+	local context="${5:-}"
 
-    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
-    local log_entry="[$timestamp] [$level] [$component] [$category] $message"
-    [[ -n "$context" ]] && log_entry="$log_entry | Context: $context"
+	local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+	local log_entry="[$timestamp] [$level] [$component] [$category] $message"
+	[[ -n "$context" ]] && log_entry="$log_entry | Context: $context"
 
-    # Ensure log directory exists and is writable
-    if [[ -w "$VPN_LOG_DIR" ]] || mkdir -p "$VPN_LOG_DIR" 2>/dev/null; then
-        echo "$log_entry" >> "$ERROR_LOG" 2>/dev/null || true
-    fi
+	# Ensure log directory exists and is writable
+	if [[ -w "$VPN_LOG_DIR" ]] || mkdir -p "$VPN_LOG_DIR" 2>/dev/null; then
+		echo "$log_entry" >>"$ERROR_LOG" 2>/dev/null || true
+	fi
 }
 
 # Progressive error disclosure support
 display_error_summary() {
-    echo -e "\n${BLUE}Recent VPN Errors Summary:${NC}"
-    if [[ -f "$ERROR_LOG" ]]; then
-        tail -5 "$ERROR_LOG" | while IFS= read -r line; do
-            echo "  $line"
-        done
-        echo -e "\nRun 'vpn errors --full' to see complete error log"
-        echo "Run 'vpn help troubleshooting' for common solutions"
-    else
-        echo "No recent errors found."
-    fi
+	echo -e "\n${BLUE}Recent VPN Errors Summary:${NC}"
+	if [[ -f "$ERROR_LOG" ]]; then
+		tail -5 "$ERROR_LOG" | while IFS= read -r line; do
+			echo "  $line"
+		done
+		echo -e "\nRun 'vpn errors --full' to see complete error log"
+		echo "Run 'vpn help troubleshooting' for common solutions"
+	else
+		echo "No recent errors found."
+	fi
 }
 
 # Check if error handling is being sourced correctly
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
-    echo "VPN Error Handler Library - Do not run directly"
-    echo "Source this file from other VPN components:"
-    echo "  source \"\$VPN_DIR/vpn-error-handler\""
-    exit 1
+	echo "VPN Error Handler Library - Do not run directly"
+	echo "Source this file from other VPN components:"
+	echo "  source \"\$VPN_DIR/vpn-error-handler\""
+	exit 1
 fi

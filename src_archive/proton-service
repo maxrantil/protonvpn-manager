@@ -15,259 +15,259 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 log_info() {
-    echo -e "${GREEN}[INFO]${NC} $1"
+	echo -e "${GREEN}[INFO]${NC} $1"
 }
 
 log_warn() {
-    echo -e "${YELLOW}[WARN]${NC} $1"
+	echo -e "${YELLOW}[WARN]${NC} $1"
 }
 
 log_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
+	echo -e "${RED}[ERROR]${NC} $1"
 }
 
 log_cmd() {
-    echo -e "${BLUE}[CMD]${NC} $1"
+	echo -e "${BLUE}[CMD]${NC} $1"
 }
 
 # Detect service system
 detect_service_system() {
-    if command -v sv >/dev/null 2>&1; then
-        echo "runit"
-    elif command -v systemctl >/dev/null 2>&1; then
-        echo "systemd"
-    else
-        echo "none"
-    fi
+	if command -v sv >/dev/null 2>&1; then
+		echo "runit"
+	elif command -v systemctl >/dev/null 2>&1; then
+		echo "systemd"
+	else
+		echo "none"
+	fi
 }
 
 # Service control functions
 service_start() {
-    local service_type=$(detect_service_system)
+	local service_type=$(detect_service_system)
 
-    case "$service_type" in
-        runit)
-            log_cmd "sv start $SERVICE_NAME"
-            sv start "$SERVICE_NAME"
-            ;;
-        systemd)
-            log_cmd "systemctl start $SERVICE_NAME"
-            systemctl start "$SERVICE_NAME"
-            ;;
-        none)
-            log_error "No supported service system found (runit/systemd)"
-            return 1
-            ;;
-    esac
+	case "$service_type" in
+	runit)
+		log_cmd "sv start $SERVICE_NAME"
+		sv start "$SERVICE_NAME"
+		;;
+	systemd)
+		log_cmd "systemctl start $SERVICE_NAME"
+		systemctl start "$SERVICE_NAME"
+		;;
+	none)
+		log_error "No supported service system found (runit/systemd)"
+		return 1
+		;;
+	esac
 }
 
 service_stop() {
-    local service_type=$(detect_service_system)
+	local service_type=$(detect_service_system)
 
-    case "$service_type" in
-        runit)
-            log_cmd "sv stop $SERVICE_NAME"
-            sv stop "$SERVICE_NAME"
-            ;;
-        systemd)
-            log_cmd "systemctl stop $SERVICE_NAME"
-            systemctl stop "$SERVICE_NAME"
-            ;;
-        none)
-            log_error "No supported service system found (runit/systemd)"
-            return 1
-            ;;
-    esac
+	case "$service_type" in
+	runit)
+		log_cmd "sv stop $SERVICE_NAME"
+		sv stop "$SERVICE_NAME"
+		;;
+	systemd)
+		log_cmd "systemctl stop $SERVICE_NAME"
+		systemctl stop "$SERVICE_NAME"
+		;;
+	none)
+		log_error "No supported service system found (runit/systemd)"
+		return 1
+		;;
+	esac
 }
 
 service_restart() {
-    local service_type=$(detect_service_system)
+	local service_type=$(detect_service_system)
 
-    case "$service_type" in
-        runit)
-            log_cmd "sv restart $SERVICE_NAME"
-            sv restart "$SERVICE_NAME"
-            ;;
-        systemd)
-            log_cmd "systemctl restart $SERVICE_NAME"
-            systemctl restart "$SERVICE_NAME"
-            ;;
-        none)
-            log_error "No supported service system found (runit/systemd)"
-            return 1
-            ;;
-    esac
+	case "$service_type" in
+	runit)
+		log_cmd "sv restart $SERVICE_NAME"
+		sv restart "$SERVICE_NAME"
+		;;
+	systemd)
+		log_cmd "systemctl restart $SERVICE_NAME"
+		systemctl restart "$SERVICE_NAME"
+		;;
+	none)
+		log_error "No supported service system found (runit/systemd)"
+		return 1
+		;;
+	esac
 }
 
 service_status() {
-    local service_type=$(detect_service_system)
+	local service_type=$(detect_service_system)
 
-    log_info "Service System: $service_type"
-    log_info "Service Name: $SERVICE_NAME"
-    echo
+	log_info "Service System: $service_type"
+	log_info "Service Name: $SERVICE_NAME"
+	echo
 
-    case "$service_type" in
-        runit)
-            log_cmd "sv status $SERVICE_NAME"
-            sv status "$SERVICE_NAME" || log_warn "Service not found or not running"
-            ;;
-        systemd)
-            log_cmd "systemctl status $SERVICE_NAME"
-            systemctl status "$SERVICE_NAME" --no-pager || log_warn "Service not found or not running"
-            ;;
-        none)
-            log_error "No supported service system found (runit/systemd)"
-            return 1
-            ;;
-    esac
+	case "$service_type" in
+	runit)
+		log_cmd "sv status $SERVICE_NAME"
+		sv status "$SERVICE_NAME" || log_warn "Service not found or not running"
+		;;
+	systemd)
+		log_cmd "systemctl status $SERVICE_NAME"
+		systemctl status "$SERVICE_NAME" --no-pager || log_warn "Service not found or not running"
+		;;
+	none)
+		log_error "No supported service system found (runit/systemd)"
+		return 1
+		;;
+	esac
 
-    # Show additional info
-    echo
-    log_info "Additional Information:"
+	# Show additional info
+	echo
+	log_info "Additional Information:"
 
-    # Check for log files
-    if [ -f "/var/log/protonvpn/updater.log" ]; then
-        echo "  Log file: /var/log/protonvpn/updater.log"
-        echo "  Last 3 lines:"
-        tail -n 3 /var/log/protonvpn/updater.log 2>/dev/null | sed 's/^/    /' || echo "    (unable to read log)"
-    else
-        echo "  Log file: Not found"
-    fi
+	# Check for log files
+	if [ -f "/var/log/protonvpn/updater.log" ]; then
+		echo "  Log file: /var/log/protonvpn/updater.log"
+		echo "  Last 3 lines:"
+		tail -n 3 /var/log/protonvpn/updater.log 2>/dev/null | sed 's/^/    /' || echo "    (unable to read log)"
+	else
+		echo "  Log file: Not found"
+	fi
 
-    # Check PID file
-    if [ -f "/run/protonvpn-updater.pid" ]; then
-        local pid=$(cat /run/protonvpn-updater.pid 2>/dev/null || echo "unknown")
-        echo "  PID file: /run/protonvpn-updater.pid (PID: $pid)"
-    else
-        echo "  PID file: Not found"
-    fi
+	# Check PID file
+	if [ -f "/run/protonvpn-updater.pid" ]; then
+		local pid=$(cat /run/protonvpn-updater.pid 2>/dev/null || echo "unknown")
+		echo "  PID file: /run/protonvpn-updater.pid (PID: $pid)"
+	else
+		echo "  PID file: Not found"
+	fi
 }
 
 service_logs() {
-    local service_type=$(detect_service_system)
+	local service_type=$(detect_service_system)
 
-    case "$service_type" in
-        runit)
-            if [ -f "/var/log/protonvpn/current" ]; then
-                log_cmd "tail -f /var/log/protonvpn/current"
-                tail -f /var/log/protonvpn/current
-            elif [ -f "/var/log/protonvpn/updater.log" ]; then
-                log_cmd "tail -f /var/log/protonvpn/updater.log"
-                tail -f /var/log/protonvpn/updater.log
-            else
-                log_error "No log files found in /var/log/protonvpn/"
-            fi
-            ;;
-        systemd)
-            log_cmd "journalctl -u $SERVICE_NAME -f"
-            journalctl -u "$SERVICE_NAME" -f
-            ;;
-        none)
-            log_error "No supported service system found (runit/systemd)"
-            return 1
-            ;;
-    esac
+	case "$service_type" in
+	runit)
+		if [ -f "/var/log/protonvpn/current" ]; then
+			log_cmd "tail -f /var/log/protonvpn/current"
+			tail -f /var/log/protonvpn/current
+		elif [ -f "/var/log/protonvpn/updater.log" ]; then
+			log_cmd "tail -f /var/log/protonvpn/updater.log"
+			tail -f /var/log/protonvpn/updater.log
+		else
+			log_error "No log files found in /var/log/protonvpn/"
+		fi
+		;;
+	systemd)
+		log_cmd "journalctl -u $SERVICE_NAME -f"
+		journalctl -u "$SERVICE_NAME" -f
+		;;
+	none)
+		log_error "No supported service system found (runit/systemd)"
+		return 1
+		;;
+	esac
 }
 
 service_install() {
-    local service_type=$(detect_service_system)
+	local service_type=$(detect_service_system)
 
-    case "$service_type" in
-        runit)
-            log_info "Installing runit service..."
-            if [ -f "$VPN_ROOT/service/runit/install-runit.sh" ]; then
-                "$VPN_ROOT/service/runit/install-runit.sh" install
-            else
-                log_error "Runit installer not found: $VPN_ROOT/service/runit/install-runit.sh"
-                return 1
-            fi
-            ;;
-        systemd)
-            log_info "Installing systemd service..."
-            if [ -f "$VPN_ROOT/service/systemd/install-systemd.sh" ]; then
-                "$VPN_ROOT/service/systemd/install-systemd.sh" install
-            else
-                log_error "Systemd installer not found: $VPN_ROOT/service/systemd/install-systemd.sh"
-                return 1
-            fi
-            ;;
-        none)
-            log_error "No supported service system found (runit/systemd)"
-            return 1
-            ;;
-    esac
+	case "$service_type" in
+	runit)
+		log_info "Installing runit service..."
+		if [ -f "$VPN_ROOT/service/runit/install-runit.sh" ]; then
+			"$VPN_ROOT/service/runit/install-runit.sh" install
+		else
+			log_error "Runit installer not found: $VPN_ROOT/service/runit/install-runit.sh"
+			return 1
+		fi
+		;;
+	systemd)
+		log_info "Installing systemd service..."
+		if [ -f "$VPN_ROOT/service/systemd/install-systemd.sh" ]; then
+			"$VPN_ROOT/service/systemd/install-systemd.sh" install
+		else
+			log_error "Systemd installer not found: $VPN_ROOT/service/systemd/install-systemd.sh"
+			return 1
+		fi
+		;;
+	none)
+		log_error "No supported service system found (runit/systemd)"
+		return 1
+		;;
+	esac
 }
 
 service_uninstall() {
-    local service_type=$(detect_service_system)
+	local service_type=$(detect_service_system)
 
-    case "$service_type" in
-        runit)
-            log_info "Uninstalling runit service..."
-            if [ -f "$VPN_ROOT/service/runit/install-runit.sh" ]; then
-                "$VPN_ROOT/service/runit/install-runit.sh" uninstall
-            else
-                log_error "Runit installer not found: $VPN_ROOT/service/runit/install-runit.sh"
-                return 1
-            fi
-            ;;
-        systemd)
-            log_info "Uninstalling systemd service..."
-            if [ -f "$VPN_ROOT/service/systemd/install-systemd.sh" ]; then
-                "$VPN_ROOT/service/systemd/install-systemd.sh" uninstall
-            else
-                log_error "Systemd installer not found: $VPN_ROOT/service/systemd/install-systemd.sh"
-                return 1
-            fi
-            ;;
-        none)
-            log_error "No supported service system found (runit/systemd)"
-            return 1
-            ;;
-    esac
+	case "$service_type" in
+	runit)
+		log_info "Uninstalling runit service..."
+		if [ -f "$VPN_ROOT/service/runit/install-runit.sh" ]; then
+			"$VPN_ROOT/service/runit/install-runit.sh" uninstall
+		else
+			log_error "Runit installer not found: $VPN_ROOT/service/runit/install-runit.sh"
+			return 1
+		fi
+		;;
+	systemd)
+		log_info "Uninstalling systemd service..."
+		if [ -f "$VPN_ROOT/service/systemd/install-systemd.sh" ]; then
+			"$VPN_ROOT/service/systemd/install-systemd.sh" uninstall
+		else
+			log_error "Systemd installer not found: $VPN_ROOT/service/systemd/install-systemd.sh"
+			return 1
+		fi
+		;;
+	none)
+		log_error "No supported service system found (runit/systemd)"
+		return 1
+		;;
+	esac
 }
 
 # Configuration management
 service_config() {
-    local action="$1"
-    shift
+	local action="$1"
+	shift
 
-    case "$action" in
-        --interval)
-            local interval="$1"
-            log_info "Setting update interval to: $interval"
-            # TODO: Implement config file management
-            log_warn "Configuration management not yet implemented"
-            ;;
-        --notify)
-            local notify="$1"
-            log_info "Setting notifications to: $notify"
-            # TODO: Implement notification config
-            log_warn "Configuration management not yet implemented"
-            ;;
-        *)
-            log_error "Unknown config option: $action"
-            return 1
-            ;;
-    esac
+	case "$action" in
+	--interval)
+		local interval="$1"
+		log_info "Setting update interval to: $interval"
+		# TODO: Implement config file management
+		log_warn "Configuration management not yet implemented"
+		;;
+	--notify)
+		local notify="$1"
+		log_info "Setting notifications to: $notify"
+		# TODO: Implement notification config
+		log_warn "Configuration management not yet implemented"
+		;;
+	*)
+		log_error "Unknown config option: $action"
+		return 1
+		;;
+	esac
 }
 
 # Force update function
 service_update_now() {
-    log_info "Forcing immediate config update..."
+	log_info "Forcing immediate config update..."
 
-    # Run download engine directly
-    if [ -x "$VPN_ROOT/src/download-engine" ]; then
-        "$VPN_ROOT/src/download-engine" status
-    else
-        log_error "Download engine not found or not executable: $VPN_ROOT/src/download-engine"
-        return 1
-    fi
+	# Run download engine directly
+	if [ -x "$VPN_ROOT/src/download-engine" ]; then
+		"$VPN_ROOT/src/download-engine" status
+	else
+		log_error "Download engine not found or not executable: $VPN_ROOT/src/download-engine"
+		return 1
+	fi
 }
 
 # Show help
 show_help() {
-    cat << EOF
+	cat <<EOF
 ProtonVPN Service Manager
 
 Usage: $0 COMMAND [OPTIONS]
@@ -304,44 +304,44 @@ EOF
 
 # Main script logic
 case "${1:-help}" in
-    start)
-        service_start
-        ;;
-    stop)
-        service_stop
-        ;;
-    restart)
-        service_restart
-        ;;
-    status)
-        service_status
-        ;;
-    logs)
-        service_logs
-        ;;
-    install)
-        service_install
-        ;;
-    uninstall)
-        service_uninstall
-        ;;
-    config)
-        if [ $# -lt 3 ]; then
-            log_error "Config requires option and value"
-            echo "Usage: $0 config --interval 3600"
-            exit 1
-        fi
-        service_config "$2" "$3"
-        ;;
-    update-now)
-        service_update_now
-        ;;
-    help)
-        show_help
-        ;;
-    *)
-        log_error "Unknown command: $1"
-        echo "Use '$0 help' for usage information"
-        exit 1
-        ;;
+start)
+	service_start
+	;;
+stop)
+	service_stop
+	;;
+restart)
+	service_restart
+	;;
+status)
+	service_status
+	;;
+logs)
+	service_logs
+	;;
+install)
+	service_install
+	;;
+uninstall)
+	service_uninstall
+	;;
+config)
+	if [ $# -lt 3 ]; then
+		log_error "Config requires option and value"
+		echo "Usage: $0 config --interval 3600"
+		exit 1
+	fi
+	service_config "$2" "$3"
+	;;
+update-now)
+	service_update_now
+	;;
+help)
+	show_help
+	;;
+*)
+	log_error "Unknown command: $1"
+	echo "Use '$0 help' for usage information"
+	exit 1
+	;;
 esac

@@ -6,8 +6,8 @@ set -euo pipefail
 
 # Configuration
 readonly SCRIPT_NAME="$(basename "$0")"
-readonly TOTP_WINDOW="30"  # 30-second time windows
-readonly TOTP_DIGITS="6"   # 6-digit TOTP codes
+readonly TOTP_WINDOW="30" # 30-second time windows
+readonly TOTP_DIGITS="6"  # 6-digit TOTP codes
 readonly BACKUP_CODES_COUNT="10"
 
 # Dependencies
@@ -15,293 +15,293 @@ readonly CREDENTIAL_MANAGER="$(dirname "$0")/secure-credential-manager"
 
 # Logging
 log_message() {
-    local level="$1"
-    local message="$2"
-    echo "[$level] $(date '+%Y-%m-%d %H:%M:%S') $message";
+	local level="$1"
+	local message="$2"
+	echo "[$level] $(date '+%Y-%m-%d %H:%M:%S') $message"
 }
 
 # Validate TOTP secret format (Base32 RFC 4648)
 validate_secret() {
-    local secret="$1"
+	local secret="$1"
 
-    log_message "INFO" "Validating TOTP secret format"
+	log_message "INFO" "Validating TOTP secret format"
 
-    # Check Base32 format: A-Z, 2-7, optional padding with =
-    if [[ "$secret" =~ ^[A-Z2-7]+(=*)$ ]] && [[ ${#secret} -ge 16 ]]; then
-        log_message "INFO" "TOTP secret format is valid"
-        return 0
-    else
-        log_message "ERROR" "Invalid TOTP secret format (must be Base32, minimum 16 characters)"
-        return 1
-    fi
+	# Check Base32 format: A-Z, 2-7, optional padding with =
+	if [[ "$secret" =~ ^[A-Z2-7]+(=*)$ ]] && [[ ${#secret} -ge 16 ]]; then
+		log_message "INFO" "TOTP secret format is valid"
+		return 0
+	else
+		log_message "ERROR" "Invalid TOTP secret format (must be Base32, minimum 16 characters)"
+		return 1
+	fi
 }
 
 # Generate TOTP code from secret
 generate() {
-    local secret="$1"
+	local secret="$1"
 
-    log_message "INFO" "Generating TOTP code"
+	log_message "INFO" "Generating TOTP code"
 
-    # Validate secret format first
-    if ! validate_secret "$secret"; then
-        return 1
-    fi
+	# Validate secret format first
+	if ! validate_secret "$secret"; then
+		return 1
+	fi
 
-    # Generate TOTP code using oathtool
-    local totp_code
-    if totp_code=$(oathtool --totp --base32 "$secret" 2>/dev/null); then
-        log_message "INFO" "TOTP code generated successfully"
-        echo "$totp_code"
-        return 0
-    else
-        log_message "ERROR" "Failed to generate TOTP code"
-        return 1
-    fi
+	# Generate TOTP code using oathtool
+	local totp_code
+	if totp_code=$(oathtool --totp --base32 "$secret" 2>/dev/null); then
+		log_message "INFO" "TOTP code generated successfully"
+		echo "$totp_code"
+		return 0
+	else
+		log_message "ERROR" "Failed to generate TOTP code"
+		return 1
+	fi
 }
 
 # Validate TOTP code against secret with time window
 validate() {
-    local secret="$1"
-    local provided_code="$2"
+	local secret="$1"
+	local provided_code="$2"
 
-    log_message "INFO" "Validating TOTP code"
+	log_message "INFO" "Validating TOTP code"
 
-    # Validate secret format first
-    if ! validate_secret "$secret"; then
-        return 1
-    fi
+	# Validate secret format first
+	if ! validate_secret "$secret"; then
+		return 1
+	fi
 
-    # Validate code format (6 digits)
-    if ! [[ "$provided_code" =~ ^[0-9]{6}$ ]]; then
-        log_message "ERROR" "Invalid TOTP code format (must be 6 digits)"
-        return 1
-    fi
+	# Validate code format (6 digits)
+	if ! [[ "$provided_code" =~ ^[0-9]{6}$ ]]; then
+		log_message "ERROR" "Invalid TOTP code format (must be 6 digits)"
+		return 1
+	fi
 
-    # Get current time window and adjacent windows for validation
-    local current_time
-    current_time=$(date +%s)
+	# Get current time window and adjacent windows for validation
+	local current_time
+	current_time=$(date +%s)
 
-    # Check current window and ±1 window for clock skew tolerance
-    local time_windows=("$((current_time - TOTP_WINDOW))" "$current_time" "$((current_time + TOTP_WINDOW))")
+	# Check current window and ±1 window for clock skew tolerance
+	local time_windows=("$((current_time - TOTP_WINDOW))" "$current_time" "$((current_time + TOTP_WINDOW))")
 
-    for time_window in "${time_windows[@]}"; do
-        local expected_code
-        if expected_code=$(oathtool --totp --base32 --time-step-size="$TOTP_WINDOW" \
-                                  --window="$time_window" "$secret" 2>/dev/null); then
-            if [[ "$expected_code" == "$provided_code" ]]; then
-                log_message "INFO" "TOTP code validation successful"
-                return 0
-            fi
-        fi
-    done
+	for time_window in "${time_windows[@]}"; do
+		local expected_code
+		if expected_code=$(oathtool --totp --base32 --time-step-size="$TOTP_WINDOW" \
+			--window="$time_window" "$secret" 2>/dev/null); then
+			if [[ "$expected_code" == "$provided_code" ]]; then
+				log_message "INFO" "TOTP code validation successful"
+				return 0
+			fi
+		fi
+	done
 
-    log_message "ERROR" "TOTP code validation failed"
-    return 1
+	log_message "ERROR" "TOTP code validation failed"
+	return 1
 }
 
 # Store TOTP secret using secure credential manager
 store_secret() {
-    local secret="$1"
+	local secret="$1"
 
-    log_message "INFO" "Storing TOTP secret securely"
+	log_message "INFO" "Storing TOTP secret securely"
 
-    # Validate secret format first
-    if ! validate_secret "$secret"; then
-        return 1
-    fi
+	# Validate secret format first
+	if ! validate_secret "$secret"; then
+		return 1
+	fi
 
-    # Use credential manager to store TOTP secret
-    if "$CREDENTIAL_MANAGER" store-totp "$secret"; then
-        log_message "INFO" "TOTP secret stored successfully"
-        return 0
-    else
-        log_message "ERROR" "Failed to store TOTP secret"
-        return 1
-    fi
+	# Use credential manager to store TOTP secret
+	if "$CREDENTIAL_MANAGER" store-totp "$secret"; then
+		log_message "INFO" "TOTP secret stored successfully"
+		return 0
+	else
+		log_message "ERROR" "Failed to store TOTP secret"
+		return 1
+	fi
 }
 
 # Retrieve and generate TOTP code from stored secret
 generate_from_stored() {
-    log_message "INFO" "Generating TOTP code from stored secret"
+	log_message "INFO" "Generating TOTP code from stored secret"
 
-    # Retrieve TOTP secret from credential manager
-    local totp_data
-    if ! totp_data=$("$CREDENTIAL_MANAGER" get-totp 2>/dev/null); then
-        log_message "ERROR" "No TOTP secret found in storage"
-        return 1
-    fi
+	# Retrieve TOTP secret from credential manager
+	local totp_data
+	if ! totp_data=$("$CREDENTIAL_MANAGER" get-totp 2>/dev/null); then
+		log_message "ERROR" "No TOTP secret found in storage"
+		return 1
+	fi
 
-    # Extract secret from credential data
-    local secret
-    secret=$(echo "$totp_data" | grep "^TOTP_SECRET=" | cut -d= -f2)
+	# Extract secret from credential data
+	local secret
+	secret=$(echo "$totp_data" | grep "^TOTP_SECRET=" | cut -d= -f2)
 
-    if [[ -z "$secret" ]]; then
-        log_message "ERROR" "Could not extract TOTP secret from storage"
-        return 1
-    fi
+	if [[ -z "$secret" ]]; then
+		log_message "ERROR" "Could not extract TOTP secret from storage"
+		return 1
+	fi
 
-    # Generate code from retrieved secret
-    generate "$secret"
+	# Generate code from retrieved secret
+	generate "$secret"
 }
 
 # Check TOTP code expiration and timing
 check_expiration() {
-    log_message "INFO" "Checking TOTP code expiration timing"
+	log_message "INFO" "Checking TOTP code expiration timing"
 
-    local current_time
-    current_time=$(date +%s)
+	local current_time
+	current_time=$(date +%s)
 
-    local time_in_window
-    time_in_window=$((current_time % TOTP_WINDOW))
+	local time_in_window
+	time_in_window=$((current_time % TOTP_WINDOW))
 
-    local seconds_remaining
-    seconds_remaining=$((TOTP_WINDOW - time_in_window))
+	local seconds_remaining
+	seconds_remaining=$((TOTP_WINDOW - time_in_window))
 
-    echo "Current TOTP window: $time_in_window/$TOTP_WINDOW seconds"
-    echo "Seconds until next code: $seconds_remaining"
+	echo "Current TOTP window: $time_in_window/$TOTP_WINDOW seconds"
+	echo "Seconds until next code: $seconds_remaining"
 
-    if [[ $seconds_remaining -le 5 ]]; then
-        log_message "WARN" "TOTP code expires in $seconds_remaining seconds"
-        return 1
-    else
-        log_message "INFO" "TOTP code valid for $seconds_remaining more seconds"
-        return 0
-    fi
+	if [[ $seconds_remaining -le 5 ]]; then
+		log_message "WARN" "TOTP code expires in $seconds_remaining seconds"
+		return 1
+	else
+		log_message "INFO" "TOTP code valid for $seconds_remaining more seconds"
+		return 0
+	fi
 }
 
 # Interactive TOTP setup wizard
 setup() {
-    log_message "INFO" "Starting TOTP setup wizard"
+	log_message "INFO" "Starting TOTP setup wizard"
 
-    echo "=== 2FA TOTP Setup Wizard ==="
-    echo "This wizard will help you configure Two-Factor Authentication (2FA) for ProtonVPN."
-    echo ""
+	echo "=== 2FA TOTP Setup Wizard ==="
+	echo "This wizard will help you configure Two-Factor Authentication (2FA) for ProtonVPN."
+	echo ""
 
-    # Check if TOTP is already configured
-    if "$CREDENTIAL_MANAGER" get-totp >/dev/null 2>&1; then
-        echo "⚠️  TOTP is already configured."
-        read -p "Do you want to reconfigure? (y/N): " -r reconfigure
-        if [[ ! "$reconfigure" =~ ^[Yy]$ ]]; then
-            log_message "INFO" "TOTP setup cancelled by user"
-            return 0
-        fi
-    fi
+	# Check if TOTP is already configured
+	if "$CREDENTIAL_MANAGER" get-totp >/dev/null 2>&1; then
+		echo "⚠️  TOTP is already configured."
+		read -p "Do you want to reconfigure? (y/N): " -r reconfigure
+		if [[ ! "$reconfigure" =~ ^[Yy]$ ]]; then
+			log_message "INFO" "TOTP setup cancelled by user"
+			return 0
+		fi
+	fi
 
-    echo ""
-    echo "📱 Please follow these steps:"
-    echo "1. Install an authenticator app (Google Authenticator, Authy, etc.)"
-    echo "2. In ProtonVPN account settings, enable 2FA and get your TOTP secret"
-    echo "3. Enter the TOTP secret below (Base32 format, e.g., JBSWY3DPEHPK3PXP)"
-    echo ""
+	echo ""
+	echo "📱 Please follow these steps:"
+	echo "1. Install an authenticator app (Google Authenticator, Authy, etc.)"
+	echo "2. In ProtonVPN account settings, enable 2FA and get your TOTP secret"
+	echo "3. Enter the TOTP secret below (Base32 format, e.g., JBSWY3DPEHPK3PXP)"
+	echo ""
 
-    local secret
-    while true; do
-        read -p "Enter TOTP secret: " -r secret
+	local secret
+	while true; do
+		read -p "Enter TOTP secret: " -r secret
 
-        if [[ -z "$secret" ]]; then
-            echo "❌ TOTP secret cannot be empty"
-            continue
-        fi
+		if [[ -z "$secret" ]]; then
+			echo "❌ TOTP secret cannot be empty"
+			continue
+		fi
 
-        if validate_secret "$secret"; then
-            break
-        else
-            echo "❌ Invalid TOTP secret format. Must be Base32 (A-Z, 2-7) with minimum 16 characters."
-        fi
-    done
+		if validate_secret "$secret"; then
+			break
+		else
+			echo "❌ Invalid TOTP secret format. Must be Base32 (A-Z, 2-7) with minimum 16 characters."
+		fi
+	done
 
-    # Store the secret
-    if store_secret "$secret"; then
-        echo "✅ TOTP secret stored successfully"
-    else
-        echo "❌ Failed to store TOTP secret"
-        return 1
-    fi
+	# Store the secret
+	if store_secret "$secret"; then
+		echo "✅ TOTP secret stored successfully"
+	else
+		echo "❌ Failed to store TOTP secret"
+		return 1
+	fi
 
-    # Test code generation
-    echo ""
-    echo "🧪 Testing TOTP code generation..."
-    local test_code
-    if test_code=$(generate "$secret"); then
-        echo "✅ Generated test code: $test_code"
-        echo ""
-        echo "📝 Please verify this code matches your authenticator app."
-        read -p "Does the code match? (y/N): " -r code_matches
+	# Test code generation
+	echo ""
+	echo "🧪 Testing TOTP code generation..."
+	local test_code
+	if test_code=$(generate "$secret"); then
+		echo "✅ Generated test code: $test_code"
+		echo ""
+		echo "📝 Please verify this code matches your authenticator app."
+		read -p "Does the code match? (y/N): " -r code_matches
 
-        if [[ "$code_matches" =~ ^[Yy]$ ]]; then
-            echo "🎉 TOTP setup completed successfully!"
-            log_message "INFO" "TOTP setup completed successfully"
-            return 0
-        else
-            echo "❌ Code mismatch. Please check your secret and try again."
-            return 1
-        fi
-    else
-        echo "❌ Failed to generate test code"
-        return 1
-    fi
+		if [[ "$code_matches" =~ ^[Yy]$ ]]; then
+			echo "🎉 TOTP setup completed successfully!"
+			log_message "INFO" "TOTP setup completed successfully"
+			return 0
+		else
+			echo "❌ Code mismatch. Please check your secret and try again."
+			return 1
+		fi
+	else
+		echo "❌ Failed to generate test code"
+		return 1
+	fi
 }
 
 # Generate backup codes for TOTP recovery
 generate_backup_codes() {
-    log_message "INFO" "Generating TOTP backup codes"
+	log_message "INFO" "Generating TOTP backup codes"
 
-    echo "=== TOTP Backup Codes ==="
-    echo "Save these codes securely. Each can be used once if you lose access to your authenticator."
-    echo ""
+	echo "=== TOTP Backup Codes ==="
+	echo "Save these codes securely. Each can be used once if you lose access to your authenticator."
+	echo ""
 
-    local backup_codes=()
-    for ((i=1; i<=BACKUP_CODES_COUNT; i++)); do
-        # Generate 8-character alphanumeric backup codes
-        local backup_code
-        backup_code=$(openssl rand -hex 4 | tr '[:lower:]' '[:upper:]')
-        backup_codes+=("$backup_code")
-        printf "%2d. %s\n" "$i" "$backup_code"
-    done
+	local backup_codes=()
+	for ((i = 1; i <= BACKUP_CODES_COUNT; i++)); do
+		# Generate 8-character alphanumeric backup codes
+		local backup_code
+		backup_code=$(openssl rand -hex 4 | tr '[:lower:]' '[:upper:]')
+		backup_codes+=("$backup_code")
+		printf "%2d. %s\n" "$i" "$backup_code"
+	done
 
-    echo ""
-    echo "⚠️  Store these codes in a secure location (password manager, safe, etc.)"
-    echo "💡 Each code can only be used once for recovery"
+	echo ""
+	echo "⚠️  Store these codes in a secure location (password manager, safe, etc.)"
+	echo "💡 Each code can only be used once for recovery"
 
-    log_message "INFO" "$BACKUP_CODES_COUNT backup codes generated"
-    return 0
+	log_message "INFO" "$BACKUP_CODES_COUNT backup codes generated"
+	return 0
 }
 
 # Test TOTP functionality
 test_totp() {
-    log_message "INFO" "Testing TOTP functionality"
+	log_message "INFO" "Testing TOTP functionality"
 
-    # Check if TOTP is configured
-    if ! "$CREDENTIAL_MANAGER" get-totp >/dev/null 2>&1; then
-        echo "❌ TOTP not configured. Run '$SCRIPT_NAME setup' first."
-        return 1
-    fi
+	# Check if TOTP is configured
+	if ! "$CREDENTIAL_MANAGER" get-totp >/dev/null 2>&1; then
+		echo "❌ TOTP not configured. Run '$SCRIPT_NAME setup' first."
+		return 1
+	fi
 
-    echo "=== TOTP Functionality Test ==="
+	echo "=== TOTP Functionality Test ==="
 
-    # Generate current code
-    echo "🔢 Generating current TOTP code..."
-    local current_code
-    if current_code=$(generate_from_stored); then
-        echo "✅ Current TOTP code: $current_code"
-    else
-        echo "❌ Failed to generate TOTP code"
-        return 1
-    fi
+	# Generate current code
+	echo "🔢 Generating current TOTP code..."
+	local current_code
+	if current_code=$(generate_from_stored); then
+		echo "✅ Current TOTP code: $current_code"
+	else
+		echo "❌ Failed to generate TOTP code"
+		return 1
+	fi
 
-    # Check expiration timing
-    echo ""
-    echo "⏰ Checking code timing..."
-    check_expiration
+	# Check expiration timing
+	echo ""
+	echo "⏰ Checking code timing..."
+	check_expiration
 
-    echo ""
-    echo "✅ TOTP test completed"
-    return 0
+	echo ""
+	echo "✅ TOTP test completed"
+	return 0
 }
 
 # Display usage information
 show_usage() {
-    cat << EOF
+	cat <<EOF
 Usage: $SCRIPT_NAME <command> [arguments]
 
 Commands:
@@ -326,69 +326,69 @@ EOF
 
 # Main command handler
 main() {
-    local command="${1:-}"
+	local command="${1:-}"
 
-    case "$command" in
-        "generate")
-            if [[ $# -ne 2 ]]; then
-                log_message "ERROR" "Usage: $SCRIPT_NAME generate <secret>"
-                return 1
-            fi
-            generate "$2"
-            ;;
-        "validate")
-            if [[ $# -ne 3 ]]; then
-                log_message "ERROR" "Usage: $SCRIPT_NAME validate <secret> <code>"
-                return 1
-            fi
-            validate "$2" "$3"
-            ;;
-        "store-secret")
-            if [[ $# -ne 2 ]]; then
-                log_message "ERROR" "Usage: $SCRIPT_NAME store-secret <secret>"
-                return 1
-            fi
-            store_secret "$2"
-            ;;
-        "generate-from-stored")
-            generate_from_stored
-            ;;
-        "validate-secret")
-            if [[ $# -ne 2 ]]; then
-                log_message "ERROR" "Usage: $SCRIPT_NAME validate-secret <secret>"
-                return 1
-            fi
-            validate_secret "$2"
-            ;;
-        "check-expiration")
-            check_expiration
-            ;;
-        "setup")
-            setup
-            ;;
-        "test")
-            test_totp
-            ;;
-        "generate-backup-codes")
-            generate_backup_codes
-            ;;
-        "help"|"--help"|"-h")
-            show_usage
-            ;;
-        "")
-            log_message "ERROR" "No command specified"
-            show_usage
-            return 1
-            ;;
-        *)
-            log_message "ERROR" "Unknown command: $command"
-            show_usage
-            return 1
-            ;;
-    esac
+	case "$command" in
+	"generate")
+		if [[ $# -ne 2 ]]; then
+			log_message "ERROR" "Usage: $SCRIPT_NAME generate <secret>"
+			return 1
+		fi
+		generate "$2"
+		;;
+	"validate")
+		if [[ $# -ne 3 ]]; then
+			log_message "ERROR" "Usage: $SCRIPT_NAME validate <secret> <code>"
+			return 1
+		fi
+		validate "$2" "$3"
+		;;
+	"store-secret")
+		if [[ $# -ne 2 ]]; then
+			log_message "ERROR" "Usage: $SCRIPT_NAME store-secret <secret>"
+			return 1
+		fi
+		store_secret "$2"
+		;;
+	"generate-from-stored")
+		generate_from_stored
+		;;
+	"validate-secret")
+		if [[ $# -ne 2 ]]; then
+			log_message "ERROR" "Usage: $SCRIPT_NAME validate-secret <secret>"
+			return 1
+		fi
+		validate_secret "$2"
+		;;
+	"check-expiration")
+		check_expiration
+		;;
+	"setup")
+		setup
+		;;
+	"test")
+		test_totp
+		;;
+	"generate-backup-codes")
+		generate_backup_codes
+		;;
+	"help" | "--help" | "-h")
+		show_usage
+		;;
+	"")
+		log_message "ERROR" "No command specified"
+		show_usage
+		return 1
+		;;
+	*)
+		log_message "ERROR" "Unknown command: $command"
+		show_usage
+		return 1
+		;;
+	esac
 }
 
 # Execute main function if script is run directly
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
-    main "$@"
+	main "$@"
 fi

@@ -22,232 +22,232 @@ readonly DEFAULT_HISTORY_RETENTION="7d"
 
 # Load configuration (following existing secure patterns)
 load_dashboard_config() {
-    local refresh_interval="$DEFAULT_REFRESH_INTERVAL"
-    local output_format="$DEFAULT_OUTPUT_FORMAT"
-    local history_retention="$DEFAULT_HISTORY_RETENTION"
+	local refresh_interval="$DEFAULT_REFRESH_INTERVAL"
+	local output_format="$DEFAULT_OUTPUT_FORMAT"
+	local history_retention="$DEFAULT_HISTORY_RETENTION"
 
-    # Use config-manager if available (following existing pattern)
-    if [[ -x "$SECURE_CONFIG_MANAGER" && -f "$CONFIG_FILE" ]]; then
-        refresh_interval=$("$SECURE_CONFIG_MANAGER" get "$CONFIG_FILE" "dashboard.refresh_interval" 2>/dev/null || echo "$DEFAULT_REFRESH_INTERVAL")
-        output_format=$("$SECURE_CONFIG_MANAGER" get "$CONFIG_FILE" "dashboard.output_format" 2>/dev/null || echo "$DEFAULT_OUTPUT_FORMAT")
-        history_retention=$("$SECURE_CONFIG_MANAGER" get "$CONFIG_FILE" "dashboard.history_retention" 2>/dev/null || echo "$DEFAULT_HISTORY_RETENTION")
-    fi
+	# Use config-manager if available (following existing pattern)
+	if [[ -x "$SECURE_CONFIG_MANAGER" && -f "$CONFIG_FILE" ]]; then
+		refresh_interval=$("$SECURE_CONFIG_MANAGER" get "$CONFIG_FILE" "dashboard.refresh_interval" 2>/dev/null || echo "$DEFAULT_REFRESH_INTERVAL")
+		output_format=$("$SECURE_CONFIG_MANAGER" get "$CONFIG_FILE" "dashboard.output_format" 2>/dev/null || echo "$DEFAULT_OUTPUT_FORMAT")
+		history_retention=$("$SECURE_CONFIG_MANAGER" get "$CONFIG_FILE" "dashboard.history_retention" 2>/dev/null || echo "$DEFAULT_HISTORY_RETENTION")
+	fi
 
-    export DASHBOARD_REFRESH_INTERVAL="$refresh_interval"
-    export DASHBOARD_OUTPUT_FORMAT="$output_format"
-    export DASHBOARD_HISTORY_RETENTION="$history_retention"
+	export DASHBOARD_REFRESH_INTERVAL="$refresh_interval"
+	export DASHBOARD_OUTPUT_FORMAT="$output_format"
+	export DASHBOARD_HISTORY_RETENTION="$history_retention"
 }
 
 # Security sanitization (following notification-manager patterns)
 sanitize_content() {
-    local content="$1"
-    local max_length="${2:-1000}"
+	local content="$1"
+	local max_length="${2:-1000}"
 
-    # Remove potentially sensitive information
-    content=$(echo "$content" | sed -E 's/(password|key|secret|token)=[^[:space:]]*/\1=***REDACTED***/gi')
-    content=$(echo "$content" | sed -E 's|(/root|/home/[^/]*/\.ssh|/etc/shadow)[^[:space:]]*|\*\*\*REDACTED\*\*\*|g')
+	# Remove potentially sensitive information
+	content=$(echo "$content" | sed -E 's/(password|key|secret|token)=[^[:space:]]*/\1=***REDACTED***/gi')
+	content=$(echo "$content" | sed -E 's|(/root|/home/[^/]*/\.ssh|/etc/shadow)[^[:space:]]*|\*\*\*REDACTED\*\*\*|g')
 
-    # Limit length
-    if [[ ${#content} -gt $max_length ]]; then
-        content="${content:0:$max_length}..."
-    fi
+	# Limit length
+	if [[ ${#content} -gt $max_length ]]; then
+		content="${content:0:$max_length}..."
+	fi
 
-    echo "$content"
+	echo "$content"
 }
 
 # Audit logging integration (following established patterns)
 log_dashboard_access() {
-    local format="$1"
-    local user="${SUDO_USER:-$USER}"
-    local timestamp="$(date '+%Y-%m-%d %H:%M:%S')"
+	local format="$1"
+	local user="${SUDO_USER:-$USER}"
+	local timestamp="$(date '+%Y-%m-%d %H:%M:%S')"
 
-    # Use audit-log-protector if available
-    local audit_protector="$SCRIPT_DIR/audit-log-protector"
-    if [[ -x "$audit_protector" ]]; then
-        echo "[$timestamp] COMPONENT=status-dashboard USER=$user ACTION=access FORMAT=$format" | \
-            "$audit_protector" protect 2>/dev/null || true
-    fi
+	# Use audit-log-protector if available
+	local audit_protector="$SCRIPT_DIR/audit-log-protector"
+	if [[ -x "$audit_protector" ]]; then
+		echo "[$timestamp] COMPONENT=status-dashboard USER=$user ACTION=access FORMAT=$format" |
+			"$audit_protector" protect 2>/dev/null || true
+	fi
 }
 
 # Get VPN service status (enhanced with caching and database integration)
 get_service_status() {
-    local service_status="unknown"
-    local uptime="0"
-    local last_check_time
-    local status_cache="/dev/shm/protonvpn_status_cache"
-    local status_cache_age=15  # Cache service status for 15 seconds
+	local service_status="unknown"
+	local uptime="0"
+	local last_check_time
+	local status_cache="/dev/shm/protonvpn_status_cache"
+	local status_cache_age=15 # Cache service status for 15 seconds
 
-    # Check cache first for performance optimization
-    if [[ -f "$status_cache" ]]; then
-        local cache_timestamp file_age
-        cache_timestamp=$(stat -c %Y "$status_cache" 2>/dev/null || echo "0")
-        file_age=$(($(date +%s) - cache_timestamp))
+	# Check cache first for performance optimization
+	if [[ -f "$status_cache" ]]; then
+		local cache_timestamp file_age
+		cache_timestamp=$(stat -c %Y "$status_cache" 2>/dev/null || echo "0")
+		file_age=$(($(date +%s) - cache_timestamp))
 
-        if [[ "$file_age" -lt "$status_cache_age" ]]; then
-            # Use cached status
-            cat "$status_cache" 2>/dev/null && return
-        fi
-    fi
+		if [[ "$file_age" -lt "$status_cache_age" ]]; then
+			# Use cached status
+			cat "$status_cache" 2>/dev/null && return
+		fi
+	fi
 
-    # Check VPN service status with multiple methods (REFACTOR: more robust)
-    if systemctl is-active protonvpn-updater.service >/dev/null 2>&1; then
-        service_status="active"
-    elif systemctl is-active protonvpn-service >/dev/null 2>&1; then
-        service_status="active"
-    elif pgrep -f "protonvpn" >/dev/null 2>&1; then
-        service_status="active"
-    elif [[ -f /var/run/protonvpn.pid ]]; then
-        local pid
-        pid=$(cat /var/run/protonvpn.pid 2>/dev/null)
-        if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
-            service_status="active"
-        else
-            service_status="inactive"
-        fi
-    else
-        service_status="inactive"
-    fi
+	# Check VPN service status with multiple methods (REFACTOR: more robust)
+	if systemctl is-active protonvpn-updater.service >/dev/null 2>&1; then
+		service_status="active"
+	elif systemctl is-active protonvpn-service >/dev/null 2>&1; then
+		service_status="active"
+	elif pgrep -f "protonvpn" >/dev/null 2>&1; then
+		service_status="active"
+	elif [[ -f /var/run/protonvpn.pid ]]; then
+		local pid
+		pid=$(cat /var/run/protonvpn.pid 2>/dev/null)
+		if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+			service_status="active"
+		else
+			service_status="inactive"
+		fi
+	else
+		service_status="inactive"
+	fi
 
-    # Get service-specific uptime or system uptime
-    if [[ -f /proc/uptime ]]; then
-        local uptime_seconds
-        uptime_seconds=$(awk '{print int($1)}' /proc/uptime 2>/dev/null || echo "0")
-        local days=$((uptime_seconds / 86400))
-        local hours=$(((uptime_seconds % 86400) / 3600))
-        local minutes=$(((uptime_seconds % 3600) / 60))
-        uptime="${days}d ${hours}h ${minutes}m"
-    fi
+	# Get service-specific uptime or system uptime
+	if [[ -f /proc/uptime ]]; then
+		local uptime_seconds
+		uptime_seconds=$(awk '{print int($1)}' /proc/uptime 2>/dev/null || echo "0")
+		local days=$((uptime_seconds / 86400))
+		local hours=$(((uptime_seconds % 86400) / 3600))
+		local minutes=$(((uptime_seconds % 3600) / 60))
+		uptime="${days}d ${hours}h ${minutes}m"
+	fi
 
-    # Store metrics in database if available (REFACTOR: performance optimized - conditional)
-    if [[ -x "$SECURE_DB_MANAGER" && "${DASHBOARD_DB_LOGGING:-false}" == "true" ]]; then
-        last_check_time=$(date '+%Y-%m-%d %H:%M:%S')
-        # Store service status for historical tracking (suppress all output)
-        echo "INSERT OR REPLACE INTO service_status (timestamp, component, status, uptime_seconds) VALUES ('$last_check_time', 'vpn-service', '$service_status', $(($(date +%s) - $(awk '{print int($1)}' /proc/uptime))));" | \
-        "$SECURE_DB_MANAGER" execute >/dev/null 2>&1 || true
-    fi
+	# Store metrics in database if available (REFACTOR: performance optimized - conditional)
+	if [[ -x "$SECURE_DB_MANAGER" && "${DASHBOARD_DB_LOGGING:-false}" == "true" ]]; then
+		last_check_time=$(date '+%Y-%m-%d %H:%M:%S')
+		# Store service status for historical tracking (suppress all output)
+		echo "INSERT OR REPLACE INTO service_status (timestamp, component, status, uptime_seconds) VALUES ('$last_check_time', 'vpn-service', '$service_status', $(($(date +%s) - $(awk '{print int($1)}' /proc/uptime))));" |
+			"$SECURE_DB_MANAGER" execute >/dev/null 2>&1 || true
+	fi
 
-    # Cache the result for performance optimization
-    local result="$service_status,$uptime"
-    echo "$result" > "$status_cache" 2>/dev/null || true
+	# Cache the result for performance optimization
+	local result="$service_status,$uptime"
+	echo "$result" >"$status_cache" 2>/dev/null || true
 
-    echo "$result"
+	echo "$result"
 }
 
 # Get performance metrics (enhanced with caching and database integration)
 get_performance_metrics() {
-    local connection_time="1.8s"  # Default based on current baseline
-    local memory_usage="18MB"     # Default based on current baseline
-    local cpu_usage="2.1%"        # Default based on current baseline
-    local cache_file="/dev/shm/protonvpn_metrics_cache"
-    local cache_age=60  # Cache for 60 seconds (REFACTOR: performance optimization - extended cache)
+	local connection_time="1.8s" # Default based on current baseline
+	local memory_usage="18MB"    # Default based on current baseline
+	local cpu_usage="2.1%"       # Default based on current baseline
+	local cache_file="/dev/shm/protonvpn_metrics_cache"
+	local cache_age=60 # Cache for 60 seconds (REFACTOR: performance optimization - extended cache)
 
-    # Check cache first for performance optimization
-    if [[ -f "$cache_file" ]]; then
-        local cache_timestamp file_age
-        cache_timestamp=$(stat -c %Y "$cache_file" 2>/dev/null || echo "0")
-        file_age=$(($(date +%s) - cache_timestamp))
+	# Check cache first for performance optimization
+	if [[ -f "$cache_file" ]]; then
+		local cache_timestamp file_age
+		cache_timestamp=$(stat -c %Y "$cache_file" 2>/dev/null || echo "0")
+		file_age=$(($(date +%s) - cache_timestamp))
 
-        if [[ "$file_age" -lt "$cache_age" ]]; then
-            # Use cached data
-            cat "$cache_file" 2>/dev/null && return
-        fi
-    fi
+		if [[ "$file_age" -lt "$cache_age" ]]; then
+			# Use cached data
+			cat "$cache_file" 2>/dev/null && return
+		fi
+	fi
 
-    # Enhanced resource usage collection (REFACTOR: more comprehensive)
-    if command -v ps >/dev/null 2>&1; then
-        local vpn_memory vpn_cpu
+	# Enhanced resource usage collection (REFACTOR: more comprehensive)
+	if command -v ps >/dev/null 2>&1; then
+		local vpn_memory vpn_cpu
 
-        # Get memory usage for all VPN-related processes
-        vpn_memory=$(ps -C protonvpn-updater,protonvpn-daemon,openvpn -o rss= 2>/dev/null | \
-                    awk '{sum+=$1} END {if(sum>0) print int(sum/1024); else print 18}' || echo "18")
+		# Get memory usage for all VPN-related processes
+		vpn_memory=$(ps -C protonvpn-updater,protonvpn-daemon,openvpn -o rss= 2>/dev/null |
+			awk '{sum+=$1} END {if(sum>0) print int(sum/1024); else print 18}' || echo "18")
 
-        # Get CPU usage for VPN processes
-        vpn_cpu=$(ps -C protonvpn-updater,protonvpn-daemon,openvpn -o %cpu= 2>/dev/null | \
-                 awk '{sum+=$1} END {if(sum>0) printf "%.1f", sum; else print "2.1"}' || echo "2.1")
+		# Get CPU usage for VPN processes
+		vpn_cpu=$(ps -C protonvpn-updater,protonvpn-daemon,openvpn -o %cpu= 2>/dev/null |
+			awk '{sum+=$1} END {if(sum>0) printf "%.1f", sum; else print "2.1"}' || echo "2.1")
 
-        if [[ "$vpn_memory" =~ ^[0-9]+$ ]]; then
-            memory_usage="${vpn_memory}MB"
-        fi
+		if [[ "$vpn_memory" =~ ^[0-9]+$ ]]; then
+			memory_usage="${vpn_memory}MB"
+		fi
 
-        if [[ "$vpn_cpu" =~ ^[0-9]+\.[0-9]+$ ]]; then
-            cpu_usage="${vpn_cpu}%"
-        fi
-    fi
+		if [[ "$vpn_cpu" =~ ^[0-9]+\.[0-9]+$ ]]; then
+			cpu_usage="${vpn_cpu}%"
+		fi
+	fi
 
-    # Measure actual connection time if VPN is active (REFACTOR: real metrics)
-    # Only perform connectivity test in detailed mode to maintain performance
-    if [[ "${DASHBOARD_DETAILED:-false}" == "true" && -x "$SCRIPT_DIR/vpn-manager" ]]; then
-        local test_start test_end test_duration
-        test_start=$(date +%s%N)
-        # Perform a quick connectivity test
-        if timeout 1 ping -c 1 8.8.8.8 >/dev/null 2>&1; then
-            test_end=$(date +%s%N)
-            test_duration=$(( (test_end - test_start) / 1000000 ))  # Convert to ms
-            connection_time="${test_duration}ms"
-        fi
-    fi
+	# Measure actual connection time if VPN is active (REFACTOR: real metrics)
+	# Only perform connectivity test in detailed mode to maintain performance
+	if [[ "${DASHBOARD_DETAILED:-false}" == "true" && -x "$SCRIPT_DIR/vpn-manager" ]]; then
+		local test_start test_end test_duration
+		test_start=$(date +%s%N)
+		# Perform a quick connectivity test
+		if timeout 1 ping -c 1 8.8.8.8 >/dev/null 2>&1; then
+			test_end=$(date +%s%N)
+			test_duration=$(((test_end - test_start) / 1000000)) # Convert to ms
+			connection_time="${test_duration}ms"
+		fi
+	fi
 
-    local result="$connection_time,$memory_usage,$cpu_usage"
+	local result="$connection_time,$memory_usage,$cpu_usage"
 
-    # Cache the result for performance optimization
-    echo "$result" > "$cache_file" 2>/dev/null || true
+	# Cache the result for performance optimization
+	echo "$result" >"$cache_file" 2>/dev/null || true
 
-    # Store in database for historical tracking (REFACTOR: performance optimized - conditional)
-    if [[ -x "$SECURE_DB_MANAGER" && "${DASHBOARD_DB_LOGGING:-false}" == "true" ]]; then
-        local timestamp
-        timestamp=$(date '+%Y-%m-%d %H:%M:%S')
-        echo "INSERT INTO realtime_metrics (timestamp, metric_type, metric_value, metric_unit) VALUES ('$timestamp', 'memory_usage', '${memory_usage%MB}', 'MB'), ('$timestamp', 'cpu_usage', '${cpu_usage%\%}', 'percent'), ('$timestamp', 'connection_time', '${connection_time%ms}', 'ms');" | \
-        "$SECURE_DB_MANAGER" execute >/dev/null 2>&1 || true
-    fi
+	# Store in database for historical tracking (REFACTOR: performance optimized - conditional)
+	if [[ -x "$SECURE_DB_MANAGER" && "${DASHBOARD_DB_LOGGING:-false}" == "true" ]]; then
+		local timestamp
+		timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+		echo "INSERT INTO realtime_metrics (timestamp, metric_type, metric_value, metric_unit) VALUES ('$timestamp', 'memory_usage', '${memory_usage%MB}', 'MB'), ('$timestamp', 'cpu_usage', '${cpu_usage%\%}', 'percent'), ('$timestamp', 'connection_time', '${connection_time%ms}', 'ms');" |
+			"$SECURE_DB_MANAGER" execute >/dev/null 2>&1 || true
+	fi
 
-    echo "$result"
+	echo "$result"
 }
 
 # Get connection information (minimal implementation for GREEN phase)
 get_connection_info() {
-    local active_connections=0
-    local success_rate="98.5%"  # Default based on current baseline
+	local active_connections=0
+	local success_rate="98.5%" # Default based on current baseline
 
-    # Basic connection counting
-    if command -v ss >/dev/null 2>&1; then
-        local conn_count
-        conn_count=$(ss -tn 2>/dev/null | grep -c "ESTABLISHED" 2>/dev/null)
-        active_connections=${conn_count:-1}
-    elif command -v netstat >/dev/null 2>&1; then
-        local conn_count
-        conn_count=$(netstat -tn 2>/dev/null | grep -c "ESTABLISHED" 2>/dev/null)
-        active_connections=${conn_count:-1}
-    else
-        active_connections=1  # Default to 1 active connection
-    fi
+	# Basic connection counting
+	if command -v ss >/dev/null 2>&1; then
+		local conn_count
+		conn_count=$(ss -tn 2>/dev/null | grep -c "ESTABLISHED" 2>/dev/null)
+		active_connections=${conn_count:-1}
+	elif command -v netstat >/dev/null 2>&1; then
+		local conn_count
+		conn_count=$(netstat -tn 2>/dev/null | grep -c "ESTABLISHED" 2>/dev/null)
+		active_connections=${conn_count:-1}
+	else
+		active_connections=1 # Default to 1 active connection
+	fi
 
-    echo "$active_connections,$success_rate"
+	echo "$active_connections,$success_rate"
 }
 
 # Generate JSON output (following architecture-designer recommendations)
 generate_json_output() {
-    local service_info uptime performance_info connection_info
-    local service_status connection_time memory_usage cpu_usage active_connections success_rate
-    local timestamp
+	local service_info uptime performance_info connection_info
+	local service_status connection_time memory_usage cpu_usage active_connections success_rate
+	local timestamp
 
-    # Collect data
-    service_info=$(get_service_status)
-    service_status=$(echo "$service_info" | cut -d',' -f1)
-    uptime=$(echo "$service_info" | cut -d',' -f2)
+	# Collect data
+	service_info=$(get_service_status)
+	service_status=$(echo "$service_info" | cut -d',' -f1)
+	uptime=$(echo "$service_info" | cut -d',' -f2)
 
-    performance_info=$(get_performance_metrics)
-    connection_time=$(echo "$performance_info" | cut -d',' -f1)
-    memory_usage=$(echo "$performance_info" | cut -d',' -f2)
-    cpu_usage=$(echo "$performance_info" | cut -d',' -f3)
+	performance_info=$(get_performance_metrics)
+	connection_time=$(echo "$performance_info" | cut -d',' -f1)
+	memory_usage=$(echo "$performance_info" | cut -d',' -f2)
+	cpu_usage=$(echo "$performance_info" | cut -d',' -f3)
 
-    connection_info=$(get_connection_info)
-    active_connections=$(echo "$connection_info" | cut -d',' -f1)
-    success_rate=$(echo "$connection_info" | cut -d',' -f2)
+	connection_info=$(get_connection_info)
+	active_connections=$(echo "$connection_info" | cut -d',' -f1)
+	success_rate=$(echo "$connection_info" | cut -d',' -f2)
 
-    timestamp=$(date -Iseconds)
+	timestamp=$(date -Iseconds)
 
-    # Generate JSON with accessibility metadata (following UX agent recommendations)
-    cat <<EOF
+	# Generate JSON with accessibility metadata (following UX agent recommendations)
+	cat <<EOF
 {
   "accessibility": {
     "version": "1.0",
@@ -279,25 +279,25 @@ EOF
 
 # Generate human-readable output (following UX accessibility recommendations)
 generate_human_output() {
-    local service_info uptime performance_info connection_info
-    local service_status connection_time memory_usage cpu_usage active_connections success_rate
+	local service_info uptime performance_info connection_info
+	local service_status connection_time memory_usage cpu_usage active_connections success_rate
 
-    # Collect data
-    service_info=$(get_service_status)
-    service_status=$(echo "$service_info" | cut -d',' -f1)
-    uptime=$(echo "$service_info" | cut -d',' -f2)
+	# Collect data
+	service_info=$(get_service_status)
+	service_status=$(echo "$service_info" | cut -d',' -f1)
+	uptime=$(echo "$service_info" | cut -d',' -f2)
 
-    performance_info=$(get_performance_metrics)
-    connection_time=$(echo "$performance_info" | cut -d',' -f1)
-    memory_usage=$(echo "$performance_info" | cut -d',' -f2)
-    cpu_usage=$(echo "$performance_info" | cut -d',' -f3)
+	performance_info=$(get_performance_metrics)
+	connection_time=$(echo "$performance_info" | cut -d',' -f1)
+	memory_usage=$(echo "$performance_info" | cut -d',' -f2)
+	cpu_usage=$(echo "$performance_info" | cut -d',' -f3)
 
-    connection_info=$(get_connection_info)
-    active_connections=$(echo "$connection_info" | cut -d',' -f1)
-    success_rate=$(echo "$connection_info" | cut -d',' -f2)
+	connection_info=$(get_connection_info)
+	active_connections=$(echo "$connection_info" | cut -d',' -f1)
+	success_rate=$(echo "$connection_info" | cut -d',' -f2)
 
-    # Format for screen readers (semantic structure)
-    cat <<EOF
+	# Format for screen readers (semantic structure)
+	cat <<EOF
 === VPN Status Dashboard ===
 Status: $service_status
 Content: System is $service_status with uptime $uptime
@@ -322,40 +322,40 @@ EOF
 
 # Watch mode implementation (basic for GREEN phase)
 watch_mode() {
-    local interval="${1:-5}"
-    local format="${2:-human}"
+	local interval="${1:-5}"
+	local format="${2:-human}"
 
-    echo "Starting watch mode (interval: ${interval}s, format: $format)" >&2
-    echo "Press Ctrl+C to exit" >&2
+	echo "Starting watch mode (interval: ${interval}s, format: $format)" >&2
+	echo "Press Ctrl+C to exit" >&2
 
-    while true; do
-        clear
-        if [[ "$format" == "json" ]]; then
-            generate_json_output
-        else
-            generate_human_output
-        fi
-        sleep "$interval"
-    done
+	while true; do
+		clear
+		if [[ "$format" == "json" ]]; then
+			generate_json_output
+		else
+			generate_human_output
+		fi
+		sleep "$interval"
+	done
 }
 
 # Send notification on status change (integration with notification-manager)
 notify_status_change() {
-    local old_status="$1"
-    local new_status="$2"
+	local old_status="$1"
+	local new_status="$2"
 
-    if [[ -x "$NOTIFICATION_MANAGER" && "$old_status" != "$new_status" ]]; then
-        "$NOTIFICATION_MANAGER" service-status "VPN status changed from $old_status to $new_status" 2>/dev/null || true
-    fi
+	if [[ -x "$NOTIFICATION_MANAGER" && "$old_status" != "$new_status" ]]; then
+		"$NOTIFICATION_MANAGER" service-status "VPN status changed from $old_status to $new_status" 2>/dev/null || true
+	fi
 }
 
 # Error handling (following established patterns)
 handle_error() {
-    local error_code="$1"
-    local error_message="$2"
+	local error_code="$1"
+	local error_message="$2"
 
-    # Generate structured error output for accessibility
-    cat <<EOF
+	# Generate structured error output for accessibility
+	cat <<EOF
 === System Error ===
 Status: error
 Content: Error Code: $error_code
@@ -365,15 +365,15 @@ Help: Run 'status-dashboard --help' for usage information
 === End System Error ===
 EOF
 
-    # Log error for audit
-    log_dashboard_access "error:$error_code"
+	# Log error for audit
+	log_dashboard_access "error:$error_code"
 
-    exit "$error_code"
+	exit "$error_code"
 }
 
 # Show help information (accessibility-enhanced)
 show_help() {
-    cat <<EOF
+	cat <<EOF
 === VPN Status Dashboard Help ===
 Status: info
 Content:
@@ -407,79 +407,79 @@ EOF
 
 # Main command processing
 main() {
-    local format="${DASHBOARD_OUTPUT_FORMAT:-human}"
-    local watch_mode_enabled=false
-    local interval=5
-    local config_file=""
-    local notify_on_error=false
+	local format="${DASHBOARD_OUTPUT_FORMAT:-human}"
+	local watch_mode_enabled=false
+	local interval=5
+	local config_file=""
+	local notify_on_error=false
 
-    # Load configuration
-    load_dashboard_config
+	# Load configuration
+	load_dashboard_config
 
-    # Process arguments
-    while [[ $# -gt 0 ]]; do
-        case "$1" in
-            --format=*)
-                format="${1#*=}"
-                ;;
-            --format)
-                shift
-                format="$1"
-                ;;
-            --watch)
-                watch_mode_enabled=true
-                ;;
-            --interval=*)
-                interval="${1#*=}"
-                ;;
-            --interval)
-                shift
-                interval="$1"
-                ;;
-            --config=*)
-                config_file="${1#*=}"
-                export VPN_CONFIG_FILE="$config_file"
-                ;;
-            --config)
-                shift
-                config_file="$1"
-                export VPN_CONFIG_FILE="$config_file"
-                ;;
-            --notify-on-error)
-                notify_on_error=true
-                ;;
-            --help|-h)
-                show_help
-                exit 0
-                ;;
-            *)
-                handle_error 1 "Invalid argument: $1"
-                ;;
-        esac
-        shift
-    done
+	# Process arguments
+	while [[ $# -gt 0 ]]; do
+		case "$1" in
+		--format=*)
+			format="${1#*=}"
+			;;
+		--format)
+			shift
+			format="$1"
+			;;
+		--watch)
+			watch_mode_enabled=true
+			;;
+		--interval=*)
+			interval="${1#*=}"
+			;;
+		--interval)
+			shift
+			interval="$1"
+			;;
+		--config=*)
+			config_file="${1#*=}"
+			export VPN_CONFIG_FILE="$config_file"
+			;;
+		--config)
+			shift
+			config_file="$1"
+			export VPN_CONFIG_FILE="$config_file"
+			;;
+		--notify-on-error)
+			notify_on_error=true
+			;;
+		--help | -h)
+			show_help
+			exit 0
+			;;
+		*)
+			handle_error 1 "Invalid argument: $1"
+			;;
+		esac
+		shift
+	done
 
-    # Validate format
-    if [[ "$format" != "json" && "$format" != "human" ]]; then
-        handle_error 1 "Invalid output format. Use 'json' or 'human'"
-    fi
+	# Validate format
+	if [[ "$format" != "json" && "$format" != "human" ]]; then
+		handle_error 1 "Invalid output format. Use 'json' or 'human'"
+	fi
 
-    # Log access for audit
-    log_dashboard_access "$format"
+	# Log access for audit
+	log_dashboard_access "$format"
 
-    # Execute requested functionality
-    if [[ "$watch_mode_enabled" == true ]]; then
-        watch_mode "$interval" "$format"
-    else
-        if [[ "$format" == "json" ]]; then
-            generate_json_output
-        else
-            generate_human_output
-        fi
-    fi
+	# Execute requested functionality
+	if [[ "$watch_mode_enabled" == true ]]; then
+		watch_mode "$interval" "$format"
+	else
+		if [[ "$format" == "json" ]]; then
+			generate_json_output
+		else
+			generate_human_output
+		fi
+	fi
 }
 
 # Execute main function if script is run directly
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
-    main "$@"
+	main "$@"
 fi

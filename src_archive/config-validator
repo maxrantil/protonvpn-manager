@@ -20,10 +20,10 @@ NC='\033[0m' # No Color
 
 # Logging functions
 log() {
-    local level="$1"
-    local message="$2"
-    mkdir -p "$(dirname "$LOG_FILE")"
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [$level] $message" | tee -a "$LOG_FILE" >&2
+	local level="$1"
+	local message="$2"
+	mkdir -p "$(dirname "$LOG_FILE")"
+	echo "[$(date '+%Y-%m-%d %H:%M:%S')] [$level] $message" | tee -a "$LOG_FILE" >&2
 }
 
 log_info() { log "INFO" "$1"; }
@@ -32,255 +32,258 @@ log_error() { log "ERROR" "$1"; }
 
 # Error handling
 exit_with_error() {
-    log_error "$1"
-    echo -e "${RED}Error: $1${NC}" >&2
-    exit 1
+	log_error "$1"
+	echo -e "${RED}Error: $1${NC}" >&2
+	exit 1
 }
 
 # Required OpenVPN configuration fields
 REQUIRED_FIELDS=(
-    "client"
-    "dev"
-    "proto"
-    "remote"
-    "cipher"
+	"client"
+	"dev"
+	"proto"
+	"remote"
+	"cipher"
 )
 
 # Certificate validation function
 validate_certificate() {
-    local config_file="$1"
-    local cert_found=0
-    local cert_valid=0
+	local config_file="$1"
+	local cert_found=0
+	local cert_valid=0
 
-    # Check for CA certificate section
-    if grep -q "<ca>" "$config_file" && grep -q "</ca>" "$config_file"; then
-        cert_found=1
+	# Check for CA certificate section
+	if grep -q "<ca>" "$config_file" && grep -q "</ca>" "$config_file"; then
+		cert_found=1
 
-        # Extract certificate content
-        local cert_content
-        cert_content=$(sed -n '/<ca>/,/<\/ca>/p' "$config_file" | sed '1d;$d')
+		# Extract certificate content
+		local cert_content
+		cert_content=$(sed -n '/<ca>/,/<\/ca>/p' "$config_file" | sed '1d;$d')
 
-        # Basic certificate format validation
-        if echo "$cert_content" | grep -q "BEGIN CERTIFICATE" && echo "$cert_content" | grep -q "END CERTIFICATE"; then
-            # Check if certificate contains valid base64 data (simplified check)
-            local cert_data
-            cert_data=$(echo "$cert_content" | grep -v "BEGIN CERTIFICATE" | grep -v "END CERTIFICATE" | tr -d '\n ')
+		# Basic certificate format validation
+		if echo "$cert_content" | grep -q "BEGIN CERTIFICATE" && echo "$cert_content" | grep -q "END CERTIFICATE"; then
+			# Check if certificate contains valid base64 data (simplified check)
+			local cert_data
+			cert_data=$(echo "$cert_content" | grep -v "BEGIN CERTIFICATE" | grep -v "END CERTIFICATE" | tr -d '\n ')
 
-            if [[ ${#cert_data} -gt 100 ]] && echo "$cert_data" | grep -qE '^[A-Za-z0-9+/=]+$'; then
-                cert_valid=1
-            fi
-        fi
-    fi
+			if [[ ${#cert_data} -gt 100 ]] && echo "$cert_data" | grep -qE '^[A-Za-z0-9+/=]+$'; then
+				cert_valid=1
+			fi
+		fi
+	fi
 
-    if [[ $cert_found -eq 0 ]]; then
-        return 1  # No certificate found
-    elif [[ $cert_valid -eq 0 ]]; then
-        return 2  # Certificate found but invalid
-    else
-        return 0  # Certificate valid
-    fi
+	if [[ $cert_found -eq 0 ]]; then
+		return 1 # No certificate found
+	elif [[ $cert_valid -eq 0 ]]; then
+		return 2 # Certificate found but invalid
+	else
+		return 0 # Certificate valid
+	fi
 }
 
 # Configuration field validation
 validate_required_fields() {
-    local config_file="$1"
-    local missing_fields=()
-    local invalid_fields=()
+	local config_file="$1"
+	local missing_fields=()
+	local invalid_fields=()
 
-    for field in "${REQUIRED_FIELDS[@]}"; do
-        if ! grep -q "^$field" "$config_file"; then
-            missing_fields+=("$field")
-        fi
-    done
+	for field in "${REQUIRED_FIELDS[@]}"; do
+		if ! grep -q "^$field" "$config_file"; then
+			missing_fields+=("$field")
+		fi
+	done
 
-    # Check specific field validity
-    if grep -q "^cipher " "$config_file"; then
-        local cipher
-        cipher=$(grep "^cipher " "$config_file" | cut -d' ' -f2-)
-        # Check for valid cipher (simplified list)
-        if ! echo "$cipher" | grep -qE "^(AES-256-GCM|AES-128-GCM|AES-256-CBC|AES-128-CBC|INVALID-CIPHER)$"; then
-            invalid_fields+=("cipher")
-        fi
-        # Special case: INVALID-CIPHER should be marked as invalid
-        if [[ "$cipher" == "INVALID-CIPHER" ]]; then
-            invalid_fields+=("cipher")
-        fi
-    fi
+	# Check specific field validity
+	if grep -q "^cipher " "$config_file"; then
+		local cipher
+		cipher=$(grep "^cipher " "$config_file" | cut -d' ' -f2-)
+		# Check for valid cipher (simplified list)
+		if ! echo "$cipher" | grep -qE "^(AES-256-GCM|AES-128-GCM|AES-256-CBC|AES-128-CBC|INVALID-CIPHER)$"; then
+			invalid_fields+=("cipher")
+		fi
+		# Special case: INVALID-CIPHER should be marked as invalid
+		if [[ "$cipher" == "INVALID-CIPHER" ]]; then
+			invalid_fields+=("cipher")
+		fi
+	fi
 
-    # Return results
-    if [[ ${#missing_fields[@]} -gt 0 ]] || [[ ${#invalid_fields[@]} -gt 0 ]]; then
-        echo "Missing fields: ${missing_fields[*]}"
-        echo "Invalid fields: ${invalid_fields[*]}"
-        return 1
-    fi
+	# Return results
+	if [[ ${#missing_fields[@]} -gt 0 ]] || [[ ${#invalid_fields[@]} -gt 0 ]]; then
+		echo "Missing fields: ${missing_fields[*]}"
+		echo "Invalid fields: ${invalid_fields[*]}"
+		return 1
+	fi
 
-    return 0
+	return 0
 }
 
 # Single file validation
 validate_single_file() {
-    local config_file="$1"
-    local validation_errors=()
+	local config_file="$1"
+	local validation_errors=()
 
-    log_info "Validating config file: $(basename "$config_file")"
+	log_info "Validating config file: $(basename "$config_file")"
 
-    # Check file exists and is readable
-    if [[ ! -f "$config_file" ]]; then
-        validation_errors+=("File not found")
-    elif [[ ! -r "$config_file" ]]; then
-        validation_errors+=("File not readable")
-    else
-        # Check required fields
-        if ! validate_required_fields "$config_file" >/dev/null 2>&1; then
-            local field_errors
-            field_errors=$(validate_required_fields "$config_file" 2>&1 || true)
-            if [[ -n "$field_errors" ]]; then
-                validation_errors+=("$field_errors")
-            fi
-        fi
+	# Check file exists and is readable
+	if [[ ! -f "$config_file" ]]; then
+		validation_errors+=("File not found")
+	elif [[ ! -r "$config_file" ]]; then
+		validation_errors+=("File not readable")
+	else
+		# Check required fields
+		if ! validate_required_fields "$config_file" >/dev/null 2>&1; then
+			local field_errors
+			field_errors=$(validate_required_fields "$config_file" 2>&1 || true)
+			if [[ -n "$field_errors" ]]; then
+				validation_errors+=("$field_errors")
+			fi
+		fi
 
-        # Validate certificates
-        case $(validate_certificate "$config_file"; echo $?) in
-            1) validation_errors+=("missing certificate") ;;
-            2) validation_errors+=("certificate invalid") ;;
-            0) ;; # Certificate is valid
-        esac
+		# Validate certificates
+		case $(
+			validate_certificate "$config_file"
+			echo $?
+		) in
+		1) validation_errors+=("missing certificate") ;;
+		2) validation_errors+=("certificate invalid") ;;
+		0) ;; # Certificate is valid
+		esac
 
-        # Check for basic OpenVPN structure
-        if ! grep -q "^client" "$config_file"; then
-            validation_errors+=("not a client configuration")
-        fi
-    fi
+		# Check for basic OpenVPN structure
+		if ! grep -q "^client" "$config_file"; then
+			validation_errors+=("not a client configuration")
+		fi
+	fi
 
-    # Output results
-    if [[ ${#validation_errors[@]} -eq 0 ]]; then
-        echo -e "${GREEN}VALID${NC}: $(basename "$config_file")"
-        log_info "Config validated successfully: $(basename "$config_file")"
-        return 0
-    else
-        echo -e "${RED}INVALID${NC}: $(basename "$config_file")"
-        for error in "${validation_errors[@]}"; do
-            echo "  - $error"
-        done
-        log_warn "Config validation failed: $(basename "$config_file") - ${validation_errors[*]}"
-        return 1
-    fi
+	# Output results
+	if [[ ${#validation_errors[@]} -eq 0 ]]; then
+		echo -e "${GREEN}VALID${NC}: $(basename "$config_file")"
+		log_info "Config validated successfully: $(basename "$config_file")"
+		return 0
+	else
+		echo -e "${RED}INVALID${NC}: $(basename "$config_file")"
+		for error in "${validation_errors[@]}"; do
+			echo "  - $error"
+		done
+		log_warn "Config validation failed: $(basename "$config_file") - ${validation_errors[*]}"
+		return 1
+	fi
 }
 
 # Directory validation
 validate_directory() {
-    local config_dir="$1"
-    local valid_count=0
-    local invalid_count=0
-    local total_count=0
+	local config_dir="$1"
+	local valid_count=0
+	local invalid_count=0
+	local total_count=0
 
-    log_info "Validating directory: $config_dir"
+	log_info "Validating directory: $config_dir"
 
-    if [[ ! -d "$config_dir" ]]; then
-        exit_with_error "Directory not found: $config_dir"
-    fi
+	if [[ ! -d "$config_dir" ]]; then
+		exit_with_error "Directory not found: $config_dir"
+	fi
 
-    # Find all .ovpn files
-    while IFS= read -r -d '' config_file; do
-        total_count=$((total_count + 1))
-        if validate_single_file "$config_file" >/dev/null 2>&1; then
-            valid_count=$((valid_count + 1))
-        else
-            invalid_count=$((invalid_count + 1))
-        fi
-    done < <(find "$config_dir" -name "*.ovpn" -type f -print0)
+	# Find all .ovpn files
+	while IFS= read -r -d '' config_file; do
+		total_count=$((total_count + 1))
+		if validate_single_file "$config_file" >/dev/null 2>&1; then
+			valid_count=$((valid_count + 1))
+		else
+			invalid_count=$((invalid_count + 1))
+		fi
+	done < <(find "$config_dir" -name "*.ovpn" -type f -print0)
 
-    # Output summary
-    echo "Directory validation summary:"
-    echo "  Total configs: $total_count"
-    echo "  Valid configs: $valid_count valid"
-    echo "  Invalid configs: $invalid_count invalid"
+	# Output summary
+	echo "Directory validation summary:"
+	echo "  Total configs: $total_count"
+	echo "  Valid configs: $valid_count valid"
+	echo "  Invalid configs: $invalid_count invalid"
 
-    log_info "Directory validation complete: $valid_count valid, $invalid_count invalid"
+	log_info "Directory validation complete: $valid_count valid, $invalid_count invalid"
 
-    return 0
+	return 0
 }
 
 # Hash generation and integrity checking
 generate_config_hashes() {
-    local config_dir="$1"
-    local hash_file="$PROJECT_ROOT/locations/.download-metadata/config-hashes.db"
+	local config_dir="$1"
+	local hash_file="$PROJECT_ROOT/locations/.download-metadata/config-hashes.db"
 
-    mkdir -p "$(dirname "$hash_file")"
+	mkdir -p "$(dirname "$hash_file")"
 
-    log_info "Generating hashes for configs in: $config_dir"
+	log_info "Generating hashes for configs in: $config_dir"
 
-    # Remove old hash file
-    rm -f "$hash_file"
+	# Remove old hash file
+	rm -f "$hash_file"
 
-    # Generate new hashes
-    find "$config_dir" -name "*.ovpn" -type f | while read -r config_file; do
-        local filename
-        filename=$(basename "$config_file")
-        local hash
-        hash=$(sha256sum "$config_file" | cut -d' ' -f1)
-        echo "$filename:$hash" >> "$hash_file"
-    done
+	# Generate new hashes
+	find "$config_dir" -name "*.ovpn" -type f | while read -r config_file; do
+		local filename
+		filename=$(basename "$config_file")
+		local hash
+		hash=$(sha256sum "$config_file" | cut -d' ' -f1)
+		echo "$filename:$hash" >>"$hash_file"
+	done
 
-    local hash_count=0
-    if [[ -f "$hash_file" ]]; then
-        hash_count=$(wc -l < "$hash_file")
-    fi
+	local hash_count=0
+	if [[ -f "$hash_file" ]]; then
+		hash_count=$(wc -l <"$hash_file")
+	fi
 
-    echo "Generated hashes for $hash_count configs"
-    log_info "Hash generation complete: $hash_count configs"
+	echo "Generated hashes for $hash_count configs"
+	log_info "Hash generation complete: $hash_count configs"
 
-    return 0
+	return 0
 }
 
 check_integrity() {
-    local config_dir="$1"
-    local hash_file="$PROJECT_ROOT/locations/.download-metadata/config-hashes.db"
+	local config_dir="$1"
+	local hash_file="$PROJECT_ROOT/locations/.download-metadata/config-hashes.db"
 
-    if [[ ! -f "$hash_file" ]]; then
-        log_warn "No hash file found - generating hashes first"
-        generate_config_hashes "$config_dir"
-        echo "integrity verified (hashes generated)"
-        return 0
-    fi
+	if [[ ! -f "$hash_file" ]]; then
+		log_warn "No hash file found - generating hashes first"
+		generate_config_hashes "$config_dir"
+		echo "integrity verified (hashes generated)"
+		return 0
+	fi
 
-    log_info "Checking integrity for configs in: $config_dir"
+	log_info "Checking integrity for configs in: $config_dir"
 
-    local integrity_errors=0
-    local files_checked=0
+	local integrity_errors=0
+	local files_checked=0
 
-    # Check each file against stored hash
-    while IFS=':' read -r filename stored_hash; do
-        local config_path="$config_dir/$filename"
-        files_checked=$((files_checked + 1))
+	# Check each file against stored hash
+	while IFS=':' read -r filename stored_hash; do
+		local config_path="$config_dir/$filename"
+		files_checked=$((files_checked + 1))
 
-        if [[ -f "$config_path" ]]; then
-            local current_hash
-            current_hash=$(sha256sum "$config_path" | cut -d' ' -f1)
-            if [[ "$current_hash" != "$stored_hash" ]]; then
-                echo "Integrity error: $filename (hash mismatch)"
-                integrity_errors=$((integrity_errors + 1))
-            fi
-        else
-            echo "Integrity error: $filename (file missing)"
-            integrity_errors=$((integrity_errors + 1))
-        fi
-    done < "$hash_file"
+		if [[ -f "$config_path" ]]; then
+			local current_hash
+			current_hash=$(sha256sum "$config_path" | cut -d' ' -f1)
+			if [[ "$current_hash" != "$stored_hash" ]]; then
+				echo "Integrity error: $filename (hash mismatch)"
+				integrity_errors=$((integrity_errors + 1))
+			fi
+		else
+			echo "Integrity error: $filename (file missing)"
+			integrity_errors=$((integrity_errors + 1))
+		fi
+	done <"$hash_file"
 
-    if [[ $integrity_errors -eq 0 ]]; then
-        echo "integrity verified ($files_checked files checked)"
-        log_info "Integrity check passed: $files_checked files"
-        return 0
-    else
-        echo "Integrity check failed: $integrity_errors errors"
-        log_error "Integrity check failed: $integrity_errors errors"
-        return 1
-    fi
+	if [[ $integrity_errors -eq 0 ]]; then
+		echo "integrity verified ($files_checked files checked)"
+		log_info "Integrity check passed: $files_checked files"
+		return 0
+	else
+		echo "Integrity check failed: $integrity_errors errors"
+		log_error "Integrity check failed: $integrity_errors errors"
+		return 1
+	fi
 }
 
 # Command implementations
 cmd_help() {
-    cat << 'EOF'
+	cat <<'EOF'
 ProtonVPN Config Validator
 
 USAGE:
@@ -314,62 +317,62 @@ EOF
 }
 
 cmd_validate_file() {
-    local config_file="$1"
+	local config_file="$1"
 
-    if [[ -z "$config_file" ]]; then
-        exit_with_error "Config file path required"
-    fi
+	if [[ -z "$config_file" ]]; then
+		exit_with_error "Config file path required"
+	fi
 
-    validate_single_file "$config_file"
+	validate_single_file "$config_file"
 }
 
 cmd_validate_dir() {
-    local config_dir="$1"
+	local config_dir="$1"
 
-    if [[ -z "$config_dir" ]]; then
-        exit_with_error "Directory path required"
-    fi
+	if [[ -z "$config_dir" ]]; then
+		exit_with_error "Directory path required"
+	fi
 
-    validate_directory "$config_dir"
+	validate_directory "$config_dir"
 }
 
 cmd_check_integrity() {
-    local config_dir="${1:-$PROJECT_ROOT/locations}"
+	local config_dir="${1:-$PROJECT_ROOT/locations}"
 
-    check_integrity "$config_dir"
+	check_integrity "$config_dir"
 }
 
 cmd_generate_hashes() {
-    local config_dir="$1"
+	local config_dir="$1"
 
-    if [[ -z "$config_dir" ]]; then
-        exit_with_error "Directory path required"
-    fi
+	if [[ -z "$config_dir" ]]; then
+		exit_with_error "Directory path required"
+	fi
 
-    if [[ ! -d "$config_dir" ]]; then
-        exit_with_error "Directory not found: $config_dir"
-    fi
+	if [[ ! -d "$config_dir" ]]; then
+		exit_with_error "Directory not found: $config_dir"
+	fi
 
-    generate_config_hashes "$config_dir"
+	generate_config_hashes "$config_dir"
 }
 
 # Main command dispatcher
 main() {
-    # Parse command
-    local command="${1:-help}"
-    shift || true
+	# Parse command
+	local command="${1:-help}"
+	shift || true
 
-    case "$command" in
-        "help"|"-h"|"--help") cmd_help ;;
-        "validate-file") cmd_validate_file "$@" ;;
-        "validate-dir") cmd_validate_dir "$@" ;;
-        "check-integrity") cmd_check_integrity "$@" ;;
-        "generate-hashes") cmd_generate_hashes "$@" ;;
-        *)
-            log_error "Unknown command: $command"
-            exit_with_error "Unknown command: $command. Use 'help' for usage information."
-            ;;
-    esac
+	case "$command" in
+	"help" | "-h" | "--help") cmd_help ;;
+	"validate-file") cmd_validate_file "$@" ;;
+	"validate-dir") cmd_validate_dir "$@" ;;
+	"check-integrity") cmd_check_integrity "$@" ;;
+	"generate-hashes") cmd_generate_hashes "$@" ;;
+	*)
+		log_error "Unknown command: $command"
+		exit_with_error "Unknown command: $command. Use 'help' for usage information."
+		;;
+	esac
 }
 
 # Execute main function

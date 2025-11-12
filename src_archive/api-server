@@ -30,149 +30,150 @@ readonly RATE_LIMIT_DIR="/tmp/protonvpn-api-rate-limit"
 
 # Load API server configuration
 load_api_config() {
-    local port="$DEFAULT_PORT"
-    local bind_address="$DEFAULT_BIND_ADDRESS"
-    local auth_required="$DEFAULT_AUTH_REQUIRED"
-    local rate_limit="$DEFAULT_RATE_LIMIT"
-    local tls_enabled="$DEFAULT_TLS_ENABLED"
+	local port="$DEFAULT_PORT"
+	local bind_address="$DEFAULT_BIND_ADDRESS"
+	local auth_required="$DEFAULT_AUTH_REQUIRED"
+	local rate_limit="$DEFAULT_RATE_LIMIT"
+	local tls_enabled="$DEFAULT_TLS_ENABLED"
 
-    # Use config-manager if available (following existing pattern)
-    if [[ -x "$SECURE_CONFIG_MANAGER" && -f "$CONFIG_FILE" ]]; then
-        port=$("$SECURE_CONFIG_MANAGER" get "$CONFIG_FILE" "real_time_integration.port" 2>/dev/null || echo "$DEFAULT_PORT")
-        bind_address=$("$SECURE_CONFIG_MANAGER" get "$CONFIG_FILE" "real_time_integration.bind_address" 2>/dev/null || echo "$DEFAULT_BIND_ADDRESS")
-        auth_required=$("$SECURE_CONFIG_MANAGER" get "$CONFIG_FILE" "real_time_integration.auth_required" 2>/dev/null || echo "$DEFAULT_AUTH_REQUIRED")
-        rate_limit=$("$SECURE_CONFIG_MANAGER" get "$CONFIG_FILE" "real_time_integration.rate_limit_requests_per_minute" 2>/dev/null || echo "$DEFAULT_RATE_LIMIT")
-        tls_enabled=$("$SECURE_CONFIG_MANAGER" get "$CONFIG_FILE" "real_time_integration.security.tls_enabled" 2>/dev/null || echo "$DEFAULT_TLS_ENABLED")
-    fi
+	# Use config-manager if available (following existing pattern)
+	if [[ -x "$SECURE_CONFIG_MANAGER" && -f "$CONFIG_FILE" ]]; then
+		port=$("$SECURE_CONFIG_MANAGER" get "$CONFIG_FILE" "real_time_integration.port" 2>/dev/null || echo "$DEFAULT_PORT")
+		bind_address=$("$SECURE_CONFIG_MANAGER" get "$CONFIG_FILE" "real_time_integration.bind_address" 2>/dev/null || echo "$DEFAULT_BIND_ADDRESS")
+		auth_required=$("$SECURE_CONFIG_MANAGER" get "$CONFIG_FILE" "real_time_integration.auth_required" 2>/dev/null || echo "$DEFAULT_AUTH_REQUIRED")
+		rate_limit=$("$SECURE_CONFIG_MANAGER" get "$CONFIG_FILE" "real_time_integration.rate_limit_requests_per_minute" 2>/dev/null || echo "$DEFAULT_RATE_LIMIT")
+		tls_enabled=$("$SECURE_CONFIG_MANAGER" get "$CONFIG_FILE" "real_time_integration.security.tls_enabled" 2>/dev/null || echo "$DEFAULT_TLS_ENABLED")
+	fi
 
-    export API_PORT="$port"
-    export API_BIND_ADDRESS="$bind_address"
-    export API_AUTH_REQUIRED="$auth_required"
-    export API_RATE_LIMIT="$rate_limit"
-    export API_TLS_ENABLED="$tls_enabled"
+	export API_PORT="$port"
+	export API_BIND_ADDRESS="$bind_address"
+	export API_AUTH_REQUIRED="$auth_required"
+	export API_RATE_LIMIT="$rate_limit"
+	export API_TLS_ENABLED="$tls_enabled"
 }
 
 # Audit logging integration (following established patterns)
 log_api_event() {
-    local event_type="$1"
-    local endpoint="$2"
-    local client_ip="${3:-unknown}"
-    local status_code="${4:-200}"
-    local user="${SUDO_USER:-$USER}"
-    local timestamp="$(date '+%Y-%m-%d %H:%M:%S')"
+	local event_type="$1"
+	local endpoint="$2"
+	local client_ip="${3:-unknown}"
+	local status_code="${4:-200}"
+	local user="${SUDO_USER:-$USER}"
+	local timestamp="$(date '+%Y-%m-%d %H:%M:%S')"
 
-    # Log to API server log file
-    echo "[$timestamp] IP=$client_ip EVENT=$event_type ENDPOINT=$endpoint STATUS=$status_code USER=$user" >> "$API_LOG_FILE" 2>/dev/null || true
+	# Log to API server log file
+	echo "[$timestamp] IP=$client_ip EVENT=$event_type ENDPOINT=$endpoint STATUS=$status_code USER=$user" >>"$API_LOG_FILE" 2>/dev/null || true
 
-    # Use audit-log-protector if available
-    if [[ -x "$AUDIT_LOG_PROTECTOR" ]]; then
-        echo "[$timestamp] COMPONENT=api-server IP=$client_ip EVENT=$event_type ENDPOINT=$endpoint STATUS=$status_code USER=$user" | \
-            "$AUDIT_LOG_PROTECTOR" protect >/dev/null 2>&1 || true
-    fi
+	# Use audit-log-protector if available
+	if [[ -x "$AUDIT_LOG_PROTECTOR" ]]; then
+		echo "[$timestamp] COMPONENT=api-server IP=$client_ip EVENT=$event_type ENDPOINT=$endpoint STATUS=$status_code USER=$user" |
+			"$AUDIT_LOG_PROTECTOR" protect >/dev/null 2>&1 || true
+	fi
 }
 
 # Rate limiting implementation (security requirement)
 check_rate_limit() {
-    local client_ip="$1"
-    local current_minute
-    current_minute=$(date +%Y%m%d%H%M)
+	local client_ip="$1"
+	local current_minute
+	current_minute=$(date +%Y%m%d%H%M)
 
-    mkdir -p "$RATE_LIMIT_DIR" 2>/dev/null || true
+	mkdir -p "$RATE_LIMIT_DIR" 2>/dev/null || true
 
-    local rate_file="$RATE_LIMIT_DIR/${client_ip}_${current_minute}"
-    local request_count=1
+	local rate_file="$RATE_LIMIT_DIR/${client_ip}_${current_minute}"
+	local request_count=1
 
-    if [[ -f "$rate_file" ]]; then
-        request_count=$(cat "$rate_file" 2>/dev/null || echo "1")
-        request_count=$((request_count + 1))
-    fi
+	if [[ -f "$rate_file" ]]; then
+		request_count=$(cat "$rate_file" 2>/dev/null || echo "1")
+		request_count=$((request_count + 1))
+	fi
 
-    echo "$request_count" > "$rate_file" 2>/dev/null || true
+	echo "$request_count" >"$rate_file" 2>/dev/null || true
 
-    # Cleanup old rate limit files
-    find "$RATE_LIMIT_DIR" -name "*_*" -mmin +2 -delete 2>/dev/null || true
+	# Cleanup old rate limit files
+	find "$RATE_LIMIT_DIR" -name "*_*" -mmin +2 -delete 2>/dev/null || true
 
-    if [[ "$request_count" -gt "${API_RATE_LIMIT:-60}" ]]; then
-        return 1  # Rate limit exceeded
-    fi
+	if [[ "$request_count" -gt "${API_RATE_LIMIT:-60}" ]]; then
+		return 1 # Rate limit exceeded
+	fi
 
-    return 0
+	return 0
 }
 
 # Authentication validation (security requirement)
 validate_auth() {
-    local auth_header="$1"
+	local auth_header="$1"
 
-    if [[ "${API_AUTH_REQUIRED:-true}" != "true" ]]; then
-        return 0  # Authentication disabled
-    fi
+	if [[ "${API_AUTH_REQUIRED:-true}" != "true" ]]; then
+		return 0 # Authentication disabled
+	fi
 
-    if [[ -z "$auth_header" ]]; then
-        return 1  # No auth header
-    fi
+	if [[ -z "$auth_header" ]]; then
+		return 1 # No auth header
+	fi
 
-    # Simple Bearer token validation for GREEN phase
-    if [[ "$auth_header" =~ ^Bearer[[:space:]]+(.+)$ ]]; then
-        local token="${BASH_REMATCH[1]}"
+	# Simple Bearer token validation for GREEN phase
+	if [[ "$auth_header" =~ ^Bearer[[:space:]]+(.+)$ ]]; then
+		local token="${BASH_REMATCH[1]}"
 
-        # For GREEN phase - accept any non-empty token
-        # In production, this would validate against a proper token store
-        if [[ -n "$token" && ${#token} -ge 8 ]]; then
-            return 0  # Valid token
-        fi
-    fi
+		# For GREEN phase - accept any non-empty token
+		# In production, this would validate against a proper token store
+		if [[ -n "$token" && ${#token} -ge 8 ]]; then
+			return 0 # Valid token
+		fi
+	fi
 
-    return 1  # Invalid auth
+	return 1 # Invalid auth
 }
 
 # Content sanitization (following notification-manager patterns)
 sanitize_api_response() {
-    local content="$1"
+	local content="$1"
 
-    # Remove potentially sensitive information
-    content=$(echo "$content" | sed -E 's/(password|key|secret|token)=[^[:space:]]*/\1=***REDACTED***/gi')
-    content=$(echo "$content" | sed -E 's|(/root|/home/[^/]*/\.ssh|/etc/shadow)[^[:space:]]*|\*\*\*REDACTED\*\*\*|g')
+	# Remove potentially sensitive information
+	content=$(echo "$content" | sed -E 's/(password|key|secret|token)=[^[:space:]]*/\1=***REDACTED***/gi')
+	content=$(echo "$content" | sed -E 's|(/root|/home/[^/]*/\.ssh|/etc/shadow)[^[:space:]]*|\*\*\*REDACTED\*\*\*|g')
 
-    echo "$content"
+	echo "$content"
 }
 
 # HTTP response helpers
 send_http_response() {
-    local status_code="$1"
-    local content_type="${2:-application/json}"
-    local body="${3:-}"
-    local client_ip="${4:-unknown}"
+	local status_code="$1"
+	local content_type="${2:-application/json}"
+	local body="${3:-}"
+	local client_ip="${4:-unknown}"
 
-    # HTTP response headers
-    echo "HTTP/1.1 $status_code"
-    echo "Content-Type: $content_type"
-    echo "Access-Control-Allow-Origin: *"
-    echo "Access-Control-Allow-Methods: GET, POST, OPTIONS"
-    echo "Access-Control-Allow-Headers: Authorization, Content-Type"
-    echo "Server: ProtonVPN-API/1.0"
-    echo "Date: $(date -R)"
-    echo "Connection: close"
+	# HTTP response headers
+	echo "HTTP/1.1 $status_code"
+	echo "Content-Type: $content_type"
+	echo "Access-Control-Allow-Origin: *"
+	echo "Access-Control-Allow-Methods: GET, POST, OPTIONS"
+	echo "Access-Control-Allow-Headers: Authorization, Content-Type"
+	echo "Server: ProtonVPN-API/1.0"
+	echo "Date: $(date -R)"
+	echo "Connection: close"
 
-    if [[ -n "$body" ]]; then
-        echo "Content-Length: ${#body}"
-        echo ""
-        echo "$body"
-    else
-        echo "Content-Length: 0"
-        echo ""
-    fi
+	if [[ -n "$body" ]]; then
+		echo "Content-Length: ${#body}"
+		echo ""
+		echo "$body"
+	else
+		echo "Content-Length: 0"
+		echo ""
+	fi
 
-    # Log the response
-    log_api_event "http_response" "unknown" "$client_ip" "$status_code"
+	# Log the response
+	log_api_event "http_response" "unknown" "$client_ip" "$status_code"
 }
 
 send_error_response() {
-    local status_code="$1"
-    local error_message="$2"
-    local client_ip="${3:-unknown}"
+	local status_code="$1"
+	local error_message="$2"
+	local client_ip="${3:-unknown}"
 
-    local error_body
-    error_body=$(cat <<EOF
+	local error_body
+	error_body=$(
+		cat <<EOF
 {
   "error": {
     "code": $status_code,
@@ -181,66 +182,67 @@ send_error_response() {
   }
 }
 EOF
-)
+	)
 
-    send_http_response "$status_code" "application/json" "$error_body" "$client_ip"
+	send_http_response "$status_code" "application/json" "$error_body" "$client_ip"
 }
 
 send_json_response() {
-    local json_data="$1"
-    local client_ip="${2:-unknown}"
+	local json_data="$1"
+	local client_ip="${2:-unknown}"
 
-    # Sanitize the response
-    json_data=$(sanitize_api_response "$json_data")
+	# Sanitize the response
+	json_data=$(sanitize_api_response "$json_data")
 
-    send_http_response "200 OK" "application/json" "$json_data" "$client_ip"
+	send_http_response "200 OK" "application/json" "$json_data" "$client_ip"
 }
 
 # API endpoint handlers
 handle_status_endpoint() {
-    local client_ip="${1:-unknown}"
+	local client_ip="${1:-unknown}"
 
-    log_api_event "status_request" "/api/v1/status" "$client_ip"
+	log_api_event "status_request" "/api/v1/status" "$client_ip"
 
-    # Get status from status-dashboard
-    if [[ -x "$STATUS_DASHBOARD" ]]; then
-        local status_data
-        status_data=$("$STATUS_DASHBOARD" --format=json 2>/dev/null || echo '{"error":"status_unavailable"}')
-        send_json_response "$status_data" "$client_ip"
-    else
-        send_error_response "503 Service Unavailable" "Status dashboard not available" "$client_ip"
-    fi
+	# Get status from status-dashboard
+	if [[ -x "$STATUS_DASHBOARD" ]]; then
+		local status_data
+		status_data=$("$STATUS_DASHBOARD" --format=json 2>/dev/null || echo '{"error":"status_unavailable"}')
+		send_json_response "$status_data" "$client_ip"
+	else
+		send_error_response "503 Service Unavailable" "Status dashboard not available" "$client_ip"
+	fi
 }
 
 handle_health_endpoint() {
-    local client_ip="${1:-unknown}"
+	local client_ip="${1:-unknown}"
 
-    log_api_event "health_request" "/api/v1/health" "$client_ip"
+	log_api_event "health_request" "/api/v1/health" "$client_ip"
 
-    # Get health data from health-monitor
-    if [[ -x "$HEALTH_MONITOR" ]]; then
-        local health_data
-        health_data=$("$HEALTH_MONITOR" --export-status 2>/dev/null || echo '{"error":"health_unavailable"}')
-        send_json_response "$health_data" "$client_ip"
-    else
-        send_error_response "503 Service Unavailable" "Health monitor not available" "$client_ip"
-    fi
+	# Get health data from health-monitor
+	if [[ -x "$HEALTH_MONITOR" ]]; then
+		local health_data
+		health_data=$("$HEALTH_MONITOR" --export-status 2>/dev/null || echo '{"error":"health_unavailable"}')
+		send_json_response "$health_data" "$client_ip"
+	else
+		send_error_response "503 Service Unavailable" "Health monitor not available" "$client_ip"
+	fi
 }
 
 handle_metrics_endpoint() {
-    local client_ip="${1:-unknown}"
+	local client_ip="${1:-unknown}"
 
-    log_api_event "metrics_request" "/api/v1/metrics" "$client_ip"
+	log_api_event "metrics_request" "/api/v1/metrics" "$client_ip"
 
-    # Combine status and health data for comprehensive metrics
-    local status_data health_data
-    if [[ -x "$STATUS_DASHBOARD" && -x "$HEALTH_MONITOR" ]]; then
-        status_data=$("$STATUS_DASHBOARD" --format=json 2>/dev/null || echo '{}')
-        health_data=$("$HEALTH_MONITOR" --export-status 2>/dev/null || echo '{}')
+	# Combine status and health data for comprehensive metrics
+	local status_data health_data
+	if [[ -x "$STATUS_DASHBOARD" && -x "$HEALTH_MONITOR" ]]; then
+		status_data=$("$STATUS_DASHBOARD" --format=json 2>/dev/null || echo '{}')
+		health_data=$("$HEALTH_MONITOR" --export-status 2>/dev/null || echo '{}')
 
-        # Create combined metrics response
-        local metrics_response
-        metrics_response=$(cat <<EOF
+		# Create combined metrics response
+		local metrics_response
+		metrics_response=$(
+			cat <<EOF
 {
   "metrics": {
     "timestamp": "$(date -Iseconds)",
@@ -249,216 +251,216 @@ handle_metrics_endpoint() {
     "api_server": {
       "version": "1.0",
       "uptime": "$(uptime -p 2>/dev/null || echo 'unknown')",
-      "requests_total": "$(wc -l < "$API_LOG_FILE" 2>/dev/null || echo '0')"
+      "requests_total": "$(wc -l <"$API_LOG_FILE" 2>/dev/null || echo '0')"
     }
   }
 }
 EOF
-        )
-        send_json_response "$metrics_response" "$client_ip"
-    else
-        send_error_response "503 Service Unavailable" "Metrics services not available" "$client_ip"
-    fi
+		)
+		send_json_response "$metrics_response" "$client_ip"
+	else
+		send_error_response "503 Service Unavailable" "Metrics services not available" "$client_ip"
+	fi
 }
 
 handle_events_endpoint() {
-    local client_ip="${1:-unknown}"
+	local client_ip="${1:-unknown}"
 
-    log_api_event "events_request" "/api/v1/events" "$client_ip"
+	log_api_event "events_request" "/api/v1/events" "$client_ip"
 
-    # Server-Sent Events implementation (basic for GREEN phase)
-    echo "HTTP/1.1 200 OK"
-    echo "Content-Type: text/event-stream"
-    echo "Cache-Control: no-cache"
-    echo "Connection: keep-alive"
-    echo "Access-Control-Allow-Origin: *"
-    echo ""
+	# Server-Sent Events implementation (basic for GREEN phase)
+	echo "HTTP/1.1 200 OK"
+	echo "Content-Type: text/event-stream"
+	echo "Cache-Control: no-cache"
+	echo "Connection: keep-alive"
+	echo "Access-Control-Allow-Origin: *"
+	echo ""
 
-    # Send initial event
-    echo "event: connection"
-    echo "data: {\"type\":\"connection\",\"timestamp\":\"$(date -Iseconds)\",\"message\":\"Connected to ProtonVPN API events\"}"
-    echo ""
+	# Send initial event
+	echo "event: connection"
+	echo "data: {\"type\":\"connection\",\"timestamp\":\"$(date -Iseconds)\",\"message\":\"Connected to ProtonVPN API events\"}"
+	echo ""
 
-    # Send periodic status updates (simplified for GREEN phase)
-    for i in {1..3}; do
-        if [[ -x "$STATUS_DASHBOARD" ]]; then
-            local status_data
-            status_data=$("$STATUS_DASHBOARD" --format=json 2>/dev/null || echo '{"error":"unavailable"}')
+	# Send periodic status updates (simplified for GREEN phase)
+	for i in {1..3}; do
+		if [[ -x "$STATUS_DASHBOARD" ]]; then
+			local status_data
+			status_data=$("$STATUS_DASHBOARD" --format=json 2>/dev/null || echo '{"error":"unavailable"}')
 
-            echo "event: status"
-            echo "data: $status_data"
-            echo ""
-        fi
+			echo "event: status"
+			echo "data: $status_data"
+			echo ""
+		fi
 
-        sleep 2
-    done
+		sleep 2
+	done
 
-    # Close connection
-    echo "event: close"
-    echo "data: {\"type\":\"close\",\"timestamp\":\"$(date -Iseconds)\"}"
-    echo ""
+	# Close connection
+	echo "event: close"
+	echo "data: {\"type\":\"close\",\"timestamp\":\"$(date -Iseconds)\"}"
+	echo ""
 }
 
 # WebSocket support (basic implementation for GREEN phase)
 handle_websocket_request() {
-    local client_ip="${1:-unknown}"
-    local websocket_key="${2:-}"
+	local client_ip="${1:-unknown}"
+	local websocket_key="${2:-}"
 
-    log_api_event "websocket_request" "/ws/status" "$client_ip"
+	log_api_event "websocket_request" "/ws/status" "$client_ip"
 
-    if [[ -z "$websocket_key" ]]; then
-        send_error_response "400 Bad Request" "WebSocket key required" "$client_ip"
-        return
-    fi
+	if [[ -z "$websocket_key" ]]; then
+		send_error_response "400 Bad Request" "WebSocket key required" "$client_ip"
+		return
+	fi
 
-    # WebSocket handshake (simplified for GREEN phase)
-    local accept_key
-    accept_key=$(echo -n "${websocket_key}258EAFA5-E914-47DA-95CA-C5AB0DC85B11" | sha1sum | cut -d' ' -f1 | xxd -r -p | base64)
+	# WebSocket handshake (simplified for GREEN phase)
+	local accept_key
+	accept_key=$(echo -n "${websocket_key}258EAFA5-E914-47DA-95CA-C5AB0DC85B11" | sha1sum | cut -d' ' -f1 | xxd -r -p | base64)
 
-    echo "HTTP/1.1 101 Switching Protocols"
-    echo "Upgrade: websocket"
-    echo "Connection: Upgrade"
-    echo "Sec-WebSocket-Accept: $accept_key"
-    echo ""
+	echo "HTTP/1.1 101 Switching Protocols"
+	echo "Upgrade: websocket"
+	echo "Connection: Upgrade"
+	echo "Sec-WebSocket-Accept: $accept_key"
+	echo ""
 
-    # Send WebSocket frames (basic implementation)
-    # In production, this would use proper WebSocket framing
-    echo "WebSocket connection established"
+	# Send WebSocket frames (basic implementation)
+	# In production, this would use proper WebSocket framing
+	echo "WebSocket connection established"
 }
 
 # HTTP request parser (basic implementation for GREEN phase)
 parse_http_request() {
-    local request_line="$1"
-    local auth_header=""
-    local client_ip="127.0.0.1"
-    local websocket_key=""
+	local request_line="$1"
+	local auth_header=""
+	local client_ip="127.0.0.1"
+	local websocket_key=""
 
-    # Read headers
-    while IFS= read -r header_line; do
-        header_line=$(echo "$header_line" | tr -d '\r')
-        [[ -z "$header_line" ]] && break
+	# Read headers
+	while IFS= read -r header_line; do
+		header_line=$(echo "$header_line" | tr -d '\r')
+		[[ -z "$header_line" ]] && break
 
-        if [[ "$header_line" =~ ^Authorization:[[:space:]](.+)$ ]]; then
-            auth_header="${BASH_REMATCH[1]}"
-        elif [[ "$header_line" =~ ^Sec-WebSocket-Key:[[:space:]](.+)$ ]]; then
-            websocket_key="${BASH_REMATCH[1]}"
-        fi
-    done
+		if [[ "$header_line" =~ ^Authorization:[[:space:]](.+)$ ]]; then
+			auth_header="${BASH_REMATCH[1]}"
+		elif [[ "$header_line" =~ ^Sec-WebSocket-Key:[[:space:]](.+)$ ]]; then
+			websocket_key="${BASH_REMATCH[1]}"
+		fi
+	done
 
-    # Parse request
-    if [[ "$request_line" =~ ^([A-Z]+)[[:space:]]+([^[:space:]]+)[[:space:]]+ ]]; then
-        local method="${BASH_REMATCH[1]}"
-        local path="${BASH_REMATCH[2]}"
+	# Parse request
+	if [[ "$request_line" =~ ^([A-Z]+)[[:space:]]+([^[:space:]]+)[[:space:]]+ ]]; then
+		local method="${BASH_REMATCH[1]}"
+		local path="${BASH_REMATCH[2]}"
 
-        # Rate limiting check
-        if ! check_rate_limit "$client_ip"; then
-            send_error_response "429 Too Many Requests" "Rate limit exceeded" "$client_ip"
-            return
-        fi
+		# Rate limiting check
+		if ! check_rate_limit "$client_ip"; then
+			send_error_response "429 Too Many Requests" "Rate limit exceeded" "$client_ip"
+			return
+		fi
 
-        # Authentication check (skip for OPTIONS)
-        if [[ "$method" != "OPTIONS" ]] && ! validate_auth "$auth_header"; then
-            send_error_response "401 Unauthorized" "Authentication required" "$client_ip"
-            return
-        fi
+		# Authentication check (skip for OPTIONS)
+		if [[ "$method" != "OPTIONS" ]] && ! validate_auth "$auth_header"; then
+			send_error_response "401 Unauthorized" "Authentication required" "$client_ip"
+			return
+		fi
 
-        # Route request
-        case "$path" in
-            "/api/v1/status")
-                handle_status_endpoint "$client_ip"
-                ;;
-            "/api/v1/health")
-                handle_health_endpoint "$client_ip"
-                ;;
-            "/api/v1/metrics")
-                handle_metrics_endpoint "$client_ip"
-                ;;
-            "/api/v1/events")
-                handle_events_endpoint "$client_ip"
-                ;;
-            "/ws/status"|"/ws/health")
-                handle_websocket_request "$client_ip" "$websocket_key"
-                ;;
-            *)
-                send_error_response "404 Not Found" "Endpoint not found" "$client_ip"
-                ;;
-        esac
-    else
-        send_error_response "400 Bad Request" "Invalid HTTP request" "$client_ip"
-    fi
+		# Route request
+		case "$path" in
+		"/api/v1/status")
+			handle_status_endpoint "$client_ip"
+			;;
+		"/api/v1/health")
+			handle_health_endpoint "$client_ip"
+			;;
+		"/api/v1/metrics")
+			handle_metrics_endpoint "$client_ip"
+			;;
+		"/api/v1/events")
+			handle_events_endpoint "$client_ip"
+			;;
+		"/ws/status" | "/ws/health")
+			handle_websocket_request "$client_ip" "$websocket_key"
+			;;
+		*)
+			send_error_response "404 Not Found" "Endpoint not found" "$client_ip"
+			;;
+		esac
+	else
+		send_error_response "400 Bad Request" "Invalid HTTP request" "$client_ip"
+	fi
 }
 
 # Simple HTTP server implementation (for GREEN phase)
 start_http_server() {
-    local port="${API_PORT:-8080}"
-    local bind_address="${API_BIND_ADDRESS:-127.0.0.1}"
+	local port="${API_PORT:-8080}"
+	local bind_address="${API_BIND_ADDRESS:-127.0.0.1}"
 
-    echo "Starting API server on $bind_address:$port (PID: $$)"
-    log_api_event "server_start" "api-server" "$bind_address" "$port"
+	echo "Starting API server on $bind_address:$port (PID: $$)"
+	log_api_event "server_start" "api-server" "$bind_address" "$port"
 
-    # Create log file
-    mkdir -p "$(dirname "$API_LOG_FILE")" 2>/dev/null || true
-    touch "$API_LOG_FILE" 2>/dev/null || true
+	# Create log file
+	mkdir -p "$(dirname "$API_LOG_FILE")" 2>/dev/null || true
+	touch "$API_LOG_FILE" 2>/dev/null || true
 
-    # Write PID file
-    echo "$$" > "$API_SERVER_PID_FILE" 2>/dev/null || true
+	# Write PID file
+	echo "$$" >"$API_SERVER_PID_FILE" 2>/dev/null || true
 
-    # Cleanup on exit
-    trap 'rm -f "$API_SERVER_PID_FILE"; log_api_event "server_stop" "api-server" "localhost" "0"; exit 0' EXIT
+	# Cleanup on exit
+	trap 'rm -f "$API_SERVER_PID_FILE"; log_api_event "server_stop" "api-server" "localhost" "0"; exit 0' EXIT
 
-    # Simple server using netcat (for GREEN phase - in production would use proper HTTP server)
-    while true; do
-        if command -v nc >/dev/null 2>&1; then
-            {
-                read -r request_line
-                parse_http_request "$request_line"
-            } | nc -l -p "$port" -q 1 2>/dev/null || break
-        elif command -v netcat >/dev/null 2>&1; then
-            {
-                read -r request_line
-                parse_http_request "$request_line"
-            } | netcat -l -p "$port" -q 1 2>/dev/null || break
-        else
-            echo "Error: netcat (nc) not available for HTTP server" >&2
-            exit 1
-        fi
+	# Simple server using netcat (for GREEN phase - in production would use proper HTTP server)
+	while true; do
+		if command -v nc >/dev/null 2>&1; then
+			{
+				read -r request_line
+				parse_http_request "$request_line"
+			} | nc -l -p "$port" -q 1 2>/dev/null || break
+		elif command -v netcat >/dev/null 2>&1; then
+			{
+				read -r request_line
+				parse_http_request "$request_line"
+			} | netcat -l -p "$port" -q 1 2>/dev/null || break
+		else
+			echo "Error: netcat (nc) not available for HTTP server" >&2
+			exit 1
+		fi
 
-        sleep 0.1  # Brief pause between requests
-    done
+		sleep 0.1 # Brief pause between requests
+	done
 }
 
 # Configuration testing
 test_config() {
-    echo "API Server Configuration Test"
-    echo "============================"
-    load_api_config
-    echo "Port: ${API_PORT:-8080}"
-    echo "Bind Address: ${API_BIND_ADDRESS:-127.0.0.1}"
-    echo "Auth Required: ${API_AUTH_REQUIRED:-true}"
-    echo "Rate Limit: ${API_RATE_LIMIT:-60}/min"
-    echo "TLS Enabled: ${API_TLS_ENABLED:-false}"
-    echo "✅ Configuration loaded successfully"
+	echo "API Server Configuration Test"
+	echo "============================"
+	load_api_config
+	echo "Port: ${API_PORT:-8080}"
+	echo "Bind Address: ${API_BIND_ADDRESS:-127.0.0.1}"
+	echo "Auth Required: ${API_AUTH_REQUIRED:-true}"
+	echo "Rate Limit: ${API_RATE_LIMIT:-60}/min"
+	echo "TLS Enabled: ${API_TLS_ENABLED:-false}"
+	echo "✅ Configuration loaded successfully"
 }
 
 # Error handling (following established patterns)
 handle_error() {
-    local error_code="$1"
-    local error_message="$2"
+	local error_code="$1"
+	local error_message="$2"
 
-    echo "=== API Server Error ===" >&2
-    echo "Error Code: $error_code" >&2
-    echo "Description: $error_message" >&2
-    echo "Recovery Action: Check API server configuration and dependencies" >&2
-    echo "Help: Run 'api-server --help' for usage information" >&2
-    echo "======================" >&2
+	echo "=== API Server Error ===" >&2
+	echo "Error Code: $error_code" >&2
+	echo "Description: $error_message" >&2
+	echo "Recovery Action: Check API server configuration and dependencies" >&2
+	echo "Help: Run 'api-server --help' for usage information" >&2
+	echo "======================" >&2
 
-    log_api_event "error" "api-server" "localhost" "$error_code"
-    exit "$error_code"
+	log_api_event "error" "api-server" "localhost" "$error_code"
+	exit "$error_code"
 }
 
 # Show help information
 show_help() {
-    cat <<EOF
+	cat <<EOF
 === VPN API Server Help ===
 Usage: api-server [OPTIONS]
 
@@ -499,86 +501,86 @@ EOF
 
 # Main command processing
 main() {
-    local daemon_mode=false
-    local port=""
-    local bind_address=""
-    local config_file=""
-    local test_config_only=false
+	local daemon_mode=false
+	local port=""
+	local bind_address=""
+	local config_file=""
+	local test_config_only=false
 
-    # Load configuration
-    load_api_config
+	# Load configuration
+	load_api_config
 
-    # Process arguments
-    while [[ $# -gt 0 ]]; do
-        case "$1" in
-            --port=*)
-                port="${1#*=}"
-                export API_PORT="$port"
-                ;;
-            --port)
-                shift
-                port="$1"
-                export API_PORT="$port"
-                ;;
-            --bind=*)
-                bind_address="${1#*=}"
-                export API_BIND_ADDRESS="$bind_address"
-                ;;
-            --bind)
-                shift
-                bind_address="$1"
-                export API_BIND_ADDRESS="$bind_address"
-                ;;
-            --config=*)
-                config_file="${1#*=}"
-                export VPN_CONFIG_FILE="$config_file"
-                ;;
-            --config)
-                shift
-                config_file="$1"
-                export VPN_CONFIG_FILE="$config_file"
-                ;;
-            --test-config)
-                test_config_only=true
-                ;;
-            --daemon)
-                daemon_mode=true
-                ;;
-            --help|-h)
-                show_help
-                exit 0
-                ;;
-            *)
-                handle_error 1 "Invalid argument: $1"
-                ;;
-        esac
-        shift
-    done
+	# Process arguments
+	while [[ $# -gt 0 ]]; do
+		case "$1" in
+		--port=*)
+			port="${1#*=}"
+			export API_PORT="$port"
+			;;
+		--port)
+			shift
+			port="$1"
+			export API_PORT="$port"
+			;;
+		--bind=*)
+			bind_address="${1#*=}"
+			export API_BIND_ADDRESS="$bind_address"
+			;;
+		--bind)
+			shift
+			bind_address="$1"
+			export API_BIND_ADDRESS="$bind_address"
+			;;
+		--config=*)
+			config_file="${1#*=}"
+			export VPN_CONFIG_FILE="$config_file"
+			;;
+		--config)
+			shift
+			config_file="$1"
+			export VPN_CONFIG_FILE="$config_file"
+			;;
+		--test-config)
+			test_config_only=true
+			;;
+		--daemon)
+			daemon_mode=true
+			;;
+		--help | -h)
+			show_help
+			exit 0
+			;;
+		*)
+			handle_error 1 "Invalid argument: $1"
+			;;
+		esac
+		shift
+	done
 
-    if [[ "$test_config_only" == true ]]; then
-        test_config
-        exit 0
-    fi
+	if [[ "$test_config_only" == true ]]; then
+		test_config
+		exit 0
+	fi
 
-    # Validate dependencies
-    if [[ ! -x "$STATUS_DASHBOARD" ]]; then
-        handle_error 1 "Status dashboard not found at $STATUS_DASHBOARD"
-    fi
+	# Validate dependencies
+	if [[ ! -x "$STATUS_DASHBOARD" ]]; then
+		handle_error 1 "Status dashboard not found at $STATUS_DASHBOARD"
+	fi
 
-    if [[ ! -x "$HEALTH_MONITOR" ]]; then
-        handle_error 1 "Health monitor not found at $HEALTH_MONITOR"
-    fi
+	if [[ ! -x "$HEALTH_MONITOR" ]]; then
+		handle_error 1 "Health monitor not found at $HEALTH_MONITOR"
+	fi
 
-    # Start server
-    if [[ "$daemon_mode" == true ]]; then
-        start_http_server &
-        echo "API server started in daemon mode (PID: $!)"
-    else
-        start_http_server
-    fi
+	# Start server
+	if [[ "$daemon_mode" == true ]]; then
+		start_http_server &
+		echo "API server started in daemon mode (PID: $!)"
+	else
+		start_http_server
+	fi
 }
 
 # Execute main function if script is run directly
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
-    main "$@"
+	main "$@"
 fi

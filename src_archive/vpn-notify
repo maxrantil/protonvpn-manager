@@ -10,303 +10,303 @@ VPN_DIR="$(dirname "$SCRIPT_DIR")"
 
 # Notification system priority order
 NOTIFICATION_SYSTEMS=(
-    "notify-send"
-    "zenity"
-    "kdialog"
-    "echo"
+	"notify-send"
+	"zenity"
+	"kdialog"
+	"echo"
 )
 
 # Icon mapping for different notification types
 declare -A NOTIFICATION_ICONS=(
-    ["connection_established"]="network-vpn"
-    ["connection_failed"]="dialog-error"
-    ["status_check"]="network-idle"
-    ["process_health"]="dialog-warning"
-    ["default"]="dialog-information"
+	["connection_established"]="network-vpn"
+	["connection_failed"]="dialog-error"
+	["status_check"]="network-idle"
+	["process_health"]="dialog-warning"
+	["default"]="dialog-information"
 )
 
 # Urgency level mapping
 declare -A URGENCY_LEVELS=(
-    ["connection_established"]="normal"
-    ["connection_failed"]="critical"
-    ["status_check"]="low"
-    ["process_health"]="normal"
-    ["default"]="normal"
+	["connection_established"]="normal"
+	["connection_failed"]="critical"
+	["status_check"]="low"
+	["process_health"]="normal"
+	["default"]="normal"
 )
 
 # Detect desktop environment
 detect_desktop_environment() {
-    if [[ -n "${SSH_CLIENT:-}" || -z "${DISPLAY:-}" ]]; then
-        echo "headless"
-        return
-    fi
+	if [[ -n "${SSH_CLIENT:-}" || -z "${DISPLAY:-}" ]]; then
+		echo "headless"
+		return
+	fi
 
-    if [[ -n "${XDG_CURRENT_DESKTOP:-}" ]]; then
-        echo "${XDG_CURRENT_DESKTOP,,}"
-    elif command -v gnome-session >/dev/null 2>&1; then
-        echo "gnome"
-    elif command -v kde-session >/dev/null 2>&1; then
-        echo "kde"
-    elif command -v xfce4-session >/dev/null 2>&1; then
-        echo "xfce"
-    else
-        echo "unknown"
-    fi
+	if [[ -n "${XDG_CURRENT_DESKTOP:-}" ]]; then
+		echo "${XDG_CURRENT_DESKTOP,,}"
+	elif command -v gnome-session >/dev/null 2>&1; then
+		echo "gnome"
+	elif command -v kde-session >/dev/null 2>&1; then
+		echo "kde"
+	elif command -v xfce4-session >/dev/null 2>&1; then
+		echo "xfce"
+	else
+		echo "unknown"
+	fi
 }
 
 # Check notification system availability
 check_notification_dependencies() {
-    local available_systems=()
-    local fallback_systems=()
+	local available_systems=()
+	local fallback_systems=()
 
-    # Check for libnotify (notify-send)
-    if command -v notify-send >/dev/null 2>&1; then
-        available_systems+=("libnotify")
-    fi
+	# Check for libnotify (notify-send)
+	if command -v notify-send >/dev/null 2>&1; then
+		available_systems+=("libnotify")
+	fi
 
-    # Check other notification systems
-    for system in "zenity" "kdialog" "echo"; do
-        if command -v "$system" >/dev/null 2>&1; then
-            available_systems+=("$system")
-            fallback_systems+=("$system")
-        fi
-    done
+	# Check other notification systems
+	for system in "zenity" "kdialog" "echo"; do
+		if command -v "$system" >/dev/null 2>&1; then
+			available_systems+=("$system")
+			fallback_systems+=("$system")
+		fi
+	done
 
-    echo "Available notification systems:"
-    printf "  %s available\n" "${available_systems[@]}"
+	echo "Available notification systems:"
+	printf "  %s available\n" "${available_systems[@]}"
 
-    if [[ ${#fallback_systems[@]} -gt 0 ]]; then
-        echo "Fallback systems:"
-        printf "  %s fallback\n" "${fallback_systems[@]}"
-    fi
+	if [[ ${#fallback_systems[@]} -gt 0 ]]; then
+		echo "Fallback systems:"
+		printf "  %s fallback\n" "${fallback_systems[@]}"
+	fi
 
-    if [[ ${#available_systems[@]} -eq 0 ]]; then
-        echo "No notification systems available - will use terminal output"
-    fi
+	if [[ ${#available_systems[@]} -eq 0 ]]; then
+		echo "No notification systems available - will use terminal output"
+	fi
 }
 
 # Get the first available notification system
 get_notification_system() {
-    local force_system="${1:-}"
-    local force_terminal="${2:-false}"
-    local force_fallback="${3:-false}"
+	local force_system="${1:-}"
+	local force_terminal="${2:-false}"
+	local force_fallback="${3:-false}"
 
-    if [[ "$force_terminal" == "true" ]]; then
-        echo "echo"
-        return
-    fi
+	if [[ "$force_terminal" == "true" ]]; then
+		echo "echo"
+		return
+	fi
 
-    if [[ "$force_fallback" == "true" ]]; then
-        for system in "zenity" "kdialog" "echo"; do
-            if command -v "$system" >/dev/null 2>&1; then
-                echo "$system"
-                return
-            fi
-        done
-        echo "echo"
-        return
-    fi
+	if [[ "$force_fallback" == "true" ]]; then
+		for system in "zenity" "kdialog" "echo"; do
+			if command -v "$system" >/dev/null 2>&1; then
+				echo "$system"
+				return
+			fi
+		done
+		echo "echo"
+		return
+	fi
 
-    if [[ -n "$force_system" ]]; then
-        if command -v "$force_system" >/dev/null 2>&1; then
-            echo "$force_system"
-            return
-        fi
-    fi
+	if [[ -n "$force_system" ]]; then
+		if command -v "$force_system" >/dev/null 2>&1; then
+			echo "$force_system"
+			return
+		fi
+	fi
 
-    # Check in priority order
-    for system in "${NOTIFICATION_SYSTEMS[@]}"; do
-        if command -v "$system" >/dev/null 2>&1; then
-            echo "$system"
-            return
-        fi
-    done
+	# Check in priority order
+	for system in "${NOTIFICATION_SYSTEMS[@]}"; do
+		if command -v "$system" >/dev/null 2>&1; then
+			echo "$system"
+			return
+		fi
+	done
 
-    # Fallback to echo
-    echo "echo"
+	# Fallback to echo
+	echo "echo"
 }
 
 # Format notification message based on event type
 format_notification_message() {
-    local event_type="$1"
-    local arg1="${2:-}"
-    local arg2="${3:-}"
+	local event_type="$1"
+	local arg1="${2:-}"
+	local arg2="${3:-}"
 
-    case "$event_type" in
-        "connection_established")
-            echo "Connected to $arg1"
-            echo "External IP: $arg2"
-            ;;
-        "connection_failed")
-            echo "Failed to connect to $arg1"
-            echo "Reason: $arg2"
-            ;;
-        "status_check")
-            echo "VPN Status: $arg1"
-            if [[ -n "$arg2" ]]; then
-                echo "IP: $arg2"
-            fi
-            ;;
-        "process_health")
-            echo "Process Health: $arg1"
-            if [[ -n "$arg2" && "$arg2" != "1" ]]; then
-                echo "Active processes: $arg2"
-            fi
-            ;;
-        *)
-            echo "$event_type: $arg1 $arg2"
-            ;;
-    esac
+	case "$event_type" in
+	"connection_established")
+		echo "Connected to $arg1"
+		echo "External IP: $arg2"
+		;;
+	"connection_failed")
+		echo "Failed to connect to $arg1"
+		echo "Reason: $arg2"
+		;;
+	"status_check")
+		echo "VPN Status: $arg1"
+		if [[ -n "$arg2" ]]; then
+			echo "IP: $arg2"
+		fi
+		;;
+	"process_health")
+		echo "Process Health: $arg1"
+		if [[ -n "$arg2" && "$arg2" != "1" ]]; then
+			echo "Active processes: $arg2"
+		fi
+		;;
+	*)
+		echo "$event_type: $arg1 $arg2"
+		;;
+	esac
 }
 
 # Truncate long messages for better display
 truncate_message() {
-    local message="$1"
-    local max_length="${2:-100}"
+	local message="$1"
+	local max_length="${2:-100}"
 
-    if [[ ${#message} -gt $max_length ]]; then
-        echo "${message:0:$((max_length-3))}..."
-    else
-        echo "$message"
-    fi
+	if [[ ${#message} -gt $max_length ]]; then
+		echo "${message:0:$((max_length - 3))}..."
+	else
+		echo "$message"
+	fi
 }
 
 # Escape special characters for different notification systems
 escape_for_system() {
-    local system="$1"
-    local message="$2"
+	local system="$1"
+	local message="$2"
 
-    case "$system" in
-        "notify-send"|"zenity")
-            # Escape quotes and ampersands for shell
-            echo "$message" | sed 's/"/\\"/g; s/&/\\&/g'
-            ;;
-        "kdialog")
-            # KDialog has different escaping needs
-            echo "$message" | sed 's/"/\\"/g'
-            ;;
-        *)
-            echo "$message"
-            ;;
-    esac
+	case "$system" in
+	"notify-send" | "zenity")
+		# Escape quotes and ampersands for shell
+		echo "$message" | sed 's/"/\\"/g; s/&/\\&/g'
+		;;
+	"kdialog")
+		# KDialog has different escaping needs
+		echo "$message" | sed 's/"/\\"/g'
+		;;
+	*)
+		echo "$message"
+		;;
+	esac
 }
 
 # Send notification using specific system
 send_notification_with_system() {
-    local system="$1"
-    local title="$2"
-    local message="$3"
-    local icon="${4:-dialog-information}"
-    local urgency="${5:-normal}"
-    local show_command="${6:-false}"
+	local system="$1"
+	local title="$2"
+	local message="$3"
+	local icon="${4:-dialog-information}"
+	local urgency="${5:-normal}"
+	local show_command="${6:-false}"
 
-    local escaped_message
-    escaped_message=$(escape_for_system "$system" "$message")
-    local truncated_message
-    truncated_message=$(truncate_message "$escaped_message")
+	local escaped_message
+	escaped_message=$(escape_for_system "$system" "$message")
+	local truncated_message
+	truncated_message=$(truncate_message "$escaped_message")
 
-    case "$system" in
-        "notify-send")
-            local cmd="notify-send \"$title\" \"$truncated_message\" --icon=$icon --urgency=$urgency"
-            if [[ "$show_command" == "true" ]]; then
-                echo "$cmd"
-            else
-                eval "$cmd" 2>/dev/null || true
-            fi
-            ;;
-        "zenity")
-            local cmd="zenity --info --title=\"$title\" --text=\"$truncated_message\" --no-wrap"
-            if [[ "$show_command" == "true" ]]; then
-                echo "$cmd"
-            else
-                eval "$cmd" 2>/dev/null || true
-            fi
-            ;;
-        "kdialog")
-            local cmd="kdialog --title \"$title\" --msgbox \"$truncated_message\""
-            if [[ "$show_command" == "true" ]]; then
-                echo "$cmd"
-            else
-                eval "$cmd" 2>/dev/null || true
-            fi
-            ;;
-        "echo")
-            local output="[$title] $truncated_message"
-            if [[ "$show_command" == "true" ]]; then
-                echo "echo \"$output\""
-            else
-                echo "$output"
-            fi
-            ;;
-    esac
+	case "$system" in
+	"notify-send")
+		local cmd="notify-send \"$title\" \"$truncated_message\" --icon=$icon --urgency=$urgency"
+		if [[ "$show_command" == "true" ]]; then
+			echo "$cmd"
+		else
+			eval "$cmd" 2>/dev/null || true
+		fi
+		;;
+	"zenity")
+		local cmd="zenity --info --title=\"$title\" --text=\"$truncated_message\" --no-wrap"
+		if [[ "$show_command" == "true" ]]; then
+			echo "$cmd"
+		else
+			eval "$cmd" 2>/dev/null || true
+		fi
+		;;
+	"kdialog")
+		local cmd="kdialog --title \"$title\" --msgbox \"$truncated_message\""
+		if [[ "$show_command" == "true" ]]; then
+			echo "$cmd"
+		else
+			eval "$cmd" 2>/dev/null || true
+		fi
+		;;
+	"echo")
+		local output="[$title] $truncated_message"
+		if [[ "$show_command" == "true" ]]; then
+			echo "echo \"$output\""
+		else
+			echo "$output"
+		fi
+		;;
+	esac
 }
 
 # Main notification function
 send_notification() {
-    local event_type="$1"
-    local arg1="${2:-}"
-    local arg2="${3:-}"
-    local dry_run="${4:-false}"
-    local show_command="${5:-false}"
-    local force_system="${6:-}"
-    local force_terminal="${7:-false}"
-    local force_fallback="${8:-false}"
-    local force_basic_icons="${9:-false}"
+	local event_type="$1"
+	local arg1="${2:-}"
+	local arg2="${3:-}"
+	local dry_run="${4:-false}"
+	local show_command="${5:-false}"
+	local force_system="${6:-}"
+	local force_terminal="${7:-false}"
+	local force_fallback="${8:-false}"
+	local force_basic_icons="${9:-false}"
 
-    # Get notification system
-    local system
-    system=$(get_notification_system "$force_system" "$force_terminal" "$force_fallback")
+	# Get notification system
+	local system
+	system=$(get_notification_system "$force_system" "$force_terminal" "$force_fallback")
 
-    # Get icon and urgency
-    local icon="${NOTIFICATION_ICONS[$event_type]:-${NOTIFICATION_ICONS[default]}}"
-    local urgency="${URGENCY_LEVELS[$event_type]:-${URGENCY_LEVELS[default]}}"
+	# Get icon and urgency
+	local icon="${NOTIFICATION_ICONS[$event_type]:-${NOTIFICATION_ICONS[default]}}"
+	local urgency="${URGENCY_LEVELS[$event_type]:-${URGENCY_LEVELS[default]}}"
 
-    # Handle basic icons fallback
-    if [[ "$force_basic_icons" == "true" ]]; then
-        case "$urgency" in
-            "critical") icon="error" ;;
-            "normal") icon="info" ;;
-            *) icon="info" ;;
-        esac
-    fi
+	# Handle basic icons fallback
+	if [[ "$force_basic_icons" == "true" ]]; then
+		case "$urgency" in
+		"critical") icon="error" ;;
+		"normal") icon="info" ;;
+		*) icon="info" ;;
+		esac
+	fi
 
-    # Format message
-    local message
-    message=$(format_notification_message "$event_type" "$arg1" "$arg2")
+	# Format message
+	local message
+	message=$(format_notification_message "$event_type" "$arg1" "$arg2")
 
-    # Send notification
-    if [[ "$dry_run" == "true" ]]; then
-        echo "Would use system: $system"
-        echo "Title: VPN Status"
-        echo "Message: $message"
-        echo "Icon: $icon"
-        echo "Urgency: $urgency"
-    else
-        send_notification_with_system "$system" "VPN Status" "$message" "$icon" "$urgency" "$show_command"
-        # For testing purposes, also output the message when not in headless mode
-        if [[ -n "${DISPLAY:-}" ]] && [[ "$show_command" != "true" ]]; then
-            echo "$message"
-        fi
-    fi
+	# Send notification
+	if [[ "$dry_run" == "true" ]]; then
+		echo "Would use system: $system"
+		echo "Title: VPN Status"
+		echo "Message: $message"
+		echo "Icon: $icon"
+		echo "Urgency: $urgency"
+	else
+		send_notification_with_system "$system" "VPN Status" "$message" "$icon" "$urgency" "$show_command"
+		# For testing purposes, also output the message when not in headless mode
+		if [[ -n "${DISPLAY:-}" ]] && [[ "$show_command" != "true" ]]; then
+			echo "$message"
+		fi
+	fi
 }
 
 # Health check function
 health_check() {
-    local system
-    system=$(get_notification_system)
+	local system
+	system=$(get_notification_system)
 
-    if [[ "$system" == "echo" ]]; then
-        echo "Health check: WARN - Only terminal output available"
-        return 1
-    else
-        echo "Health check: OK - $system available"
-        return 0
-    fi
+	if [[ "$system" == "echo" ]]; then
+		echo "Health check: WARN - Only terminal output available"
+		return 1
+	else
+		echo "Health check: OK - $system available"
+		return 0
+	fi
 }
 
 # Usage information
 show_usage() {
-    cat << EOF
+	cat <<EOF
 Usage: vpn-notify <event_type> [args...] [options]
 
 Event Types:
@@ -336,107 +336,107 @@ EOF
 
 # Parse command line arguments
 main() {
-    local event_type=""
-    local arg1=""
-    local arg2=""
-    local dry_run="false"
-    local show_command="false"
-    local force_system=""
-    local force_terminal="false"
-    local force_fallback="false"
-    local force_basic_icons="false"
+	local event_type=""
+	local arg1=""
+	local arg2=""
+	local dry_run="false"
+	local show_command="false"
+	local force_system=""
+	local force_terminal="false"
+	local force_fallback="false"
+	local force_basic_icons="false"
 
-    while [[ $# -gt 0 ]]; do
-        case "$1" in
-            "--check-deps")
-                check_notification_dependencies
-                return 0
-                ;;
-            "--detect-de")
-                detect_desktop_environment
-                return 0
-                ;;
-            "--list-systems")
-                for system in "${NOTIFICATION_SYSTEMS[@]}"; do
-                    if command -v "$system" >/dev/null 2>&1; then
-                        echo "$system available"
-                    else
-                        echo "$system not available"
-                    fi
-                done
-                return 0
-                ;;
-            "--health-check")
-                health_check
-                return $?
-                ;;
-            "--dry-run")
-                dry_run="true"
-                shift
-                ;;
-            "--show-command")
-                show_command="true"
-                shift
-                ;;
-            "--force-fallback")
-                force_fallback="true"
-                shift
-                ;;
-            "--force-terminal")
-                force_terminal="true"
-                shift
-                ;;
-            "--force-basic-icons")
-                force_basic_icons="true"
-                shift
-                ;;
-            "--format-only")
-                # Return only the formatted message for testing
-                if [[ $# -gt 1 ]]; then
-                    shift
-                    event_type="$1"
-                    shift
-                    [[ $# -gt 0 ]] && arg1="$1" && shift
-                    [[ $# -gt 0 ]] && arg2="$1" && shift
-                    message=$(format_notification_message "$event_type" "$arg1" "$arg2")
-                    echo "$message"
-                    return 0
-                fi
-                shift
-                ;;
-            "--silent")
-                # Graceful handling - exit successfully for headless environments
-                return 0
-                ;;
-            "--help"|"-h")
-                show_usage
-                return 0
-                ;;
-            *)
-                if [[ -z "$event_type" ]]; then
-                    event_type="$1"
-                elif [[ -z "$arg1" ]]; then
-                    arg1="$1"
-                elif [[ -z "$arg2" ]]; then
-                    arg2="$1"
-                fi
-                shift
-                ;;
-        esac
-    done
+	while [[ $# -gt 0 ]]; do
+		case "$1" in
+		"--check-deps")
+			check_notification_dependencies
+			return 0
+			;;
+		"--detect-de")
+			detect_desktop_environment
+			return 0
+			;;
+		"--list-systems")
+			for system in "${NOTIFICATION_SYSTEMS[@]}"; do
+				if command -v "$system" >/dev/null 2>&1; then
+					echo "$system available"
+				else
+					echo "$system not available"
+				fi
+			done
+			return 0
+			;;
+		"--health-check")
+			health_check
+			return $?
+			;;
+		"--dry-run")
+			dry_run="true"
+			shift
+			;;
+		"--show-command")
+			show_command="true"
+			shift
+			;;
+		"--force-fallback")
+			force_fallback="true"
+			shift
+			;;
+		"--force-terminal")
+			force_terminal="true"
+			shift
+			;;
+		"--force-basic-icons")
+			force_basic_icons="true"
+			shift
+			;;
+		"--format-only")
+			# Return only the formatted message for testing
+			if [[ $# -gt 1 ]]; then
+				shift
+				event_type="$1"
+				shift
+				[[ $# -gt 0 ]] && arg1="$1" && shift
+				[[ $# -gt 0 ]] && arg2="$1" && shift
+				message=$(format_notification_message "$event_type" "$arg1" "$arg2")
+				echo "$message"
+				return 0
+			fi
+			shift
+			;;
+		"--silent")
+			# Graceful handling - exit successfully for headless environments
+			return 0
+			;;
+		"--help" | "-h")
+			show_usage
+			return 0
+			;;
+		*)
+			if [[ -z "$event_type" ]]; then
+				event_type="$1"
+			elif [[ -z "$arg1" ]]; then
+				arg1="$1"
+			elif [[ -z "$arg2" ]]; then
+				arg2="$1"
+			fi
+			shift
+			;;
+		esac
+	done
 
-    if [[ -z "$event_type" ]]; then
-        show_usage
-        return 1
-    fi
+	if [[ -z "$event_type" ]]; then
+		show_usage
+		return 1
+	fi
 
-    send_notification "$event_type" "$arg1" "$arg2" "$dry_run" "$show_command" "$force_system" "$force_terminal" "$force_fallback" "$force_basic_icons"
+	send_notification "$event_type" "$arg1" "$arg2" "$dry_run" "$show_command" "$force_system" "$force_terminal" "$force_fallback" "$force_basic_icons"
 }
 
 # Handle headless environments gracefully
 if [[ -n "${SSH_CLIENT:-}" || -z "${DISPLAY:-}" ]] && [[ "$1" != "--"* ]]; then
-    # In headless environment, exit successfully without notification
-    exit 0
+	# In headless environment, exit successfully without notification
+	exit 0
 fi
 
 main "$@"
