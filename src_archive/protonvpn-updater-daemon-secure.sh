@@ -8,16 +8,16 @@ set -euo pipefail
 readonly SECURE_CONFIG_MANAGER="/usr/local/bin/secure-config-manager"
 
 if [[ -f "$SECURE_CONFIG_MANAGER" ]]; then
-    # shellcheck source=secure-config-manager
-    source "$SECURE_CONFIG_MANAGER"
-    load_secure_config || {
-        echo "ERROR: Failed to load secure configuration" >&2
-        exit 1
-    }
+	# shellcheck source=secure-config-manager
+	source "$SECURE_CONFIG_MANAGER"
+	load_secure_config || {
+		echo "ERROR: Failed to load secure configuration" >&2
+		exit 1
+	}
 else
-    echo "ERROR: Secure configuration system not found at: $SECURE_CONFIG_MANAGER" >&2
-    echo "ERROR: This indicates the service was not properly installed" >&2
-    exit 1
+	echo "ERROR: Secure configuration system not found at: $SECURE_CONFIG_MANAGER" >&2
+	echo "ERROR: This indicates the service was not properly installed" >&2
+	exit 1
 fi
 
 # Use configuration-based paths (loaded from secure config)
@@ -34,71 +34,71 @@ readonly NOTIFICATION_MANAGER="${VPN_BIN_DIR}/notification-manager"
 
 # Notification functions for daemon integration
 notify_config_update() {
-    local message="${1:-Config update completed}"
-    if [[ -x "$NOTIFICATION_MANAGER" ]]; then
-        # Send notification with timeout handling
-        timeout 5 "$NOTIFICATION_MANAGER" config-update "$message" 2>/dev/null || {
-            log_secure "WARN" "Notification timeout or failure for config-update"
-            true
-        }
-    fi
+	local message="${1:-Config update completed}"
+	if [[ -x "$NOTIFICATION_MANAGER" ]]; then
+		# Send notification with timeout handling
+		timeout 5 "$NOTIFICATION_MANAGER" config-update "$message" 2>/dev/null || {
+			log_secure "WARN" "Notification timeout or failure for config-update"
+			true
+		}
+	fi
 }
 
 notify_security_alert() {
-    local message="${1:-Security event detected}"
-    if [[ -x "$NOTIFICATION_MANAGER" ]]; then
-        # Send notification with timeout handling
-        timeout 5 "$NOTIFICATION_MANAGER" security-alert "$message" 2>/dev/null || {
-            log_secure "WARN" "Notification timeout or failure for security-alert"
-            true
-        }
-    fi
+	local message="${1:-Security event detected}"
+	if [[ -x "$NOTIFICATION_MANAGER" ]]; then
+		# Send notification with timeout handling
+		timeout 5 "$NOTIFICATION_MANAGER" security-alert "$message" 2>/dev/null || {
+			log_secure "WARN" "Notification timeout or failure for security-alert"
+			true
+		}
+	fi
 }
 
 notify_auth_warning() {
-    local message="${1:-Authentication warning}"
-    if [[ -x "$NOTIFICATION_MANAGER" ]]; then
-        # Send notification with timeout handling
-        timeout 5 "$NOTIFICATION_MANAGER" auth-warning "$message" 2>/dev/null || {
-            log_secure "WARN" "Notification timeout or failure for auth-warning"
-            true
-        }
-    fi
+	local message="${1:-Authentication warning}"
+	if [[ -x "$NOTIFICATION_MANAGER" ]]; then
+		# Send notification with timeout handling
+		timeout 5 "$NOTIFICATION_MANAGER" auth-warning "$message" 2>/dev/null || {
+			log_secure "WARN" "Notification timeout or failure for auth-warning"
+			true
+		}
+	fi
 }
 
 notify_service_status() {
-    local message="${1:-Service status changed}"
-    if [[ -x "$NOTIFICATION_MANAGER" ]]; then
-        # Send notification with timeout handling
-        timeout 5 "$NOTIFICATION_MANAGER" service-status "$message" 2>/dev/null || {
-            log_secure "WARN" "Notification timeout or failure for service-status"
-            true
-        }
-    fi
+	local message="${1:-Service status changed}"
+	if [[ -x "$NOTIFICATION_MANAGER" ]]; then
+		# Send notification with timeout handling
+		timeout 5 "$NOTIFICATION_MANAGER" service-status "$message" 2>/dev/null || {
+			log_secure "WARN" "Notification timeout or failure for service-status"
+			true
+		}
+	fi
 }
 
 notify_error() {
-    local message="${1:-Service error occurred}"
-    if [[ -x "$NOTIFICATION_MANAGER" ]]; then
-        # Send notification with timeout handling
-        timeout 5 "$NOTIFICATION_MANAGER" error "$message" 2>/dev/null || {
-            log_secure "WARN" "Notification timeout or failure for error"
-            true
-        }
-    fi
+	local message="${1:-Service error occurred}"
+	if [[ -x "$NOTIFICATION_MANAGER" ]]; then
+		# Send notification with timeout handling
+		timeout 5 "$NOTIFICATION_MANAGER" error "$message" 2>/dev/null || {
+			log_secure "WARN" "Notification timeout or failure for error"
+			true
+		}
+	fi
 }
 
 # Generic notification wrapper functions for compatibility
 send_notification() {
-    notify_service_status "$@"
+	notify_service_status "$@"
 }
 
 notify_event() {
-    notify_service_status "$@"
+	notify_service_status "$@"
 }
 
 trigger_notification() {
-    notify_service_status "$@"
+	notify_service_status "$@"
 }
 readonly UPDATE_TIMEOUT="${UPDATE_TIMEOUT:-60}"
 readonly SERVICE_USER="${SERVICE_USER:-protonvpn}"
@@ -107,90 +107,90 @@ readonly AUDIT_LOGGING="${AUDIT_LOGGING:-true}"
 
 # Validate configuration integrity on startup
 if ! validate_config_integrity >/dev/null 2>&1; then
-    echo "ERROR: Configuration integrity check failed" >&2
-    exit 1
+	echo "ERROR: Configuration integrity check failed" >&2
+	exit 1
 fi
 
 # Security check - ensure we're running as correct user
 if [[ "$(id -un)" != "$SERVICE_USER" ]]; then
-    echo "ERROR: Must run as service user: $SERVICE_USER (currently: $(id -un))" >&2
-    exit 1
+	echo "ERROR: Must run as service user: $SERVICE_USER (currently: $(id -un))" >&2
+	exit 1
 fi
 
 # Security check - ensure no legacy development paths are accessible
 if [[ -d "/home/mqx/workspace/claude-code/vpn" ]]; then
-    echo "WARNING: Legacy development path detected but will be ignored for security" >&2
-    # Log security event
-    notify_security_alert "Legacy development path detected and ignored for security"
-    if [[ "$AUDIT_LOGGING" == "true" ]]; then
-        logger -p user.warn -t protonvpn-updater "Legacy development path detected and ignored"
-    fi
+	echo "WARNING: Legacy development path detected but will be ignored for security" >&2
+	# Log security event
+	notify_security_alert "Legacy development path detected and ignored for security"
+	if [[ "$AUDIT_LOGGING" == "true" ]]; then
+		logger -p user.warn -t protonvpn-updater "Legacy development path detected and ignored"
+	fi
 fi
 
 # Secure logging function with sanitization
 log_secure() {
-    local level="$1"
-    local message="$2"
-    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+	local level="$1"
+	local message="$2"
+	local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
 
-    # Sanitize message - remove sensitive information
-    local clean_message
-    clean_message=$(echo "$message" | \
-        sed -e 's|/home/[^/]*/[^/]*/[^/]*/[^/]*|[REDACTED_PATH]|g' \
-            -e 's|password[^[:space:]]*|[REDACTED]|gi' \
-            -e 's|token[^[:space:]]*|[REDACTED]|gi' \
-            -e 's|auth[^[:space:]]*=[^[:space:]]*|[REDACTED]|gi')
+	# Sanitize message - remove sensitive information
+	local clean_message
+	clean_message=$(echo "$message" |
+		sed -e 's|/home/[^/]*/[^/]*/[^/]*/[^/]*|[REDACTED_PATH]|g' \
+			-e 's|password[^[:space:]]*|[REDACTED]|gi' \
+			-e 's|token[^[:space:]]*|[REDACTED]|gi' \
+			-e 's|auth[^[:space:]]*=[^[:space:]]*|[REDACTED]|gi')
 
-    # Write to service log
-    echo "[$timestamp] [$level] $clean_message" | tee -a "$VPN_LOG_DIR/updater.log"
+	# Write to service log
+	echo "[$timestamp] [$level] $clean_message" | tee -a "$VPN_LOG_DIR/updater.log"
 
-    # System log for audit trail
-    if [[ "$AUDIT_LOGGING" == "true" ]]; then
-        logger -p user.info -t protonvpn-updater "[$level] $clean_message"
-    fi
+	# System log for audit trail
+	if [[ "$AUDIT_LOGGING" == "true" ]]; then
+		logger -p user.info -t protonvpn-updater "[$level] $clean_message"
+	fi
 }
 
 # Store PID with proper permissions and validation
 store_pid() {
-    # Ensure run directory exists
-    if [[ ! -d "$VPN_RUN_DIR" ]]; then
-        echo "ERROR: Run directory not found: $VPN_RUN_DIR" >&2
-        exit 1
-    fi
+	# Ensure run directory exists
+	if [[ ! -d "$VPN_RUN_DIR" ]]; then
+		echo "ERROR: Run directory not found: $VPN_RUN_DIR" >&2
+		exit 1
+	fi
 
-    # Store PID
-    echo $$ > "$PID_FILE"
+	# Store PID
+	echo $$ >"$PID_FILE"
 
-    # Set secure permissions (600 instead of 644 for security)
-    chmod 600 "$PID_FILE"
-    chown "$VPN_USER:$VPN_GROUP" "$PID_FILE" 2>/dev/null || true
+	# Set secure permissions (600 instead of 644 for security)
+	chmod 600 "$PID_FILE"
+	chown "$VPN_USER:$VPN_GROUP" "$PID_FILE" 2>/dev/null || true
 
-    # Validate PID file was created correctly
-    if [[ ! -f "$PID_FILE" ]] || [[ ! -s "$PID_FILE" ]]; then
-        log_secure "ERROR" "Failed to create PID file: $PID_FILE"
-        exit 1
-    fi
+	# Validate PID file was created correctly
+	if [[ ! -f "$PID_FILE" ]] || [[ ! -s "$PID_FILE" ]]; then
+		log_secure "ERROR" "Failed to create PID file: $PID_FILE"
+		exit 1
+	fi
 
-    log_secure "INFO" "PID file created: $PID_FILE (PID: $$)"
+	log_secure "INFO" "PID file created: $PID_FILE (PID: $$)"
 }
 
 # Enhanced cleanup function with audit logging
 cleanup() {
-    log_secure "INFO" "ProtonVPN Config Updater daemon stopping (PID: $$)"
-    notify_service_status "ProtonVPN Config Updater daemon stopping"
+	log_secure "INFO" "ProtonVPN Config Updater daemon stopping (PID: $$)"
+	notify_service_status "ProtonVPN Config Updater daemon stopping"
 
-    # Remove PID file
-    if [[ -f "$PID_FILE" ]]; then
-        rm -f "$PID_FILE"
-        log_secure "INFO" "PID file removed: $PID_FILE"
-    fi
+	# Remove PID file
+	if [[ -f "$PID_FILE" ]]; then
+		rm -f "$PID_FILE"
+		log_secure "INFO" "PID file removed: $PID_FILE"
+	fi
 
-    # Security audit log
-    if [[ "$AUDIT_LOGGING" == "true" ]]; then
-        logger -p user.info -t protonvpn-updater "Service stopped normally by PID $$"
-    fi
+	# Security audit log
+	if [[ "$AUDIT_LOGGING" == "true" ]]; then
+		logger -p user.info -t protonvpn-updater "Service stopped normally by PID $$"
+	fi
 
-    exit 0
+	exit 0
 }
 
 # Set up signal handlers
@@ -198,175 +198,175 @@ trap cleanup TERM INT HUP
 
 # Comprehensive dependency validation with security checks
 validate_dependencies() {
-    log_secure "INFO" "Validating dependencies and security requirements"
+	log_secure "INFO" "Validating dependencies and security requirements"
 
-    # Check critical binaries exist and are executable
-    local required_binaries=(
-        "$VPN_BIN_DIR/download-engine"
-        "$VPN_BIN_DIR/proton-auth"
-    )
+	# Check critical binaries exist and are executable
+	local required_binaries=(
+		"$VPN_BIN_DIR/download-engine"
+		"$VPN_BIN_DIR/proton-auth"
+	)
 
-    for binary in "${required_binaries[@]}"; do
-        if [[ ! -x "$binary" ]]; then
-            log_secure "ERROR" "Required binary not found or not executable: $binary"
-            return 1
-        fi
+	for binary in "${required_binaries[@]}"; do
+		if [[ ! -x "$binary" ]]; then
+			log_secure "ERROR" "Required binary not found or not executable: $binary"
+			return 1
+		fi
 
-        # Security check - ensure binary is owned by root
-        local owner
-        owner=$(stat -c "%U" "$binary")
-        if [[ "$owner" != "root" ]]; then
-            log_secure "WARN" "Binary has non-root ownership: $binary (owner: $owner)"
-        fi
-    done
+		# Security check - ensure binary is owned by root
+		local owner
+		owner=$(stat -c "%U" "$binary")
+		if [[ "$owner" != "root" ]]; then
+			log_secure "WARN" "Binary has non-root ownership: $binary (owner: $owner)"
+		fi
+	done
 
-    # Validate secure directories exist and have correct permissions
-    local required_dirs=(
-        "$VPN_ROOT" "$VPN_BIN_DIR" "$VPN_LOG_DIR" "$VPN_RUN_DIR"
-    )
+	# Validate secure directories exist and have correct permissions
+	local required_dirs=(
+		"$VPN_ROOT" "$VPN_BIN_DIR" "$VPN_LOG_DIR" "$VPN_RUN_DIR"
+	)
 
-    for dir in "${required_dirs[@]}"; do
-        if [[ ! -d "$dir" ]]; then
-            log_secure "ERROR" "Required directory not found: $dir"
-            return 1
-        fi
-    done
+	for dir in "${required_dirs[@]}"; do
+		if [[ ! -d "$dir" ]]; then
+			log_secure "ERROR" "Required directory not found: $dir"
+			return 1
+		fi
+	done
 
-    # Check log directory is writable
-    if [[ ! -w "$VPN_LOG_DIR" ]]; then
-        log_secure "ERROR" "Log directory not writable: $VPN_LOG_DIR"
-        return 1
-    fi
+	# Check log directory is writable
+	if [[ ! -w "$VPN_LOG_DIR" ]]; then
+		log_secure "ERROR" "Log directory not writable: $VPN_LOG_DIR"
+		return 1
+	fi
 
-    log_secure "INFO" "Dependency validation completed successfully"
-    return 0
+	log_secure "INFO" "Dependency validation completed successfully"
+	return 0
 }
 
 # Enhanced update check with comprehensive security controls
 run_update_check() {
-    log_secure "INFO" "Starting secure config update check"
+	log_secure "INFO" "Starting secure config update check"
 
-    # Validate dependencies before proceeding
-    if ! validate_dependencies; then
-        log_secure "ERROR" "Dependency validation failed, aborting update check"
-        return 1
-    fi
+	# Validate dependencies before proceeding
+	if ! validate_dependencies; then
+		log_secure "ERROR" "Dependency validation failed, aborting update check"
+		return 1
+	fi
 
-    # Security timeout for all operations
-    local timeout="$UPDATE_TIMEOUT"
-    local start_time=$(date +%s)
+	# Security timeout for all operations
+	local timeout="$UPDATE_TIMEOUT"
+	local start_time=$(date +%s)
 
-    # Check authentication status with timeout
-    log_secure "INFO" "Checking authentication status"
-    if timeout "$timeout" "$VPN_BIN_DIR/proton-auth" status >/dev/null 2>&1; then
-        log_secure "INFO" "Authentication available, proceeding with config update check"
+	# Check authentication status with timeout
+	log_secure "INFO" "Checking authentication status"
+	if timeout "$timeout" "$VPN_BIN_DIR/proton-auth" status >/dev/null 2>&1; then
+		log_secure "INFO" "Authentication available, proceeding with config update check"
 
-        # Run update check with timeout and error handling
-        local update_result=0
-        if timeout "$timeout" "$VPN_BIN_DIR/download-engine" status 2>/dev/null; then
-            local end_time=$(date +%s)
-            local duration=$((end_time - start_time))
-            log_secure "INFO" "Config update check completed successfully (duration: ${duration}s)"
-            notify_config_update "Configuration update completed successfully"
+		# Run update check with timeout and error handling
+		local update_result=0
+		if timeout "$timeout" "$VPN_BIN_DIR/download-engine" status 2>/dev/null; then
+			local end_time=$(date +%s)
+			local duration=$((end_time - start_time))
+			log_secure "INFO" "Config update check completed successfully (duration: ${duration}s)"
+			notify_config_update "Configuration update completed successfully"
 
-            # Security audit log
-            if [[ "$AUDIT_LOGGING" == "true" ]]; then
-                logger -p user.info -t protonvpn-updater "Update check successful, duration: ${duration}s"
-            fi
+			# Security audit log
+			if [[ "$AUDIT_LOGGING" == "true" ]]; then
+				logger -p user.info -t protonvpn-updater "Update check successful, duration: ${duration}s"
+			fi
 
-            return 0
-        else
-            update_result=$?
-            local end_time=$(date +%s)
-            local duration=$((end_time - start_time))
-            log_secure "ERROR" "Config update check failed (exit code: $update_result, duration: ${duration}s)"
-            notify_error "Configuration update check failed"
+			return 0
+		else
+			update_result=$?
+			local end_time=$(date +%s)
+			local duration=$((end_time - start_time))
+			log_secure "ERROR" "Config update check failed (exit code: $update_result, duration: ${duration}s)"
+			notify_error "Configuration update check failed"
 
-            # Security audit log for failures
-            if [[ "$AUDIT_LOGGING" == "true" ]]; then
-                logger -p user.warn -t protonvpn-updater "Update check failed, exit code: $update_result"
-            fi
+			# Security audit log for failures
+			if [[ "$AUDIT_LOGGING" == "true" ]]; then
+				logger -p user.warn -t protonvpn-updater "Update check failed, exit code: $update_result"
+			fi
 
-            return $update_result
-        fi
-    else
-        log_secure "INFO" "No authentication available, skipping update check"
-        notify_auth_warning "Authentication unavailable - skipping update check"
+			return $update_result
+		fi
+	else
+		log_secure "INFO" "No authentication available, skipping update check"
+		notify_auth_warning "Authentication unavailable - skipping update check"
 
-        # Log authentication unavailability for monitoring
-        if [[ "$AUDIT_LOGGING" == "true" ]]; then
-            logger -p user.info -t protonvpn-updater "Skipped update check due to authentication unavailability"
-        fi
+		# Log authentication unavailability for monitoring
+		if [[ "$AUDIT_LOGGING" == "true" ]]; then
+			logger -p user.info -t protonvpn-updater "Skipped update check due to authentication unavailability"
+		fi
 
-        return 0
-    fi
+		return 0
+	fi
 }
 
 # Resource usage monitoring for security
 check_resource_usage() {
-    # Check memory usage
-    local memory_kb
-    memory_kb=$(ps -o vsz= -p $$)
-    local memory_mb=$((memory_kb / 1024))
+	# Check memory usage
+	local memory_kb
+	memory_kb=$(ps -o vsz= -p $$)
+	local memory_mb=$((memory_kb / 1024))
 
-    if [[ "$memory_mb" -gt 50 ]]; then
-        log_secure "WARN" "High memory usage detected: ${memory_mb}MB"
-    fi
+	if [[ "$memory_mb" -gt 50 ]]; then
+		log_secure "WARN" "High memory usage detected: ${memory_mb}MB"
+	fi
 
-    # Check if we're still the only instance
-    local instance_count
-    instance_count=$(pgrep -f "protonvpn-updater-daemon" | wc -l)
+	# Check if we're still the only instance
+	local instance_count
+	instance_count=$(pgrep -f "protonvpn-updater-daemon" | wc -l)
 
-    if [[ "$instance_count" -gt 1 ]]; then
-        log_secure "WARN" "Multiple daemon instances detected: $instance_count"
-    fi
+	if [[ "$instance_count" -gt 1 ]]; then
+		log_secure "WARN" "Multiple daemon instances detected: $instance_count"
+	fi
 }
 
 # Main execution with comprehensive security validations
 main() {
-    log_secure "INFO" "ProtonVPN Config Updater daemon starting (PID: $$, User: $(id -un))"
-    notify_service_status "ProtonVPN Config Updater daemon starting"
+	log_secure "INFO" "ProtonVPN Config Updater daemon starting (PID: $$, User: $(id -un))"
+	notify_service_status "ProtonVPN Config Updater daemon starting"
 
-    # Verify we're in a secure execution environment
-    if [[ ! -f "$SECURE_CONFIG_MANAGER" ]]; then
-        log_secure "ERROR" "Secure configuration manager not found - unsafe to proceed"
-        exit 1
-    fi
+	# Verify we're in a secure execution environment
+	if [[ ! -f "$SECURE_CONFIG_MANAGER" ]]; then
+		log_secure "ERROR" "Secure configuration manager not found - unsafe to proceed"
+		exit 1
+	fi
 
-    # Store PID with validation
-    store_pid
+	# Store PID with validation
+	store_pid
 
-    # Log startup security information
-    log_secure "INFO" "Security context: User=$(id -un), Groups=$(id -gn), PID=$$"
-    log_secure "INFO" "Working directory: $(pwd)"
-    log_secure "INFO" "Configuration source: $SECURE_CONFIG_MANAGER"
+	# Log startup security information
+	log_secure "INFO" "Security context: User=$(id -un), Groups=$(id -gn), PID=$$"
+	log_secure "INFO" "Working directory: $(pwd)"
+	log_secure "INFO" "Configuration source: $SECURE_CONFIG_MANAGER"
 
-    # Perform resource usage check
-    check_resource_usage
+	# Perform resource usage check
+	check_resource_usage
 
-    # Security audit log for startup
-    if [[ "$AUDIT_LOGGING" == "true" ]]; then
-        logger -p user.info -t protonvpn-updater "Daemon started securely by user $(id -un) with PID $$"
-    fi
+	# Security audit log for startup
+	if [[ "$AUDIT_LOGGING" == "true" ]]; then
+		logger -p user.info -t protonvpn-updater "Daemon started securely by user $(id -un) with PID $$"
+	fi
 
-    # Run the update check
-    run_update_check
+	# Run the update check
+	run_update_check
 
-    # Final security check
-    check_resource_usage
+	# Final security check
+	check_resource_usage
 
-    log_secure "INFO" "ProtonVPN Config Updater daemon execution completed"
+	log_secure "INFO" "ProtonVPN Config Updater daemon execution completed"
 }
 
 # Security pre-flight checks
 if [[ $EUID -eq 0 ]]; then
-    log_secure "ERROR" "Security violation: Daemon must not run as root"
-    exit 1
+	log_secure "ERROR" "Security violation: Daemon must not run as root"
+	exit 1
 fi
 
 if [[ ! -r "$SECURE_CONFIG_MANAGER" ]]; then
-    echo "ERROR: Cannot read secure configuration manager: $SECURE_CONFIG_MANAGER" >&2
-    exit 1
+	echo "ERROR: Cannot read secure configuration manager: $SECURE_CONFIG_MANAGER" >&2
+	exit 1
 fi
 
 # Execute main function with all arguments
