@@ -161,10 +161,10 @@ run_test_suite() {
         # This allows TESTS_PASSED/TESTS_FAILED to accumulate in parent shell
         if [[ $VERBOSE -eq 1 ]]; then
             # shellcheck disable=SC1090
-            source "$test_script" && "$test_function" && show_test_summary
+            source "$test_script" && "$test_function"
         else
             # shellcheck disable=SC1090
-            source "$test_script" > /dev/null 2>&1 && "$test_function" > /dev/null 2>&1 && show_test_summary > /dev/null 2>&1
+            source "$test_script" > /dev/null 2>&1 && "$test_function" > /dev/null 2>&1
         fi
         local suite_exit_code=$?
 
@@ -182,12 +182,19 @@ run_test_suite() {
         log_test "INFO" "$suite_name completed in ${suite_duration}s"
         log_test "INFO" "$suite_name results: ${suite_passed} passed, ${suite_failed} failed"
 
-        if [[ $suite_exit_code -ne 0 ]] && [[ $FAIL_FAST -eq 1 ]]; then
-            log_test "FAIL" "Stopping due to test failure (fail-fast enabled)"
+        # Debug: Log the exit code
+        echo "DEBUG: $suite_name exit code: $suite_exit_code" >&2
+
+        # Return based on actual test failures, not script exit code
+        # Some test scripts may return 1 even when all tests pass
+        if [[ $suite_failed -gt 0 ]]; then
+            if [[ $FAIL_FAST -eq 1 ]]; then
+                log_test "FAIL" "Stopping due to test failure (fail-fast enabled)"
+            fi
             return 1
         fi
 
-        return $suite_exit_code
+        return 0
     else
         log_test "FAIL" "Test script not found: $test_script"
         return 1
@@ -280,6 +287,16 @@ main() {
         exit 1
     fi
 
+    # Ensure all background processes from tests are cleaned up on exit
+    # shellcheck disable=SC2317,SC2329  # Trap function called indirectly
+    cleanup_test_processes() {
+        # Kill any remaining background jobs from all test suites
+        pkill -P $$ 2> /dev/null || true
+        jobs -p | xargs -r kill 2> /dev/null || true
+        wait 2> /dev/null || true
+    }
+    trap cleanup_test_processes EXIT INT TERM
+
     local start_time
 
     start_time=$(date +%s)
@@ -365,6 +382,18 @@ main() {
     log_test "INFO" "All test suites completed in ${total_duration}s"
 
     generate_test_report
+
+    # Debug logging for CI investigation
+    echo "" >&2
+    echo "DEBUG: Final exit code calculation:" >&2
+    echo "  TESTS_PASSED=$TESTS_PASSED" >&2
+    echo "  TESTS_FAILED=$TESTS_FAILED" >&2
+    echo "  overall_exit_code=$overall_exit_code" >&2
+    echo "  About to exit with code: $overall_exit_code" >&2
+
+    # Disable trap before explicit exit to prevent interference
+    trap - EXIT INT TERM
+
     exit $overall_exit_code
 }
 

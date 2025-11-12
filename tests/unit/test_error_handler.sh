@@ -22,10 +22,10 @@ declare -a FAILED_TESTS=()
 
 # Simple test runner - run command in subshell, capture output
 run_test() {
-    local cmd="$1"
-    local temp_log
-    temp_log=$(mktemp -d)
-    bash -c "
+	local cmd="$1"
+	local temp_log
+	temp_log=$(mktemp -d)
+	bash -c "
         set +e
         export VPN_LOG_DIR='$temp_log'
         cd '$PROJECT_ROOT'
@@ -33,21 +33,21 @@ run_test() {
         source src/vpn-error-handler 2>/dev/null
         $cmd
     " 2>&1
-    rm -rf "$temp_log"
+	rm -rf "$temp_log"
 }
 
 test_pass() {
-    ((TESTS_RUN++))
-    ((TESTS_PASSED++))
-    echo -e "  ${T_GREEN}✓${T_NC} $1"
+	((TESTS_RUN++))
+	((TESTS_PASSED++))
+	echo -e "  ${T_GREEN}✓${T_NC} $1"
 }
 
 test_fail() {
-    ((TESTS_RUN++))
-    ((TESTS_FAILED++))
-    FAILED_TESTS+=("$1")
-    echo -e "  ${T_RED}✗${T_NC} $1"
-    [[ -n "${2:-}" ]] && echo -e "    $2"
+	((TESTS_RUN++))
+	((TESTS_FAILED++))
+	FAILED_TESTS+=("$1")
+	echo -e "  ${T_RED}✗${T_NC} $1"
+	[[ -n "${2:-}" ]] && echo -e "    $2"
 }
 
 echo -e "${T_BLUE}========================================${T_NC}"
@@ -230,13 +230,13 @@ echo -e "Total tests run:    $TESTS_RUN"
 echo -e "${T_GREEN}Tests passed:       $TESTS_PASSED${T_NC}"
 
 if [[ $TESTS_FAILED -gt 0 ]]; then
-    echo -e "${T_RED}Tests failed:       $TESTS_FAILED${T_NC}"
-    echo -e "\n${T_RED}Failed tests:${T_NC}"
-    for test in "${FAILED_TESTS[@]}"; do
-        echo -e "  ${T_RED}✗${T_NC} $test"
-    done
-    exit 1
+	echo -e "${T_RED}Tests failed:       $TESTS_FAILED${T_NC}"
+	echo -e "\n${T_RED}Failed tests:${T_NC}"
+	for test in "${FAILED_TESTS[@]}"; do
+		echo -e "  ${T_RED}✗${T_NC} $test"
+	done
+	exit 1
 else
-    echo -e "${T_GREEN}All tests passed!${T_NC}"
-    exit 0
+	echo -e "${T_GREEN}All tests passed!${T_NC}"
+	exit 0
 fi

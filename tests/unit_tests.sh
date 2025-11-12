@@ -219,6 +219,15 @@ run_unit_tests() {
         return 1
     fi
 
+    # Run exponential backoff optimization tests (Issue #62)
+    log_test "INFO" "Running exponential backoff optimization tests"
+    if bash "$TEST_DIR/unit/test_exponential_backoff.sh"; then
+        log_test "PASS" "Exponential backoff tests: All 7 tests passed"
+    else
+        log_test "FAIL" "Exponential backoff tests: Some tests failed"
+        return 1
+    fi
+
     return 0
 }
 

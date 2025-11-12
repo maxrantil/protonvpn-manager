@@ -29,6 +29,15 @@ jobs:
           cd tests
           ./run_tests.sh
 
+      - name: Cleanup test processes
+        if: always()
+        run: |
+          # Kill any remaining sleep processes from tests
+          pkill -f "sleep" || true
+          # Ensure all background jobs are terminated
+          jobs -p | xargs -r kill 2>/dev/null || true
+          wait 2>/dev/null || true
+
       - name: Verify tests passed
         run: |
           echo "✅ All tests passed successfully"
