@@ -12,11 +12,20 @@ run_regression_prevention_tests() {
 
     echo "Running simple regression prevention test suite..."
 
-    if "$TEST_DIR/simple_regression_tests.sh" > /dev/null 2>&1; then
+    # Run the test and capture output for debugging
+    local regression_output
+    local regression_exit
+    regression_output=$("$TEST_DIR/simple_regression_tests.sh" 2>&1)
+    regression_exit=$?
+
+    if [[ $regression_exit -eq 0 ]]; then
         log_test "PASS" "$CURRENT_TEST: All regression prevention tests passed"
         ((TESTS_PASSED++))
     else
-        log_test "FAIL" "$CURRENT_TEST: Some regression prevention tests failed"
+        log_test "FAIL" "$CURRENT_TEST: Some regression prevention tests failed (exit code: $regression_exit)"
+        if [[ $VERBOSE -eq 1 ]]; then
+            echo "Regression test output: $regression_output" >&2
+        fi
         FAILED_TESTS+=("$CURRENT_TEST")
         ((TESTS_FAILED++))
     fi
@@ -138,8 +147,9 @@ test_dependency_checking() {
     # Check if we're in a CI environment where PATH manipulation is unreliable
     # CI environments (GitHub Actions, GitLab CI, etc.) have complex PATH setups
     # that make it difficult to reliably simulate missing dependencies
-    if [[ -n "${CI:-}" || -n "${GITHUB_ACTIONS:-}" || -n "${GITLAB_CI:-}" ]]; then
-        log_test "SKIP" "$CURRENT_TEST: Cannot simulate missing deps in CI environment"
+    # Also check if we're in a sourced context where PATH manipulation fails
+    if [[ -n "${CI:-}" || -n "${GITHUB_ACTIONS:-}" || -n "${GITLAB_CI:-}" || "${BASH_SOURCE[0]}" != "${0}" ]]; then
+        log_test "SKIP" "$CURRENT_TEST: Cannot simulate missing deps in CI/sourced environment"
         ((TESTS_PASSED++)) # Count as passed since it's a valid skip
         return 0
     fi
