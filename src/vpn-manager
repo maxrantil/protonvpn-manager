@@ -75,7 +75,7 @@ log_vpn_event() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] [$level] $message" >> "$log_file" 2> /dev/null || {
         # Fallback to stderr if log file not writable
         echo "[$(date '+%Y-%m-%d %H:%M:%S')] [$level] $message" >&2
-        return 1
+        return 0
     }
 
     # Simple log rotation: keep last N lines
@@ -417,7 +417,7 @@ stop_vpn() {
             while [[ $count -lt 10 ]]; do
                 if ps -p "$pid" > /dev/null 2>&1; then
                     sleep 1
-                    ((count++))
+                    count=$((count + 1))
                 else
                     break
                 fi
