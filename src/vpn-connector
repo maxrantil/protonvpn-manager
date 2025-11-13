@@ -49,9 +49,10 @@ fi
 PERFORMANCE_CACHE="$LOG_DIR/vpn_performance.cache"
 CONNECTION_LOG="$LOG_DIR/vpn_connect.log"
 LOCK_FILE="$LOCK_DIR/vpn_connect.lock"
+PROFILE_CACHE="$LOG_DIR/vpn_profiles.cache"
 
 # Security: Ensure log files have secure permissions (600 - only owner can read/write)
-for logfile in "$CONNECTION_LOG" "$PERFORMANCE_CACHE"; do
+for logfile in "$CONNECTION_LOG" "$PERFORMANCE_CACHE" "$PROFILE_CACHE"; do
     if [[ -L "$logfile" ]]; then
         rm -f "$logfile"
     fi
@@ -61,7 +62,103 @@ for logfile in "$CONNECTION_LOG" "$PERFORMANCE_CACHE"; do
     chmod 600 "$logfile"
 done
 
+# ============================================================================
+# Profile Cache Functions (Issue #63 - 90% performance improvement)
+# ============================================================================
+
+# Check if profile cache is valid (fresh)
+# Returns: 0 if valid, 1 if invalid/stale
+is_cache_valid() {
+    local cache_file="$PROFILE_CACHE"
+
+    # Check 1: Cache file must exist
+    [[ -f "$cache_file" ]] || return 1
+
+    # Check 2: Cache must have secure permissions (600)
+    [[ "$(stat -c %a "$cache_file" 2>/dev/null)" == "600" ]] || return 1
+
+    # Check 3: Extract cached directory mtime
+    local cached_mtime
+    cached_mtime=$(grep "^# CACHE_MTIME=" "$cache_file" 2>/dev/null | cut -d= -f2)
+    [[ -n "$cached_mtime" ]] || return 1
+
+    # Check 4: Get current directory mtime
+    local current_mtime
+    current_mtime=$(stat -c %Y "$LOCATIONS_DIR" 2>/dev/null)
+    [[ -n "$current_mtime" ]] || return 1
+
+    # Check 5: Compare timestamps (cache is valid if mtime matches)
+    [[ "$cached_mtime" == "$current_mtime" ]]
+}
+
+# Rebuild profile cache from filesystem
+# Returns: 0 on success, 1 on failure
+rebuild_cache() {
+    local cache_file="$PROFILE_CACHE"
+    local temp_cache="${cache_file}.tmp.$$"
+
+    # Security: Reject symlink attacks on cache file
+    if [[ -L "$cache_file" ]]; then
+        rm -f "$cache_file"
+    fi
+
+    # Get current directory mtime (cache key)
+    local dir_mtime
+    dir_mtime=$(stat -c %Y "$LOCATIONS_DIR" 2>/dev/null) || return 1
+
+    # Build cache with metadata header
+    {
+        echo "# VPN Profile Cache"
+        echo "# CACHE_MTIME=${dir_mtime}"
+        echo "# CACHE_DIR=${LOCATIONS_DIR}"
+        echo "# GENERATED=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+        # Security: Maintain existing security model (-xtype f, maxdepth 3)
+        find "$LOCATIONS_DIR" -maxdepth 3 -xtype f \( -name "*.ovpn" -o -name "*.conf" \) 2>/dev/null | sort
+
+    } > "$temp_cache"
+
+    # Count profiles (excluding header lines)
+    local count
+    count=$(grep -v "^#" "$temp_cache" | wc -l)
+
+    # Add count to metadata (insert after GENERATED line)
+    sed -i "5i# CACHE_COUNT=${count}" "$temp_cache"
+
+    # Security: Set restrictive permissions before moving
+    chmod 600 "$temp_cache" || return 1
+
+    # Atomic move (prevents partial reads during rebuild)
+    mv "$temp_cache" "$cache_file" || return 1
+
+    return 0
+}
+
+# Get cached profile list (or rebuild if stale)
+# Returns: Newline-separated list of profile paths
+get_cached_profiles() {
+    # Validate or rebuild cache
+    if ! is_cache_valid; then
+        rebuild_cache || {
+            # Fallback: Direct find if cache rebuild fails
+            echo -e "\033[1;33mCache unavailable, using direct scan\033[0m" >&2
+            find "$LOCATIONS_DIR" -maxdepth 3 -xtype f \( -name "*.ovpn" -o -name "*.conf" \) 2>/dev/null | sort
+            return 0
+        }
+    fi
+
+    # Load cached profiles (skip header lines starting with #)
+    grep -v "^#" "$PROFILE_CACHE" 2>/dev/null || {
+        # If grep fails, rebuild and try again
+        rebuild_cache
+        grep -v "^#" "$PROFILE_CACHE" 2>/dev/null || echo ""
+    }
+}
+
+# ============================================================================
 # Source centralized error handling, utilities, and security validators
+# ============================================================================
+
 source "$VPN_DIR/vpn-error-handler"
 source "$VPN_DIR/vpn-utils"
 source "$VPN_DIR/vpn-colors"
@@ -170,8 +267,8 @@ list_profiles() {
     if [[ -n "$filter" ]]; then
         profiles=$(find_profiles_by_country "$filter")
     else
-        # Security: Limit directory traversal depth and reject symlinks (MEDIUM-1)
-        profiles=$(find "$LOCATIONS_DIR" -maxdepth 3 -xtype f \( -name "*.ovpn" -o -name "*.conf" \) 2> /dev/null | sort)
+        # Use cached profile list for performance (Issue #63)
+        profiles=$(get_cached_profiles)
     fi
 
     if [[ -z "$profiles" ]]; then
@@ -229,8 +326,8 @@ list_profiles() {
 }
 
 detect_secure_core_profiles() {
-    # Security: Limit directory traversal depth and reject symlinks (MEDIUM-1)
-    find "$LOCATIONS_DIR" -maxdepth 3 -xtype f \( -name "*.ovpn" -o -name "*.conf" \) 2> /dev/null | while IFS= read -r profile; do
+    # Use cached profile list for performance (Issue #63)
+    get_cached_profiles | while IFS= read -r profile; do
         local name
         # Handle both .ovpn and .conf extensions
         name=$(basename "$profile" | sed 's/\.\(ovpn\|conf\)$//')
@@ -256,8 +353,8 @@ interactive_profile_selection() {
         profiles=$(find_profiles_by_country "$filter")
         echo -e "\033[1;36mProfiles matching '$filter':\033[0m"
     else
-        # Security: Limit directory traversal depth and reject symlinks (MEDIUM-1)
-        profiles=$(find "$LOCATIONS_DIR" -maxdepth 3 -xtype f \( -name "*.ovpn" -o -name "*.conf" \) 2> /dev/null | sort)
+        # Use cached profile list for performance (Issue #63)
+        profiles=$(get_cached_profiles)
         echo -e "\033[1;36mAll available profiles:\033[0m"
     fi
 
@@ -349,8 +446,8 @@ find_profiles_by_country() {
     local country_code="$1"
 
     if [[ -z "$country_code" ]]; then
-        # Security: Limit directory traversal depth and reject symlinks (MEDIUM-1)
-        find "$LOCATIONS_DIR" -maxdepth 3 -xtype f \( -name "*.ovpn" -o -name "*.conf" \) 2> /dev/null | sort
+        # Use cached profile list for performance (Issue #63)
+        get_cached_profiles
         return
     fi
 
@@ -365,44 +462,38 @@ find_profiles_by_country() {
     country_code=$(echo "$country_code" | tr '[:upper:]' '[:lower:]')
     local results
 
-    # Security: Primary pattern with traversal limits (MEDIUM-1)
-    results=$(find "$LOCATIONS_DIR" -maxdepth 3 -xtype f \( -name "${country_code}-*.ovpn" -o -name "${country_code}-*.conf" \) 2> /dev/null)
+    # Use cached profile list and filter by country code (Issue #63)
+    results=$(get_cached_profiles | grep -E "/${country_code}-[0-9]+\.(ovpn|conf)$")
 
     # Secondary pattern: try variations like *_se_*, *SE*, etc.
     if [[ -z "$results" ]]; then
         local country_upper
         country_upper=$(echo "$country_code" | tr '[:lower:]' '[:upper:]')
 
-        # Try different naming patterns for both protocols
-        local patterns=(
-            "*_${country_code}_*.ovpn" "*_${country_code}_*.conf"
-            "*${country_upper}*.ovpn" "*${country_upper}*.conf"
-            "*-${country_code}*.ovpn" "*-${country_code}*.conf"
-            "*${country_code}[0-9]*.ovpn" "*${country_code}[0-9]*.conf"
-        )
+        # Try different naming patterns using cached profiles
+        local cached_profiles
+        cached_profiles=$(get_cached_profiles)
 
-        for pattern in "${patterns[@]}"; do
-            local matches
-            # Security: Limit directory traversal depth and reject symlinks (MEDIUM-1)
-            matches=$(find "$LOCATIONS_DIR" -maxdepth 3 -xtype f -name "$pattern" 2> /dev/null)
-            if [[ -n "$matches" ]]; then
-                results="$matches"
+        # Try patterns in order of preference
+        for pattern in "_${country_code}_" "${country_upper}" "-${country_code}" "${country_code}[0-9]"; do
+            results=$(echo "$cached_profiles" | grep -i "$pattern")
+            if [[ -n "$results" ]]; then
                 break
             fi
         done
     fi
 
-    # Security: Fallback with traversal limits (MEDIUM-1)
+    # Fallback: grep cached profiles for country code
     if [[ -z "$results" ]]; then
-        results=$(find "$LOCATIONS_DIR" -maxdepth 3 -xtype f \( -name "*.ovpn" -o -name "*.conf" \) 2> /dev/null | grep -i "$country_code")
+        results=$(get_cached_profiles | grep -i "$country_code")
     fi
 
     echo "$results" | sort
 }
 
 get_available_countries() {
-    # Security: Limit directory traversal depth and reject symlinks (MEDIUM-1)
-    find "$LOCATIONS_DIR" -maxdepth 3 -xtype f \( -name "*.ovpn" -o -name "*.conf" \) 2> /dev/null | while IFS= read -r profile; do
+    # Use cached profile list for performance (Issue #63)
+    get_cached_profiles | while IFS= read -r profile; do
         local name
         # Handle both .ovpn and .conf extensions
         name=$(basename "$profile" | sed 's/\.\(ovpn\|conf\)$//')
@@ -750,12 +841,12 @@ get_cached_best_profile() {
     # Use our comprehensive performance cache system
     local best_profile_name
     if best_profile_name=$("$VPN_DIR/best-vpn-profile" best "$country_filter" 2> /dev/null); then
-        # Security: Convert profile name to full path with traversal limits (MEDIUM-1)
+        # Use cached profile list for performance (Issue #63)
         local profile_path
         if [[ -n "$country_filter" ]]; then
-            profile_path=$(find "$LOCATIONS_DIR" -maxdepth 3 -xtype f \( -name "*${best_profile_name}*.ovpn" -o -name "*${best_profile_name}*.conf" \) | head -n1)
+            profile_path=$(get_cached_profiles | grep -E "${best_profile_name}.*\.(ovpn|conf)$" | head -n1)
         else
-            profile_path=$(find "$LOCATIONS_DIR" -maxdepth 3 -xtype f \( -name "${best_profile_name}.ovpn" -o -name "${best_profile_name}.conf" \) | head -n1)
+            profile_path=$(get_cached_profiles | grep -E "/${best_profile_name}\.(ovpn|conf)$" | head -n1)
         fi
 
         if [[ -f "$profile_path" ]]; then
@@ -764,8 +855,8 @@ get_cached_best_profile() {
             return 0
         else
             echo -e "\033[1;33mCached profile path not found for: $best_profile_name\033[0m"
-            # Security: Fallback with traversal limits (MEDIUM-1)
-            profile_path=$(find "$LOCATIONS_DIR" -maxdepth 3 -xtype f -name "*${best_profile_name}*" | head -n1)
+            # Fallback: Search cached profiles for partial match
+            profile_path=$(get_cached_profiles | grep "$best_profile_name" | head -n1)
             if [[ -f "$profile_path" ]]; then
                 echo -e "\033[1;32mUsing cached closest match: $(basename "$profile_path")\033[0m"
                 echo "$profile_path"
@@ -794,12 +885,12 @@ test_and_cache_performance() {
     # Use our comprehensive performance testing engine
     local best_profile_name
     if best_profile_name=$("$VPN_DIR/best-vpn-profile" fresh "$country_filter" 2> /dev/null); then
-        # Security: Convert profile name to full path with traversal limits (MEDIUM-1)
+        # Use cached profile list for performance (Issue #63)
         local profile_path
         if [[ -n "$country_filter" ]]; then
-            profile_path=$(find "$LOCATIONS_DIR" -maxdepth 3 -xtype f \( -name "*${best_profile_name}*.ovpn" -o -name "*${best_profile_name}*.conf" \) | head -n1)
+            profile_path=$(get_cached_profiles | grep -E "${best_profile_name}.*\.(ovpn|conf)$" | head -n1)
         else
-            profile_path=$(find "$LOCATIONS_DIR" -maxdepth 3 -xtype f \( -name "${best_profile_name}.ovpn" -o -name "${best_profile_name}.conf" \) | head -n1)
+            profile_path=$(get_cached_profiles | grep -E "/${best_profile_name}\.(ovpn|conf)$" | head -n1)
         fi
 
         if [[ -f "$profile_path" ]]; then
@@ -809,8 +900,8 @@ test_and_cache_performance() {
             return 0
         else
             echo -e "\033[1;33mProfile path not found for: $best_profile_name\033[0m"
-            # Security: Fallback with traversal limits (MEDIUM-1)
-            profile_path=$(find "$LOCATIONS_DIR" -maxdepth 3 -xtype f -name "*${best_profile_name}*" | head -n1)
+            # Fallback: Search cached profiles for partial match
+            profile_path=$(get_cached_profiles | grep "$best_profile_name" | head -n1)
             if [[ -f "$profile_path" ]]; then
                 echo -e "\033[1;32mUsing closest match: $(basename "$profile_path")\033[0m"
                 echo "$profile_path"
