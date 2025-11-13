@@ -52,14 +52,40 @@ LOCK_FILE="$LOCK_DIR/vpn_connect.lock"
 PROFILE_CACHE="$LOG_DIR/vpn_profiles.cache"
 
 # Security: Ensure log files have secure permissions (600 - only owner can read/write)
+# Protection against TOCTOU race conditions and symlink attacks
 for logfile in "$CONNECTION_LOG" "$PERFORMANCE_CACHE" "$PROFILE_CACHE"; do
-    if [[ -L "$logfile" ]]; then
+    # Remove if symlink or non-regular file
+    if [[ -L "$logfile" ]] || [[ -e "$logfile" && ! -f "$logfile" ]]; then
         rm -f "$logfile"
     fi
+
+    # Atomic creation with secure permissions using noclobber
     if [[ ! -f "$logfile" ]]; then
-        touch "$logfile"
+        (set -o noclobber; umask 077; : > "$logfile") 2>/dev/null || {
+            # File exists, verify it's not a symlink and fix permissions
+            if [[ -f "$logfile" ]] && [[ ! -L "$logfile" ]]; then
+                chmod 600 "$logfile" 2>/dev/null || {
+                    echo "ERROR: Cannot secure log file: $logfile" >&2
+                    exit 1
+                }
+            else
+                echo "ERROR: Cannot create secure log file: $logfile" >&2
+                exit 1
+            fi
+        }
+    else
+        # File exists, ensure correct permissions
+        chmod 600 "$logfile" 2>/dev/null || {
+            echo "ERROR: Cannot secure existing log file: $logfile" >&2
+            exit 1
+        }
     fi
-    chmod 600 "$logfile"
+
+    # Final verification: must be regular file with 600 permissions
+    if [[ -L "$logfile" ]] || [[ "$(stat -c %a "$logfile" 2>/dev/null)" != "600" ]]; then
+        echo "ERROR: Log file security verification failed: $logfile" >&2
+        exit 1
+    fi
 done
 
 # ============================================================================
@@ -71,23 +97,26 @@ done
 is_cache_valid() {
     local cache_file="$PROFILE_CACHE"
 
-    # Check 1: Cache file must exist
-    [[ -f "$cache_file" ]] || return 1
+    # Check 1: Cache file must exist and be a regular file (not symlink)
+    [[ -f "$cache_file" ]] && [[ ! -L "$cache_file" ]] || return 1
 
     # Check 2: Cache must have secure permissions (600)
     [[ "$(stat -c %a "$cache_file" 2>/dev/null)" == "600" ]] || return 1
 
-    # Check 3: Extract cached directory mtime
+    # Check 3: Cache must be owned by current user (prevent substitution attacks)
+    [[ "$(stat -c %U "$cache_file" 2>/dev/null)" == "$(whoami)" ]] || return 1
+
+    # Check 4: Extract cached directory mtime
     local cached_mtime
     cached_mtime=$(grep "^# CACHE_MTIME=" "$cache_file" 2>/dev/null | cut -d= -f2)
     [[ -n "$cached_mtime" ]] || return 1
 
-    # Check 4: Get current directory mtime
+    # Check 5: Get current directory mtime
     local current_mtime
     current_mtime=$(stat -c %Y "$LOCATIONS_DIR" 2>/dev/null)
     [[ -n "$current_mtime" ]] || return 1
 
-    # Check 5: Compare timestamps (cache is valid if mtime matches)
+    # Check 6: Compare timestamps (cache is valid if mtime matches)
     [[ "$cached_mtime" == "$current_mtime" ]]
 }
 
@@ -95,7 +124,19 @@ is_cache_valid() {
 # Returns: 0 on success, 1 on failure
 rebuild_cache() {
     local cache_file="$PROFILE_CACHE"
-    local temp_cache="${cache_file}.tmp.$$"
+
+    # Security: Use mktemp for unpredictable temp file name (prevents race conditions)
+    local temp_cache
+    temp_cache=$(mktemp "${cache_file}.XXXXXXXXXX") || return 1
+
+    # Ensure cleanup on any exit
+    trap 'rm -f "$temp_cache"' RETURN
+
+    # Security: Set restrictive permissions immediately after creation
+    chmod 600 "$temp_cache" || {
+        rm -f "$temp_cache"
+        return 1
+    }
 
     # Security: Reject symlink attacks on cache file
     if [[ -L "$cache_file" ]]; then
@@ -104,7 +145,10 @@ rebuild_cache() {
 
     # Get current directory mtime (cache key)
     local dir_mtime
-    dir_mtime=$(stat -c %Y "$LOCATIONS_DIR" 2>/dev/null) || return 1
+    dir_mtime=$(stat -c %Y "$LOCATIONS_DIR" 2>/dev/null) || {
+        rm -f "$temp_cache"
+        return 1
+    }
 
     # Build cache with metadata header
     {
@@ -116,20 +160,26 @@ rebuild_cache() {
         # Security: Maintain existing security model (-xtype f, maxdepth 3)
         find "$LOCATIONS_DIR" -maxdepth 3 -xtype f \( -name "*.ovpn" -o -name "*.conf" \) 2>/dev/null | sort
 
-    } > "$temp_cache"
+    } > "$temp_cache" || {
+        rm -f "$temp_cache"
+        return 1
+    }
 
     # Count profiles (excluding header lines)
     local count
     count=$(grep -v "^#" "$temp_cache" | wc -l)
 
-    # Add count to metadata (insert after GENERATED line)
-    sed -i "5i# CACHE_COUNT=${count}" "$temp_cache"
-
-    # Security: Set restrictive permissions before moving
-    chmod 600 "$temp_cache" || return 1
+    # Add count to metadata (using marker-based insertion for maintainability)
+    sed -i "/^# GENERATED=/a# CACHE_COUNT=${count}" "$temp_cache" || {
+        rm -f "$temp_cache"
+        return 1
+    }
 
     # Atomic move (prevents partial reads during rebuild)
-    mv "$temp_cache" "$cache_file" || return 1
+    mv "$temp_cache" "$cache_file" || {
+        rm -f "$temp_cache"
+        return 1
+    }
 
     return 0
 }
