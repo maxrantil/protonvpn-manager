@@ -8,7 +8,7 @@ TEST_DIR="$(dirname "$(realpath "$0")")"
 PROJECT_DIR="$(realpath "$TEST_DIR/../..")"
 
 # Source test framework
-source "$PROJECT_DIR/tests/test_framework.sh" 2>/dev/null || {
+source "$PROJECT_DIR/tests/test_framework.sh" 2> /dev/null || {
     echo "Error: Could not source test framework"
     exit 1
 }
@@ -50,8 +50,9 @@ cleanup_cache_test_env() {
 }
 
 # Source vpn-connector for testing
-VPN_DIR="$PROJECT_DIR/src"
-source "$PROJECT_DIR/src/vpn-connector" 2>/dev/null || {
+# VPN_DIR is used by vpn-connector when sourced
+export VPN_DIR="$PROJECT_DIR/src"
+source "$PROJECT_DIR/src/vpn-connector" 2> /dev/null || {
     echo "Error: Could not source vpn-connector"
     exit 1
 }
@@ -81,7 +82,7 @@ fail_test() {
 test_is_cache_valid_function_exists() {
     start_test "is_cache_valid function exists"
 
-    if type is_cache_valid &>/dev/null; then
+    if type is_cache_valid &> /dev/null; then
         pass_test
         return 0
     else
@@ -93,7 +94,7 @@ test_is_cache_valid_function_exists() {
 test_rebuild_cache_function_exists() {
     start_test "rebuild_cache function exists"
 
-    if type rebuild_cache &>/dev/null; then
+    if type rebuild_cache &> /dev/null; then
         pass_test
         return 0
     else
@@ -105,7 +106,7 @@ test_rebuild_cache_function_exists() {
 test_get_cached_profiles_function_exists() {
     start_test "get_cached_profiles function exists"
 
-    if type get_cached_profiles &>/dev/null; then
+    if type get_cached_profiles &> /dev/null; then
         pass_test
         return 0
     else
@@ -152,7 +153,7 @@ test_cache_file_permissions() {
     }
 
     local perms
-    perms=$(stat -c %a "$LOG_DIR/vpn_profiles.cache" 2>/dev/null)
+    perms=$(stat -c %a "$LOG_DIR/vpn_profiles.cache" 2> /dev/null)
 
     if [[ "$perms" == "600" ]]; then
         pass_test
@@ -204,9 +205,9 @@ test_cache_has_metadata_header() {
     }
 
     # Check for required metadata fields
-    if grep -q "^# CACHE_MTIME=" "$LOG_DIR/vpn_profiles.cache" && \
-       grep -q "^# CACHE_DIR=" "$LOG_DIR/vpn_profiles.cache" && \
-       grep -q "^# CACHE_COUNT=" "$LOG_DIR/vpn_profiles.cache"; then
+    if grep -q "^# CACHE_MTIME=" "$LOG_DIR/vpn_profiles.cache" &&
+        grep -q "^# CACHE_DIR=" "$LOG_DIR/vpn_profiles.cache" &&
+        grep -q "^# CACHE_COUNT=" "$LOG_DIR/vpn_profiles.cache"; then
         pass_test
         cleanup_cache_test_env
         return 0
@@ -328,7 +329,7 @@ test_get_cached_profiles_rebuilds_when_stale() {
     setup_cache_test_env
 
     # Get profiles (creates cache)
-    get_cached_profiles >/dev/null
+    get_cached_profiles > /dev/null
 
     # Wait and modify directory
     sleep 1

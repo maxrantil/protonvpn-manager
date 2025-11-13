@@ -61,10 +61,14 @@ for logfile in "$CONNECTION_LOG" "$PERFORMANCE_CACHE" "$PROFILE_CACHE"; do
 
     # Atomic creation with secure permissions using noclobber
     if [[ ! -f "$logfile" ]]; then
-        (set -o noclobber; umask 077; : > "$logfile") 2>/dev/null || {
+        (
+            set -o noclobber
+            umask 077
+            : > "$logfile"
+        ) 2> /dev/null || {
             # File exists, verify it's not a symlink and fix permissions
             if [[ -f "$logfile" ]] && [[ ! -L "$logfile" ]]; then
-                chmod 600 "$logfile" 2>/dev/null || {
+                chmod 600 "$logfile" 2> /dev/null || {
                     echo "ERROR: Cannot secure log file: $logfile" >&2
                     exit 1
                 }
@@ -75,14 +79,14 @@ for logfile in "$CONNECTION_LOG" "$PERFORMANCE_CACHE" "$PROFILE_CACHE"; do
         }
     else
         # File exists, ensure correct permissions
-        chmod 600 "$logfile" 2>/dev/null || {
+        chmod 600 "$logfile" 2> /dev/null || {
             echo "ERROR: Cannot secure existing log file: $logfile" >&2
             exit 1
         }
     fi
 
     # Final verification: must be regular file with 600 permissions
-    if [[ -L "$logfile" ]] || [[ "$(stat -c %a "$logfile" 2>/dev/null)" != "600" ]]; then
+    if [[ -L "$logfile" ]] || [[ "$(stat -c %a "$logfile" 2> /dev/null)" != "600" ]]; then
         echo "ERROR: Log file security verification failed: $logfile" >&2
         exit 1
     fi
@@ -101,19 +105,19 @@ is_cache_valid() {
     [[ -f "$cache_file" ]] && [[ ! -L "$cache_file" ]] || return 1
 
     # Check 2: Cache must have secure permissions (600)
-    [[ "$(stat -c %a "$cache_file" 2>/dev/null)" == "600" ]] || return 1
+    [[ "$(stat -c %a "$cache_file" 2> /dev/null)" == "600" ]] || return 1
 
     # Check 3: Cache must be owned by current user (prevent substitution attacks)
-    [[ "$(stat -c %U "$cache_file" 2>/dev/null)" == "$(whoami)" ]] || return 1
+    [[ "$(stat -c %U "$cache_file" 2> /dev/null)" == "$(whoami)" ]] || return 1
 
     # Check 4: Extract cached directory mtime
     local cached_mtime
-    cached_mtime=$(grep "^# CACHE_MTIME=" "$cache_file" 2>/dev/null | cut -d= -f2)
+    cached_mtime=$(grep "^# CACHE_MTIME=" "$cache_file" 2> /dev/null | cut -d= -f2)
     [[ -n "$cached_mtime" ]] || return 1
 
     # Check 5: Get current directory mtime
     local current_mtime
-    current_mtime=$(stat -c %Y "$LOCATIONS_DIR" 2>/dev/null)
+    current_mtime=$(stat -c %Y "$LOCATIONS_DIR" 2> /dev/null)
     [[ -n "$current_mtime" ]] || return 1
 
     # Check 6: Compare timestamps (cache is valid if mtime matches)
@@ -145,7 +149,7 @@ rebuild_cache() {
 
     # Get current directory mtime (cache key)
     local dir_mtime
-    dir_mtime=$(stat -c %Y "$LOCATIONS_DIR" 2>/dev/null) || {
+    dir_mtime=$(stat -c %Y "$LOCATIONS_DIR" 2> /dev/null) || {
         rm -f "$temp_cache"
         return 1
     }
@@ -158,7 +162,7 @@ rebuild_cache() {
         echo "# GENERATED=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
         # Security: Maintain existing security model (-xtype f, maxdepth 3)
-        find "$LOCATIONS_DIR" -maxdepth 3 -xtype f \( -name "*.ovpn" -o -name "*.conf" \) 2>/dev/null | sort
+        find "$LOCATIONS_DIR" -maxdepth 3 -xtype f \( -name "*.ovpn" -o -name "*.conf" \) 2> /dev/null | sort
 
     } > "$temp_cache" || {
         rm -f "$temp_cache"
@@ -192,16 +196,16 @@ get_cached_profiles() {
         rebuild_cache || {
             # Fallback: Direct find if cache rebuild fails
             echo -e "\033[1;33mCache unavailable, using direct scan\033[0m" >&2
-            find "$LOCATIONS_DIR" -maxdepth 3 -xtype f \( -name "*.ovpn" -o -name "*.conf" \) 2>/dev/null | sort
+            find "$LOCATIONS_DIR" -maxdepth 3 -xtype f \( -name "*.ovpn" -o -name "*.conf" \) 2> /dev/null | sort
             return 0
         }
     fi
 
     # Load cached profiles (skip header lines starting with #)
-    grep -v "^#" "$PROFILE_CACHE" 2>/dev/null || {
+    grep -v "^#" "$PROFILE_CACHE" 2> /dev/null || {
         # If grep fails, rebuild and try again
         rebuild_cache
-        grep -v "^#" "$PROFILE_CACHE" 2>/dev/null || echo ""
+        grep -v "^#" "$PROFILE_CACHE" 2> /dev/null || echo ""
     }
 }
 

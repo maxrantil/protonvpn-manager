@@ -48,7 +48,7 @@ EOF
 done
 
 # Source vpn-connector
-source "$VPN_DIR/vpn-connector" 2>/dev/null
+source "$VPN_DIR/vpn-connector" 2> /dev/null
 
 echo ""
 echo "========================================="
@@ -70,11 +70,11 @@ rm -f "$LOG_DIR/vpn_profiles.cache"
 
 # Measure direct find time (5 iterations for stability)
 total_baseline=0
-for iter in {1..5}; do
+for _ in {1..5}; do
     start=$(date +%s%N)
-    find "$LOCATIONS_DIR" -maxdepth 3 -xtype f -name "*.ovpn" 2>/dev/null | sort > /dev/null
+    find "$LOCATIONS_DIR" -maxdepth 3 -xtype f -name "*.ovpn" 2> /dev/null | sort > /dev/null
     end=$(date +%s%N)
-    duration=$(( (end - start) / 1000000 ))
+    duration=$(((end - start) / 1000000))
     total_baseline=$((total_baseline + duration))
 done
 baseline_avg=$((total_baseline / 5))
@@ -93,7 +93,7 @@ rm -f "$LOG_DIR/vpn_profiles.cache"
 start=$(date +%s%N)
 get_cached_profiles > /dev/null
 end=$(date +%s%N)
-cold_cache_ms=$(( (end - start) / 1000000 ))
+cold_cache_ms=$(((end - start) / 1000000))
 
 echo "  First call (builds cache): ${cold_cache_ms}ms"
 echo ""
@@ -104,11 +104,11 @@ echo "------------------------------------------------------------"
 
 # Measure warm cache time (5 iterations)
 total_warm=0
-for iter in {1..5}; do
+for _ in {1..5}; do
     start=$(date +%s%N)
     get_cached_profiles > /dev/null
     end=$(date +%s%N)
-    duration=$(( (end - start) / 1000000 ))
+    duration=$(((end - start) / 1000000))
     total_warm=$((total_warm + duration))
 done
 warm_cache_avg=$((total_warm / 5))
@@ -127,7 +127,7 @@ rm -f "$LOG_DIR/vpn_profiles.cache"
 start=$(date +%s%N)
 list_profiles > /dev/null 2>&1
 end=$(date +%s%N)
-list_with_cache=$(( (end - start) / 1000000 ))
+list_with_cache=$(((end - start) / 1000000))
 
 echo "  list_profiles with cache: ${list_with_cache}ms"
 echo ""
@@ -145,7 +145,7 @@ echo ""
 
 # Calculate improvement: Cache eliminates 13 redundant find operations
 # The real benefit is comparing total operations, not single find vs cache
-FIND_COUNT=13  # Number of find operations replaced by cache
+FIND_COUNT=13 # Number of find operations replaced by cache
 echo "Performance Analysis:"
 echo "  Without cache: 13 find operations × ${baseline_avg}ms = $((baseline_avg * FIND_COUNT))ms total"
 echo "  With cache:    1 cache read = ${warm_cache_avg}ms"
@@ -156,7 +156,7 @@ if [[ $baseline_avg -gt 0 ]]; then
     baseline_total=$((baseline_avg * FIND_COUNT))
 
     # Calculate improvement: (baseline_total - cached) / baseline_total × 100
-    improvement=$(( (baseline_total - warm_cache_avg) * 100 / baseline_total ))
+    improvement=$(((baseline_total - warm_cache_avg) * 100 / baseline_total))
     echo "Cache eliminates $((FIND_COUNT - 1)) redundant find operations"
     echo "Performance improvement: ${improvement}% (${baseline_total}ms → ${warm_cache_avg}ms)"
     echo ""
