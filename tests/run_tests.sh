@@ -370,6 +370,25 @@ main() {
             flock_duration=$((flock_end - flock_start))
             log_test "INFO" "Flock lock implementation tests completed in ${flock_duration}s"
         fi
+
+        # Exit code validation tests (regression prevention)
+        log_test "INFO" "Running exit code validation tests"
+        local exit_code_start
+        exit_code_start=$(date +%s)
+        if ! bash "$TEST_DIR/test_exit_codes.sh"; then
+            log_test "FAIL" "Exit code validation tests failed"
+            overall_exit_code=1
+            if [[ $FAIL_FAST -eq 1 ]]; then
+                generate_test_report
+                exit $overall_exit_code
+            fi
+        else
+            local exit_code_end
+            exit_code_end=$(date +%s)
+            local exit_code_duration
+            exit_code_duration=$((exit_code_end - exit_code_start))
+            log_test "INFO" "Exit code validation tests completed in ${exit_code_duration}s"
+        fi
     fi
 
     local end_time
