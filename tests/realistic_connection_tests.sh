@@ -249,21 +249,32 @@ test_multiple_connection_prevention_regression() {
 
     # Create a dummy background process that mimics OpenVPN pattern
     # vpn-connector checks for: pgrep -f "openvpn.*config"
-    # We create a sleep process with "openvpn" and "config" in command line
-    # Use a more reliable method that works in sourced context
-    bash -c 'sleep 60' &
-    local mock_vpn_pid=$!
+    # We need to create actual lock file that vpn-connector uses
+    local lock_dir="${XDG_RUNTIME_DIR:-/run/user/$UID}/vpn"
+    if ! mkdir -p "$lock_dir" 2>/dev/null; then
+        lock_dir="/tmp/vpn_$$"
+        mkdir -p "$lock_dir"
+    fi
+    local vpn_lock_file="$lock_dir/vpn_connect.lock"
 
-    # Create a marker file that vpn-connector would create for real VPN
-    local vpn_lock_file="/tmp/vpn.lock"
-    echo "$mock_vpn_pid" > "$vpn_lock_file"
+    # Create lock file with mock PID (simulates active VPN connection)
+    # Use flock to simulate real lock acquisition
+    (
+        exec 200>"$vpn_lock_file"
+        if flock -n 200; then
+            echo "$$" > "$vpn_lock_file"
+            # Hold the lock for duration of test
+            sleep 60
+        fi
+    ) &
+    local mock_lock_pid=$!
 
-    # Give process time to start and be detectable
-    sleep 1
+    # Give lock time to be acquired
+    sleep 2
 
-    # Verify our mock process is detectable (should find lock file or process)
-    if [[ ! -f "$vpn_lock_file" ]] && ! kill -0 "$mock_vpn_pid" 2>/dev/null; then
-        log_test "WARN" "$CURRENT_TEST: Mock process not detectable, test may be unreliable"
+    # Verify lock file exists and is held
+    if [[ ! -f "$vpn_lock_file" ]]; then
+        log_test "WARN" "$CURRENT_TEST: Lock file not created, test may be unreliable"
     fi
 
     # Attempt connection - should be BLOCKED by check_vpn_processes()
@@ -272,17 +283,20 @@ test_multiple_connection_prevention_regression() {
         CREDENTIALS_FILE="$test_creds" \
         timeout 5 "$vpn_script" connect dk 2>&1) || true
 
-    # Cleanup mock process and lock file immediately
-    kill $mock_vpn_pid 2> /dev/null || true
-    wait $mock_vpn_pid 2> /dev/null || true
+    # Cleanup mock lock process and lock file immediately
+    kill $mock_lock_pid 2>/dev/null || true
+    wait $mock_lock_pid 2>/dev/null || true
     rm -f "$vpn_lock_file"
+    # Clean up lock directory if we created a temp one
+    if [[ "$lock_dir" == "/tmp/vpn_$$" ]]; then
+        rmdir "$lock_dir" 2>/dev/null || true
+    fi
 
-    # Verify blocking behavior - can be detected by vpn health check, vpn-connector, OR lock file
-    # Health check (vpn:76-86): "CRITICAL: Multiple OpenVPN processes detected"
-    # Process check (vpn-connector:424): "BLOCKED: X OpenVPN process(es) already running"
-    # Lock file check: "VPN already running"
-    if echo "$connect_output" | command grep -q -E "CRITICAL.*Multiple.*processes|BLOCKED.*already running|VPN already running|cannot acquire lock"; then
-        log_test "PASS" "$CURRENT_TEST: Process detection works"
+    # Verify blocking behavior - should see lock error from acquire_lock()
+    # vpn-connector:138-141: "Another VPN connection is already in progress"
+    # or "Another VPN connection is in progress (PID: ...)"
+    if echo "$connect_output" | command grep -q -i "another VPN connection.*in progress"; then
+        log_test "PASS" "$CURRENT_TEST: Lock mechanism prevents concurrent connections"
         ((TESTS_PASSED++))
     else
         log_test "FAIL" "$CURRENT_TEST: Failed to detect existing VPN process"
@@ -290,8 +304,9 @@ test_multiple_connection_prevention_regression() {
         ((TESTS_FAILED++))
     fi
 
-    # Verify cleanup or blocking occurred (prevents accumulation)
-    if echo "$connect_output" | command grep -q -E "cleanup|BLOCKED"; then
+    # Verify lock blocking occurred (prevents accumulation)
+    # The error message from acquire_lock() indicates blocking
+    if echo "$connect_output" | command grep -q -i "another VPN connection.*in progress"; then
         log_test "PASS" "$CURRENT_TEST: Process accumulation prevention active"
         ((TESTS_PASSED++))
     else
