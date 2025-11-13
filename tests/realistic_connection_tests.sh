@@ -347,6 +347,6 @@ run_realistic_connection_tests() {
 
 # Run tests if script is executed directly
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
-	run_realistic_connection_tests
-	show_test_summary
+    run_realistic_connection_tests
+    show_test_summary
 fi
