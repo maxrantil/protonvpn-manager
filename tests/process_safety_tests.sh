@@ -351,7 +351,7 @@ test_aggressive_cleanup_effectiveness() {
     # Verify processes are running
     local alive_count=0
     for pid in "${test_pids[@]}"; do
-        if kill -0 "$pid" 2>/dev/null; then
+        if kill -0 "$pid" 2> /dev/null; then
             ((alive_count++))
         fi
     done
@@ -368,7 +368,7 @@ test_aggressive_cleanup_effectiveness() {
         # Check if cleanup tried to kill processes
         local cleaned_count=0
         for pid in "${test_pids[@]}"; do
-            if ! kill -0 "$pid" 2>/dev/null; then
+            if ! kill -0 "$pid" 2> /dev/null; then
                 ((cleaned_count++))
             fi
         done
@@ -386,7 +386,7 @@ test_aggressive_cleanup_effectiveness() {
 
         # Force cleanup any remaining test processes
         for pid in "${test_pids[@]}"; do
-            kill -9 "$pid" 2>/dev/null || true
+            kill -9 "$pid" 2> /dev/null || true
         done
 
         # Critical warning test removed - feature never implemented
