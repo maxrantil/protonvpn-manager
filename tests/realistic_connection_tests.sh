@@ -17,14 +17,14 @@ test_script_path_resolution() {
 
     # Test help command (should work without network)
     local help_output
-    help_output=$("$vpn_script" help 2>/dev/null)
+    help_output=$("$vpn_script" help 2> /dev/null)
 
     assert_contains "$help_output" "Usage:" "VPN script should show usage"
     assert_contains "$help_output" "Connection Commands:" "Should show command categories"
 
     # Test list command (should find locations directory)
     local list_output
-    list_output=$(LOCATIONS_DIR="$TEST_LOCATIONS_DIR" "$vpn_script" list 2>/dev/null)
+    list_output=$(LOCATIONS_DIR="$TEST_LOCATIONS_DIR" "$vpn_script" list 2> /dev/null)
 
     if [[ -n "$list_output" ]]; then
         log_test "PASS" "$CURRENT_TEST: List command works from reorganized structure"
@@ -45,7 +45,7 @@ test_ovpn_file_validation() {
 
     # Test that connector can read test .ovpn files
     local profile_output
-    profile_output=$(LOCATIONS_DIR="$TEST_LOCATIONS_DIR" "$connector_script" list 2>/dev/null)
+    profile_output=$(LOCATIONS_DIR="$TEST_LOCATIONS_DIR" "$connector_script" list 2> /dev/null)
 
     assert_contains "$profile_output" "se-test" "Should find SE test profile"
     assert_contains "$profile_output" "dk-test" "Should find DK test profile"
@@ -55,7 +55,7 @@ test_ovpn_file_validation() {
 
     if [[ -f "$se_profile" ]]; then
         local remote_line
-        remote_line=$(grep "^remote" "$se_profile" 2>/dev/null)
+        remote_line=$(grep "^remote" "$se_profile" 2> /dev/null)
 
         if [[ -n "$remote_line" ]]; then
             log_test "PASS" "$CURRENT_TEST: Can read remote directive from .ovpn file"
@@ -85,7 +85,7 @@ test_dry_run_connection_attempt() {
     LOCATIONS_DIR="$TEST_LOCATIONS_DIR" connect_output=$("$connector_script" connect se 2>&1) || true
 
     # Should attempt to process the connection even if mocked
-    if echo "$connect_output" | command grep -q "se-test\|connecting\|profile" 2>/dev/null; then
+    if echo "$connect_output" | command grep -q "se-test\|connecting\|profile" 2> /dev/null; then
         log_test "PASS" "$CURRENT_TEST: Connection attempt processes correctly"
         ((TESTS_PASSED++))
     else
@@ -102,8 +102,8 @@ test_multiple_location_switching() {
 
     # Create test credentials file
     local test_creds="$TEST_TEMP_DIR/test_credentials.txt"
-    echo "test_user" >"$test_creds"
-    echo "test_pass" >>"$test_creds"
+    echo "test_user" > "$test_creds"
+    echo "test_pass" >> "$test_creds"
     chmod 600 "$test_creds"
 
     # Mock network commands for safe testing
@@ -139,8 +139,8 @@ test_credentials_file_access() {
     local test_creds="$TEST_TEMP_DIR/test_credentials.txt"
 
     # Create test credentials file
-    echo "test_user" >"$test_creds"
-    echo "test_pass" >>"$test_creds"
+    echo "test_user" > "$test_creds"
+    echo "test_pass" >> "$test_creds"
     chmod 600 "$test_creds"
 
     # Test that connector can find credentials file
@@ -212,7 +212,7 @@ test_working_directory_independence() {
 
     # Test that script works from different working directory
     local help_output
-    help_output=$("$vpn_script" help 2>/dev/null)
+    help_output=$("$vpn_script" help 2> /dev/null)
 
     if [[ -n "$help_output" ]] && echo "$help_output" | command grep -q "Usage:"; then
         log_test "PASS" "$CURRENT_TEST: Script works from different working directory"
@@ -243,15 +243,15 @@ test_multiple_connection_prevention_regression() {
     local test_creds="$TEST_TEMP_DIR/test_credentials.txt"
 
     # Create test credentials file
-    echo "test_user" >"$test_creds"
-    echo "test_pass" >>"$test_creds"
+    echo "test_user" > "$test_creds"
+    echo "test_pass" >> "$test_creds"
     chmod 600 "$test_creds"
 
     # Create a dummy background process that mimics OpenVPN pattern
     # vpn-connector checks for: pgrep -f "openvpn.*config"
     # We need to create actual lock file that vpn-connector uses
     local lock_dir="${XDG_RUNTIME_DIR:-/run/user/$UID}/vpn"
-    if ! mkdir -p "$lock_dir" 2>/dev/null; then
+    if ! mkdir -p "$lock_dir" 2> /dev/null; then
         lock_dir="/tmp/vpn_$$"
         mkdir -p "$lock_dir"
     fi
@@ -260,9 +260,9 @@ test_multiple_connection_prevention_regression() {
     # Create lock file with mock PID (simulates active VPN connection)
     # Use flock to simulate real lock acquisition
     (
-        exec 200>"$vpn_lock_file"
+        exec 200> "$vpn_lock_file"
         if flock -n 200; then
-            echo "$$" >"$vpn_lock_file"
+            echo "$$" > "$vpn_lock_file"
             # Hold the lock for duration of test
             sleep 60
         fi
@@ -284,12 +284,12 @@ test_multiple_connection_prevention_regression() {
         timeout 5 "$vpn_script" connect dk 2>&1) || true
 
     # Cleanup mock lock process and lock file immediately
-    kill $mock_lock_pid 2>/dev/null || true
-    wait $mock_lock_pid 2>/dev/null || true
+    kill $mock_lock_pid 2> /dev/null || true
+    wait $mock_lock_pid 2> /dev/null || true
     rm -f "$vpn_lock_file"
     # Clean up lock directory if we created a temp one
     if [[ "$lock_dir" == "/tmp/vpn_$$" ]]; then
-        rmdir "$lock_dir" 2>/dev/null || true
+        rmdir "$lock_dir" 2> /dev/null || true
     fi
 
     # Verify blocking behavior - should see lock error from acquire_lock()
