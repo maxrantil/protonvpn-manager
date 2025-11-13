@@ -340,7 +340,7 @@ test_aggressive_cleanup_effectiveness() {
     # Create multiple stubborn processes that simulate real OpenVPN behavior
     # Store PIDs for direct checking instead of relying on pgrep
     local test_pids=()
-    for i in {1..3}; do
+    for _i in {1..3}; do
         # Create processes that are easier to detect in sourced context
         bash -c "while true; do sleep 1; done" &
         test_pids+=($!)

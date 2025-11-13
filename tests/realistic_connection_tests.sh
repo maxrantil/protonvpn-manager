@@ -333,16 +333,16 @@ run_realistic_connection_tests() {
 	echo "    REALISTIC CONNECTION TESTS"
 	echo "========================================"
 
-	test_script_path_resolution
-	test_ovpn_file_validation
-	test_dry_run_connection_attempt
-	test_multiple_location_switching
-	test_credentials_file_access
-	test_cleanup_and_reconnection
-	test_working_directory_independence
-	test_multiple_connection_prevention_regression
+    test_script_path_resolution
+    test_ovpn_file_validation
+    test_dry_run_connection_attempt
+    test_multiple_location_switching
+    test_credentials_file_access
+    test_cleanup_and_reconnection
+    test_working_directory_independence
+    test_multiple_connection_prevention_regression
 
-	return 0
+    return 0
 }
 
 # Run tests if script is executed directly
