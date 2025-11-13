@@ -328,10 +328,10 @@ test_multiple_connection_prevention_regression() {
 
 # Run all realistic connection tests
 run_realistic_connection_tests() {
-	log_test "INFO" "Starting Realistic Connection Tests"
-	echo "========================================"
-	echo "    REALISTIC CONNECTION TESTS"
-	echo "========================================"
+    log_test "INFO" "Starting Realistic Connection Tests"
+    echo "========================================"
+    echo "    REALISTIC CONNECTION TESTS"
+    echo "========================================"
 
     test_script_path_resolution
     test_ovpn_file_validation
