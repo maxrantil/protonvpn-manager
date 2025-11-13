@@ -17,7 +17,6 @@ readonly TEST_LOG="/tmp/exit_code_tests.log"
 # Colors for output
 readonly RED='\033[1;31m'
 readonly GREEN='\033[1;32m'
-readonly YELLOW='\033[1;33m'
 readonly BLUE='\033[1;36m'
 readonly NC='\033[0m'
 
