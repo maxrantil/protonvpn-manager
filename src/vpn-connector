@@ -148,7 +148,7 @@ acquire_lock() {
 }
 
 release_lock() {
-    [[ -f "$LOCK_FILE" ]] && rm -f "$LOCK_FILE"
+    rm -f "$LOCK_FILE" 2> /dev/null || true
 }
 
 cleanup_on_exit() {
