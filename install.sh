@@ -13,6 +13,7 @@ COMPONENTS=(
 	"vpn-error-handler"
 	"vpn-utils"
 	"vpn-colors"
+	"vpn-validators"
 	"best-vpn-profile"
 )
 
