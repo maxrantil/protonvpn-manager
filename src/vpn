@@ -53,6 +53,7 @@ show_help() {
     echo "  cleanup             - Clean up VPN processes and routes (safe)"
     echo "  emergency-reset     - Emergency network reset (restarts NetworkManager)"
     echo "  health              - Check VPN process health"
+    echo "  doctor              - Run comprehensive system diagnostics"
     echo "  test                - Test VPN performance"
     echo "  logs [lines]        - View recent log entries (default: 50 lines)"
     echo
@@ -192,6 +193,15 @@ case "${1:-}" in
             "$VPN_MANAGER" health
         else
             file_not_found_error "$COMP_VPN_MAIN" "$VPN_MANAGER" "Check installation and file permissions"
+            exit 1
+        fi
+        ;;
+    "doctor" | "diag" | "diagnose")
+        DOCTOR_SCRIPT="$VPN_DIR/vpn-doctor"
+        if [[ -x "$DOCTOR_SCRIPT" ]]; then
+            "$DOCTOR_SCRIPT" "${@:2}"
+        else
+            file_not_found_error "$COMP_VPN_MAIN" "$DOCTOR_SCRIPT" "Check installation and file permissions"
             exit 1
         fi
         ;;

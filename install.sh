@@ -15,6 +15,7 @@ COMPONENTS=(
 	"vpn-colors"
 	"vpn-validators"
 	"best-vpn-profile"
+	"vpn-doctor"
 )
 
 # Colors for output

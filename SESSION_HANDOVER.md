@@ -310,48 +310,58 @@ stat $STAT_MTIME_FLAG "$PERFORMANCE_CACHE" 2> /dev/null || echo 0
 ## 📝 Startup Prompt for Next Session
 
 ```
-Read CLAUDE.md to understand our workflow, then choose next priority issue.
+Read CLAUDE.md to understand our workflow, then implement Issue #76 (vpn doctor).
 
 **Previous completions**:
 - Issue #73 stat optimization MERGED ✅ (commit c60bf49)
 - Issue #146 test failures MERGED ✅ (commit 94a865c)
 
-**Key Achievements**:
-- 50% performance improvement (2x the 25% target)
-- 100% test pass rate achieved (115/115 tests)
-- CI unblocked for all future PRs
+**Next task**: Issue #76 - Create 'vpn doctor' health check command [3-4 hours]
 
-**Immediate priority options**:
+**What to build**:
+Comprehensive diagnostic command (`vpn doctor`) that checks:
+1. System dependencies (openvpn, curl, bc, etc.)
+2. File permissions (config dir, credentials, locations)
+3. Network connectivity (can reach VPN servers)
+4. Configuration validation (credentials exist, .ovpn files present)
+5. Actionable recommendations for any issues found
 
-1. **Issue #76**: Create 'vpn doctor' health check command [3-4 hours] ⭐ *Recommended*
-   - Diagnostic tool for common VPN issues
-   - High user value (troubleshooting aid)
-   - Medium complexity
-
-2. **Issue #147**: WCAG 2.1 Level AA compliance for Issue #69 [1-2 hours]
-   - Accessibility improvements for progressive feedback
-   - Follow-up to completed Issue #69
-   - Low complexity, high UX value
+**Implementation approach**:
+- Create new `vpn-doctor` script in `src/`
+- Add to install.sh COMPONENTS array
+- Integrate into main `vpn` command
+- Follow TDD: write tests first (unit + integration)
+- Use existing error-handler patterns for consistency
+- Output should be user-friendly with colors and emojis
 
 **Context**:
-- Master at 94a865c (Issue #146 just merged)
-- Combined performance: 69% (Issue #63) + 50% (Issue #73) = ~85% total improvement
-- Test status: 115/115 passing (100% - CI clean!)
+- Master at 285ed4a (session handoff just updated)
+- Test suite: 115/115 passing (100% - CI clean!)
+- Performance: ~85% total cache improvement
+- All systems healthy and ready for new feature
 
 **Reference docs**:
+- Issue #76: https://github.com/maxrantil/protonvpn-manager/issues/76
 - SESSION_HANDOVER.md (this file)
-- CLAUDE.md (workflow guidelines)
-- GitHub Issues: #76, #147
+- CLAUDE.md (workflow guidelines, TDD requirements)
+- Existing: src/vpn-error-handler (error patterns)
+- Existing: src/vpn-utils (utility functions)
 
 **Ready state**:
-- Branch: master (clean, up-to-date at 94a865c)
+- Branch: master (clean, up-to-date at 285ed4a)
 - Working directory: Clean
 - All 115 tests passing
 - All pre-commit hooks satisfied
 
-**Expected scope**: Pick one issue and complete it (1-4 hours)
+**Expected scope**: Complete Issue #76 in 3-4 hours
+- Create vpn-doctor script with comprehensive checks
+- Write full test suite (unit + integration)
+- Update install.sh and main vpn command
+- Verify all tests pass (116+/116+)
+- Create PR, get it merged
+- Complete session handoff
 
-**Recommendation**: Issue #76 for immediate user value now that test suite is healthy
+**Recommendation**: Use architecture-designer agent first for design, then implement with TDD
 ```
 
 ---

@@ -1,0 +1,569 @@
+#!/bin/bash
+set -euo pipefail
+# ABOUTME: Comprehensive diagnostic tool for VPN system health checks
+# ABOUTME: Validates dependencies, permissions, config, network, and processes
+
+# Configuration paths
+CONFIG_DIR="${VPN_CONFIG_DIR:-$HOME/.config/vpn}"
+LOCATIONS_DIR="${LOCATIONS_DIR:-$CONFIG_DIR/locations}"
+CREDENTIALS_FILE="$CONFIG_DIR/vpn-credentials.txt"
+
+# Script locations - robust detection for installed vs development mode
+if [[ -f "/usr/local/bin/vpn-colors" ]]; then
+    # Installed mode
+    VPN_DIR="/usr/local/bin"
+else
+    # Development mode
+    VPN_DIR="$(dirname "$(realpath "$0")")"
+fi
+
+# Source required components
+source "$VPN_DIR/vpn-colors"
+source "$VPN_DIR/vpn-error-handler"
+
+# Component identifier
+export COMP_VPN_DOCTOR="VPN-DOCTOR"
+
+# Check result data structure
+declare -A CHECK_RESULTS
+declare -A CHECK_DETAILS
+
+# Severity counters
+CRITICAL_COUNT=0
+WARNING_COUNT=0
+INFO_COUNT=0
+
+# Check execution order
+CHECKS=(
+    "dependencies"
+    "file_permissions"
+    "configuration"
+    "network"
+    "process_health"
+)
+
+# Check metadata
+declare -A CHECK_NAMES=(
+    ["dependencies"]="System Dependencies"
+    ["file_permissions"]="File Permissions"
+    ["configuration"]="Configuration"
+    ["network"]="Network Connectivity"
+    ["process_health"]="VPN Process Health"
+)
+
+# Exit codes
+EXIT_HEALTHY=0
+EXIT_CRITICAL=1
+EXIT_WARNINGS=2
+EXIT_USAGE=3
+
+# Flags
+VERBOSE=false
+QUIET=false
+FIX=false
+JSON_OUTPUT=false
+NO_NETWORK=false
+CHECK_FILTER=""
+
+show_banner() {
+    if [[ "$QUIET" == "false" ]] && [[ "$JSON_OUTPUT" == "false" ]]; then
+        echo -e "${CYAN}╔════════════════════════════════════════╗${NC}"
+        echo -e "${CYAN}║       VPN System Diagnostics           ║${NC}"
+        echo -e "${CYAN}║         Running Health Checks          ║${NC}"
+        echo -e "${CYAN}╚════════════════════════════════════════╝${NC}"
+        echo
+    fi
+}
+
+show_help() {
+    cat <<EOF
+VPN Doctor - Comprehensive System Diagnostics
+
+Usage: vpn doctor [options]
+
+Options:
+  --help              Show this help message
+  --verbose           Include detailed debug information
+  --quiet             Only show critical issues
+  --fix               Attempt to auto-fix non-critical issues
+  --json              Output results in JSON format
+  --no-network        Skip network connectivity checks
+  --check=<category>  Run specific check (deps, perms, config, network, process)
+
+Exit Codes:
+  0   All checks passed (system healthy)
+  1   Critical issues detected (VPN cannot function)
+  2   Warnings detected (VPN may work with issues)
+  3   Invalid usage
+
+Examples:
+  vpn doctor                    # Run all diagnostic checks
+  vpn doctor --verbose          # Detailed diagnostic output
+  vpn doctor --fix              # Auto-fix permissions and minor issues
+  vpn doctor --check=deps       # Only check dependencies
+
+Categories:
+  deps      - System dependencies (openvpn, curl, bc, etc.)
+  perms     - File permissions (config dir, credentials)
+  config    - Configuration validation (credentials, .ovpn files)
+  network   - Network connectivity (DNS, VPN servers)
+  process   - VPN process health (running state)
+EOF
+}
+
+# Store check result
+store_check_result() {
+    local check_name="$1"
+    local status="$2"
+    local details="$3"
+
+    CHECK_RESULTS["$check_name"]="$status"
+    CHECK_DETAILS["$check_name"]="$details"
+
+    case "$status" in
+        "FAIL")
+            ((CRITICAL_COUNT++))
+            ;;
+        "WARN")
+            ((WARNING_COUNT++))
+            ;;
+        "INFO")
+            ((INFO_COUNT++))
+            ;;
+    esac
+}
+
+# Check system dependencies
+check_dependencies() {
+    local status="PASS"
+    local details=""
+    local required_commands=("openvpn" "curl" "bc" "ip")
+    local missing=()
+    local found=()
+
+    for cmd in "${required_commands[@]}"; do
+        if command -v "$cmd" &>/dev/null; then
+            local version=""
+            case "$cmd" in
+                "openvpn")
+                    version=$(openvpn --version 2>&1 | head -1 | grep -oP '\d+\.\d+\.\d+' | head -1 || echo "unknown")
+                    ;;
+                "curl")
+                    version=$(curl --version 2>&1 | head -1 | grep -oP '\d+\.\d+\.\d+' | head -1 || echo "unknown")
+                    ;;
+                "bc")
+                    version=$(bc --version 2>&1 | head -1 | grep -oP '\d+\.\d+\.\d+' | head -1 || echo "unknown")
+                    ;;
+                "ip")
+                    version="available"
+                    ;;
+            esac
+            found+=("$cmd ($version)")
+        else
+            missing+=("$cmd")
+            status="FAIL"
+        fi
+    done
+
+    if [[ ${#missing[@]} -gt 0 ]]; then
+        details="Missing: ${missing[*]}\nFound: ${found[*]}\nInstall with: sudo pacman -S ${missing[*]}"
+    else
+        details="All dependencies installed:\n$(printf '  ✓ %s\n' "${found[@]}")"
+    fi
+
+    store_check_result "dependencies" "$status" "$details"
+}
+
+# Check file permissions
+check_file_permissions() {
+    local status="PASS"
+    local details=""
+    local issues=()
+    local checks=()
+
+    # Check config directory
+    if [[ -d "$CONFIG_DIR" ]]; then
+        local config_perms=$(stat -c %a "$CONFIG_DIR" 2>/dev/null || echo "unknown")
+        if [[ "$config_perms" != "700" ]]; then
+            issues+=("Config directory has insecure permissions ($config_perms, should be 700)")
+            status="WARN"
+        fi
+        checks+=("Config directory: $CONFIG_DIR ($config_perms)")
+    else
+        issues+=("Config directory does not exist: $CONFIG_DIR")
+        status="FAIL"
+    fi
+
+    # Check credentials file
+    if [[ -f "$CREDENTIALS_FILE" ]]; then
+        local cred_perms=$(stat -c %a "$CREDENTIALS_FILE" 2>/dev/null || echo "unknown")
+        if [[ "$cred_perms" != "600" ]]; then
+            issues+=("Credentials file has insecure permissions ($cred_perms, should be 600)")
+            if [[ "$status" != "FAIL" ]]; then
+                status="WARN"
+            fi
+        fi
+        checks+=("Credentials file: $CREDENTIALS_FILE ($cred_perms)")
+    fi
+
+    # Check locations directory
+    if [[ -d "$LOCATIONS_DIR" ]]; then
+        local loc_perms=$(stat -c %a "$LOCATIONS_DIR" 2>/dev/null || echo "unknown")
+        if [[ "$loc_perms" =~ [0-9][0-9]5$ ]] || [[ "$loc_perms" =~ [0-9][0-9]7$ ]]; then
+            issues+=("Locations directory is world-accessible ($loc_perms, should be 750 or stricter)")
+            if [[ "$status" != "FAIL" ]]; then
+                status="WARN"
+            fi
+        fi
+        checks+=("Locations directory: $LOCATIONS_DIR ($loc_perms)")
+    fi
+
+    if [[ ${#issues[@]} -gt 0 ]]; then
+        details="Issues found:\n$(printf '  ⚠ %s\n' "${issues[@]}")\n\nChecks performed:\n$(printf '  %s\n' "${checks[@]}")"
+    else
+        details="All permissions secure:\n$(printf '  ✓ %s\n' "${checks[@]}")"
+    fi
+
+    store_check_result "file_permissions" "$status" "$details"
+}
+
+# Check configuration
+check_configuration() {
+    local status="PASS"
+    local details=""
+    local issues=()
+    local checks=()
+
+    # Check credentials file exists and format
+    if [[ ! -f "$CREDENTIALS_FILE" ]]; then
+        issues+=("Credentials file not found: $CREDENTIALS_FILE")
+        status="FAIL"
+    else
+        local line_count=$(wc -l < "$CREDENTIALS_FILE" 2>/dev/null || echo 0)
+        if [[ $line_count -ne 2 ]]; then
+            issues+=("Credentials file has incorrect format (expected 2 lines, found $line_count)")
+            status="FAIL"
+        else
+            checks+=("Credentials file exists and format valid")
+        fi
+    fi
+
+    # Check .ovpn profiles
+    if [[ ! -d "$LOCATIONS_DIR" ]]; then
+        issues+=("Locations directory not found: $LOCATIONS_DIR")
+        status="FAIL"
+    else
+        local ovpn_count=$(find "$LOCATIONS_DIR" -name "*.ovpn" 2>/dev/null | wc -l)
+        if [[ $ovpn_count -eq 0 ]]; then
+            issues+=("No .ovpn profiles found in $LOCATIONS_DIR")
+            status="FAIL"
+        else
+            checks+=("Found $ovpn_count .ovpn profile(s)")
+        fi
+    fi
+
+    if [[ ${#issues[@]} -gt 0 ]]; then
+        details="Issues found:\n$(printf '  ✗ %s\n' "${issues[@]}")\n\nValid checks:\n$(printf '  ✓ %s\n' "${checks[@]}")"
+    else
+        details="Configuration valid:\n$(printf '  ✓ %s\n' "${checks[@]}")"
+    fi
+
+    store_check_result "configuration" "$status" "$details"
+}
+
+# Check network connectivity
+check_network() {
+    if [[ "$NO_NETWORK" == "true" ]]; then
+        store_check_result "network" "SKIP" "Network checks skipped by user request"
+        return
+    fi
+
+    local status="PASS"
+    local details=""
+    local issues=()
+    local checks=()
+    local timeout=3
+
+    # Check DNS resolution
+    if timeout "$timeout" host -W 2 google.com &>/dev/null; then
+        checks+=("DNS resolution working")
+    else
+        issues+=("DNS resolution failed or slow")
+        status="WARN"
+    fi
+
+    # Check internet connectivity
+    if timeout "$timeout" curl -s --max-time 3 http://www.google.com &>/dev/null; then
+        checks+=("Internet connectivity confirmed")
+    else
+        issues+=("Internet connectivity test failed")
+        if [[ "$status" != "FAIL" ]]; then
+            status="WARN"
+        fi
+    fi
+
+    if [[ ${#issues[@]} -gt 0 ]]; then
+        details="Issues found:\n$(printf '  ⚠ %s\n' "${issues[@]}")\n\nValid checks:\n$(printf '  ✓ %s\n' "${checks[@]}")"
+    else
+        details="Network connectivity good:\n$(printf '  ✓ %s\n' "${checks[@]}")"
+    fi
+
+    store_check_result "network" "$status" "$details"
+}
+
+# Check VPN process health
+check_process_health() {
+    local status="PASS"
+    local details=""
+    local process_count=0
+
+    # Count OpenVPN processes
+    process_count=$(pgrep -f "openvpn.*--config" 2>/dev/null | wc -l || echo 0)
+
+    case $process_count in
+        0)
+            status="INFO"
+            details="No VPN processes running (VPN disconnected)"
+            ;;
+        1)
+            details="Single VPN process running (healthy)"
+            ;;
+        *)
+            status="FAIL"
+            details="Multiple VPN processes detected ($process_count)\nRun 'vpn cleanup' to resolve"
+            ;;
+    esac
+
+    store_check_result "process_health" "$status" "$details"
+}
+
+# Display check result
+display_check_result() {
+    local check_name="$1"
+    local check_num="$2"
+    local total_checks="$3"
+
+    local status="${CHECK_RESULTS[$check_name]}"
+    local details="${CHECK_DETAILS[$check_name]}"
+    local display_name="${CHECK_NAMES[$check_name]}"
+
+    if [[ "$JSON_OUTPUT" == "true" ]]; then
+        return  # JSON output handled separately
+    fi
+
+    if [[ "$QUIET" == "true" ]] && [[ "$status" != "FAIL" ]] && [[ "$status" != "WARN" ]]; then
+        return  # Skip in quiet mode unless issue
+    fi
+
+    echo -e "${BLUE}[$check_num/$total_checks]${NC} Checking $display_name..."
+
+    case "$status" in
+        "PASS")
+            echo -e "${GREEN}  ✓ Result: PASS${NC}"
+            ;;
+        "WARN")
+            echo -e "${YELLOW}  ⚠ Result: WARNING${NC}"
+            ;;
+        "FAIL")
+            echo -e "${RED}  ✗ Result: FAILED${NC}"
+            ;;
+        "INFO")
+            echo -e "${BLUE}  ○ Result: INFO${NC}"
+            ;;
+        "SKIP")
+            echo -e "${GRAY}  ⊘ Result: SKIPPED${NC}"
+            ;;
+    esac
+
+    if [[ "$VERBOSE" == "true" ]] || [[ "$status" == "FAIL" ]] || [[ "$status" == "WARN" ]]; then
+        echo -e "$details" | sed 's/^/  /'
+    fi
+
+    echo
+}
+
+# Generate summary report
+generate_summary() {
+    if [[ "$JSON_OUTPUT" == "true" ]]; then
+        generate_json_output
+        return
+    fi
+
+    local passed_count=0
+    for check in "${CHECKS[@]}"; do
+        [[ "${CHECK_RESULTS[$check]}" == "PASS" ]] && ((passed_count++))
+    done
+
+    echo -e "${CYAN}╔════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║         Diagnostic Summary             ║${NC}"
+    echo -e "${CYAN}╚════════════════════════════════════════╝${NC}"
+    echo
+
+    # Determine overall status
+    local overall_status="HEALTHY"
+    if [[ $CRITICAL_COUNT -gt 0 ]]; then
+        overall_status="${RED}CRITICAL${NC}"
+    elif [[ $WARNING_COUNT -gt 0 ]]; then
+        overall_status="${YELLOW}DEGRADED${NC}"
+    else
+        overall_status="${GREEN}HEALTHY${NC}"
+    fi
+
+    echo -e "Overall Status: $overall_status"
+    echo
+    echo -e "${GREEN}✓${NC} Passed: $passed_count checks"
+    [[ $WARNING_COUNT -gt 0 ]] && echo -e "${YELLOW}⚠${NC} Warnings: $WARNING_COUNT checks"
+    [[ $CRITICAL_COUNT -gt 0 ]] && echo -e "${RED}✗${NC} Failed: $CRITICAL_COUNT checks"
+    echo
+
+    # Show recommendations for issues
+    if [[ $CRITICAL_COUNT -gt 0 ]] || [[ $WARNING_COUNT -gt 0 ]]; then
+        echo -e "${YELLOW}RECOMMENDATIONS:${NC}"
+        for check in "${CHECKS[@]}"; do
+            local status="${CHECK_RESULTS[$check]}"
+            if [[ "$status" == "FAIL" ]] || [[ "$status" == "WARN" ]]; then
+                echo -e "  • ${CHECK_NAMES[$check]}: See details above"
+            fi
+        done
+        echo
+        echo "For detailed diagnostics: vpn doctor --verbose"
+        [[ "$FIX" == "false" ]] && echo "For automatic fixes: vpn doctor --fix"
+    fi
+}
+
+# Generate JSON output
+generate_json_output() {
+    local timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    local overall_status="HEALTHY"
+    [[ $CRITICAL_COUNT -gt 0 ]] && overall_status="CRITICAL"
+    [[ $WARNING_COUNT -gt 0 ]] && [[ "$overall_status" != "CRITICAL" ]] && overall_status="DEGRADED"
+
+    local exit_code=$EXIT_HEALTHY
+    [[ $CRITICAL_COUNT -gt 0 ]] && exit_code=$EXIT_CRITICAL
+    [[ $WARNING_COUNT -gt 0 ]] && [[ $exit_code -eq $EXIT_HEALTHY ]] && exit_code=$EXIT_WARNINGS
+
+    echo "{"
+    echo "  \"timestamp\": \"$timestamp\","
+    echo "  \"overall_status\": \"$overall_status\","
+    echo "  \"exit_code\": $exit_code,"
+    echo "  \"checks\": {"
+
+    local first=true
+    for check in "${CHECKS[@]}"; do
+        [[ "$first" == "false" ]] && echo ","
+        first=false
+
+        local status="${CHECK_RESULTS[$check]}"
+        local details="${CHECK_DETAILS[$check]}"
+        details=$(echo "$details" | sed 's/"/\\"/g' | tr '\n' ' ')
+
+        echo -n "    \"$check\": {\"status\": \"$status\", \"details\": \"$details\"}"
+    done
+
+    echo
+    echo "  },"
+    echo "  \"summary\": {"
+    echo "    \"passed\": $((${#CHECKS[@]} - CRITICAL_COUNT - WARNING_COUNT)),"
+    echo "    \"warnings\": $WARNING_COUNT,"
+    echo "    \"failed\": $CRITICAL_COUNT"
+    echo "  }"
+    echo "}"
+}
+
+# Run all checks
+run_diagnostics() {
+    local check_num=1
+    local total_checks=${#CHECKS[@]}
+
+    for check in "${CHECKS[@]}"; do
+        # Skip if filter specified and doesn't match
+        if [[ -n "$CHECK_FILTER" ]] && [[ "$check" != *"$CHECK_FILTER"* ]]; then
+            continue
+        fi
+
+        case "$check" in
+            "dependencies")
+                check_dependencies
+                ;;
+            "file_permissions")
+                check_file_permissions
+                ;;
+            "configuration")
+                check_configuration
+                ;;
+            "network")
+                check_network
+                ;;
+            "process_health")
+                check_process_health
+                ;;
+        esac
+
+        display_check_result "$check" "$check_num" "$total_checks"
+        ((check_num++))
+    done
+}
+
+# Parse command-line arguments
+parse_args() {
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --help|-h)
+                show_help
+                exit 0
+                ;;
+            --verbose|-v)
+                VERBOSE=true
+                shift
+                ;;
+            --quiet|-q)
+                QUIET=true
+                shift
+                ;;
+            --fix)
+                FIX=true
+                shift
+                ;;
+            --json)
+                JSON_OUTPUT=true
+                shift
+                ;;
+            --no-network)
+                NO_NETWORK=true
+                shift
+                ;;
+            --check=*)
+                CHECK_FILTER="${1#*=}"
+                shift
+                ;;
+            *)
+                echo "Unknown option: $1"
+                echo "Use --help for usage information"
+                exit $EXIT_USAGE
+                ;;
+        esac
+    done
+}
+
+# Main execution
+main() {
+    parse_args "$@"
+
+    show_banner
+
+    run_diagnostics
+
+    generate_summary
+
+    # Determine exit code
+    if [[ $CRITICAL_COUNT -gt 0 ]]; then
+        exit $EXIT_CRITICAL
+    elif [[ $WARNING_COUNT -gt 0 ]]; then
+        exit $EXIT_WARNINGS
+    else
+        exit $EXIT_HEALTHY
+    fi
+}
+
+# Execute main
+main "$@"
