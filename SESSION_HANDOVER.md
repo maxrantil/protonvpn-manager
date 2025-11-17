@@ -1,14 +1,45 @@
-# Session Handoff: Issue #73 - MERGED ✅
+# Session Handoff: Issues #73 & #146 - COMPLETE ✅
 
 **Date**: 2025-11-17
-**Issue**: #73 - Optimize stat command usage (25% faster caching) - **CLOSED ✅**
-**PR**: #148 - **MERGED TO MASTER ✅**
-**Branch**: master (commit c60bf49)
-**Status**: COMPLETE - Merged to production
+**Issues**:
+- #73 - Optimize stat command usage (25% faster caching) - **CLOSED ✅**
+- #146 - Fix pre-existing test infrastructure failures - **CLOSED ✅**
+**PRs**:
+- #148 - Stat optimization - **MERGED ✅** (commit c60bf49)
+- #149 - Test failures fix - **MERGED ✅** (commit 94a865c)
+**Branch**: master (commit 94a865c)
+**Status**: COMPLETE - Both issues merged to production
 
 ---
 
 ## ✅ Completed Work
+
+### Issue #146: Test Failures Fix - MERGED ✅
+**PR #149**: Merged to master (commit 94a865c)
+**Total Effort**: 2 hours (estimated 1-2 hours)
+**Impact**: 100% test pass rate achieved (115/115)
+
+### Root Causes Fixed
+1. **Unbound Variable in rebuild_cache() Trap**
+   - Problem: `trap 'rm -f "$temp_cache"' RETURN` failed in strict mode when trap executed with unbound variable
+   - Solution: Changed to `trap 'rm -f "${temp_cache:-}"' RETURN` using parameter expansion
+   - File: `src/vpn-connector:160`
+
+2. **Missing vpn-validators in Installation**
+   - Problem: `validate_and_discover_processes()` wasn't installed, causing "command not found" errors
+   - Solution: Added `vpn-validators` to COMPONENTS array in `install.sh`
+   - File: `install.sh:16`
+
+### Test Results
+**Before**: 112/115 passing (97% - 3 failures)
+**After**: 115/115 passing (100% ✅)
+
+### Fixed Tests
+1. ✅ Profile Listing Integration: Should show profiles header
+2. ✅ Error Recovery Scenarios: Should handle empty directory
+3. ✅ Pre-Connection Safety Integration: safety command accessibility
+
+---
 
 ### Issue #73: Stat Optimization - MERGED ✅
 **PR #148**: Merged to master (commit c60bf49)
@@ -228,8 +259,10 @@ stat $STAT_MTIME_FLAG "$PERFORMANCE_CACHE" 2> /dev/null || echo 0
 **Roadmap Context:**
 - **Issue #69** (Progressive feedback): MERGED to master (commit 7a258e3)
 - **Issue #63** (Profile caching): MERGED to master (commit 7cad996)
-- **Issue #73** (Stat optimization): MERGED to master (commit c60bf49) ✅ JUST COMPLETED
+- **Issue #73** (Stat optimization): MERGED to master (commit c60bf49) ✅
+- **Issue #146** (Test failures): MERGED to master (commit 94a865c) ✅ JUST COMPLETED
 - **Combined performance**: 69% (Issue #63) + 50% (Issue #73) = ~85% total cache improvement
+- **Test suite health**: 100% pass rate (115/115 tests)
 
 **Next Priority Options:**
 1. **Issue #76**: Create 'vpn doctor' health check command (3-4 hours)
@@ -237,17 +270,12 @@ stat $STAT_MTIME_FLAG "$PERFORMANCE_CACHE" 2> /dev/null || echo 0
    - High user value (troubleshooting aid)
    - Medium complexity
 
-2. **Issue #146**: Fix 3 pre-existing test failures (1-2 hours)
-   - Clears CI for all future PRs
-   - Quick win, high quality impact
-   - Tests: profile listing, error recovery, safety integration
-
-3. **Issue #147**: WCAG 2.1 Level AA compliance for Issue #69 (1-2 hours)
+2. **Issue #147**: WCAG 2.1 Level AA compliance for Issue #69 (1-2 hours)
    - Accessibility improvements for progressive feedback
    - Follow-up to completed Issue #69
    - Low complexity, high UX value
 
-**Recommendation**: Issue #146 for quick CI cleanup, or Issue #76 for immediate user value.
+**Recommendation**: Issue #76 for immediate user value now that CI is clean.
 
 ---
 
@@ -284,46 +312,46 @@ stat $STAT_MTIME_FLAG "$PERFORMANCE_CACHE" 2> /dev/null || echo 0
 ```
 Read CLAUDE.md to understand our workflow, then choose next priority issue.
 
-**Previous completion**: Issue #73 stat optimization MERGED ✅ (commit c60bf49)
-- 50% performance improvement achieved (2x the 25% target)
-- PR #148 merged to master
-- Issue #73 closed automatically
+**Previous completions**:
+- Issue #73 stat optimization MERGED ✅ (commit c60bf49)
+- Issue #146 test failures MERGED ✅ (commit 94a865c)
 
-**Immediate priority options** (choose one):
+**Key Achievements**:
+- 50% performance improvement (2x the 25% target)
+- 100% test pass rate achieved (115/115 tests)
+- CI unblocked for all future PRs
 
-1. **Issue #76**: Create 'vpn doctor' health check command [3-4 hours]
+**Immediate priority options**:
+
+1. **Issue #76**: Create 'vpn doctor' health check command [3-4 hours] ⭐ *Recommended*
    - Diagnostic tool for common VPN issues
    - High user value (troubleshooting aid)
    - Medium complexity
 
-2. **Issue #146**: Fix 3 pre-existing test failures [1-2 hours]
-   - Clears CI for all future PRs
-   - Quick win, high quality impact
-   - Tests: profile listing, error recovery, safety integration
-
-3. **Issue #147**: WCAG 2.1 Level AA compliance for Issue #69 [1-2 hours]
+2. **Issue #147**: WCAG 2.1 Level AA compliance for Issue #69 [1-2 hours]
    - Accessibility improvements for progressive feedback
    - Follow-up to completed Issue #69
    - Low complexity, high UX value
 
 **Context**:
-- Master at c60bf49 (Issue #73 just merged)
+- Master at 94a865c (Issue #146 just merged)
 - Combined performance: 69% (Issue #63) + 50% (Issue #73) = ~85% total improvement
-- Test status: 112/115 passing (3 pre-existing failures in #146)
+- Test status: 115/115 passing (100% - CI clean!)
 
 **Reference docs**:
 - SESSION_HANDOVER.md (this file)
 - CLAUDE.md (workflow guidelines)
-- GitHub Issues: #76, #146, #147
+- GitHub Issues: #76, #147
 
 **Ready state**:
-- Branch: master (clean, up-to-date at c60bf49)
+- Branch: master (clean, up-to-date at 94a865c)
 - Working directory: Clean
+- All 115 tests passing
 - All pre-commit hooks satisfied
 
-**Expected scope**: Pick one issue and complete it (1-4 hours depending on choice)
+**Expected scope**: Pick one issue and complete it (1-4 hours)
 
-**Recommendation**: Issue #146 for quick CI cleanup, or Issue #76 for immediate user value
+**Recommendation**: Issue #76 for immediate user value now that test suite is healthy
 ```
 
 ---
