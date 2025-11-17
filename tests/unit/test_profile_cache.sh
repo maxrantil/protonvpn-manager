@@ -13,6 +13,9 @@ source "$PROJECT_DIR/tests/test_framework.sh" 2> /dev/null || {
     exit 1
 }
 
+# Fix PROJECT_DIR which the framework overrides to /tests
+PROJECT_DIR="$(realpath "$TEST_DIR/../..")"
+
 # Test counter
 TESTS_RUN=0
 TESTS_PASSED=0
