@@ -93,6 +93,29 @@ for logfile in "$CONNECTION_LOG" "$PERFORMANCE_CACHE" "$PROFILE_CACHE"; do
 done
 
 # ============================================================================
+# Stat Format Detection (Issue #73 - 25% faster cache operations)
+# ============================================================================
+
+# Detect stat format once at initialization
+# Returns: Correct stat flags for mtime retrieval ("-f %m" for BSD or "-c %Y" for GNU)
+detect_stat_format() {
+    # Try GNU format first (most common on Linux)
+    if stat -c %Y "$0" &> /dev/null; then
+        echo "-c %Y"
+    # Fall back to BSD format (macOS, BSD systems)
+    elif stat -f %m "$0" &> /dev/null; then
+        echo "-f %m"
+    else
+        # Fallback to GNU if neither works (shouldn't happen)
+        echo "-c %Y"
+    fi
+}
+
+# Initialize stat format once at script startup
+# shellcheck disable=SC2034  # STAT_MTIME_FLAG used in cache functions
+STAT_MTIME_FLAG=$(detect_stat_format)
+
+# ============================================================================
 # Profile Cache Functions (Issue #63 - 90% performance improvement)
 # ============================================================================
 
@@ -908,8 +931,10 @@ load_performance_cache() {
     fi
 
     # Check if cache is older than 2 hours (7200 seconds)
+    # Issue #73: Use detected stat format (25% faster - no fallback overhead)
     local cache_age
-    cache_age=$(($(date +%s) - $(stat -f %m "$PERFORMANCE_CACHE" 2> /dev/null || stat -c %Y "$PERFORMANCE_CACHE" 2> /dev/null || echo 0)))
+    # shellcheck disable=SC2086  # STAT_MTIME_FLAG must expand into flags (-c %Y or -f %m)
+    cache_age=$(($(date +%s) - $(stat $STAT_MTIME_FLAG "$PERFORMANCE_CACHE" 2> /dev/null || echo 0)))
 
     if [[ $cache_age -gt 7200 ]]; then
         echo -e "\033[1;33mPerformance cache expired (${cache_age}s old), will refresh\033[0m"
@@ -1192,7 +1217,8 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
                     ;;
                 "info")
                     if [[ -f "$PERFORMANCE_CACHE" ]]; then
-                        cache_age=$(($(date +%s) - $(stat -c %Y "$PERFORMANCE_CACHE" 2> /dev/null || echo 0)))
+                        # shellcheck disable=SC2086  # STAT_MTIME_FLAG must expand into flags
+                        cache_age=$(($(date +%s) - $(stat $STAT_MTIME_FLAG "$PERFORMANCE_CACHE" 2> /dev/null || echo 0)))
                         cache_size=$(du -h "$PERFORMANCE_CACHE" 2> /dev/null | cut -f1)
                         cache_entries=$(wc -l < "$PERFORMANCE_CACHE" 2> /dev/null)
 
