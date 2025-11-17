@@ -696,16 +696,22 @@ connect_openvpn_profile() {
             --log "$LOG_DIR/openvpn.log" \
             --verb 3
 
+        # Issue #69: Progressive connection feedback for better UX
         # Issue #62: Exponential backoff for 40% faster connection establishment
         # Old: Fixed 4s intervals (12s auth + 32s connection = 44s max)
         # New: Exponential backoff [1,1,2,2,3,4,5,6] = 24s max (45% improvement)
         # Preserves early-break logic for optimal real-world performance
         local -a BACKOFF_INTERVALS=(1 1 2 2 3 4 5 6)
         local connection_established=0
-        echo "  Establishing connection..."
+        local connection_stage="initializing"
+        local interval_count=0
+
+        echo "  ⟳ Initializing connection..."
+        echo -n "  ⟳ Establishing connection"
 
         for interval in "${BACKOFF_INTERVALS[@]}"; do
             sleep "$interval"
+            ((interval_count++))
 
             # Check for authentication failures (both log locations)
             # openvpn may write to /tmp/openvpn.log as fallback if it can't write to LOG_DIR
@@ -722,20 +728,51 @@ connect_openvpn_profile() {
                 # Early break: Check if TLS handshake completed (Peer Connection Initiated)
                 if [[ -f "$log_location" ]] && sudo grep -q "Peer Connection Initiated" "$log_location" 2> /dev/null; then
                     # Connection initiated, continue waiting for full establishment
-                    :
+                    if [[ "$connection_stage" != "configuring" ]]; then
+                        if [[ -n "${SCREEN_READER_MODE:-}" ]] || [[ -n "${NO_COLOR:-}" ]]; then
+                            echo "  ⟳ Configuring tunnel"
+                        else
+                            echo -ne "\r  ⟳ Configuring tunnel             "
+                        fi
+                        connection_stage="configuring"
+                        interval_count=0
+                    fi
                 fi
             done
 
-            # Check if fully connected
+            # Issue #69: Show "Verifying" stage during status check
+            if [[ "$connection_stage" == "configuring" && "$interval_count" -ge 2 ]]; then
+                if [[ -n "${SCREEN_READER_MODE:-}" ]] || [[ -n "${NO_COLOR:-}" ]]; then
+                    echo "  ⟳ Verifying connection"
+                else
+                    echo -ne "\r  ⟳ Verifying connection           "
+                fi
+                connection_stage="verifying"
+                interval_count=0
+            fi
+
+            # Check if fully connected (with timeout to prevent hanging)
             local status_check
-            status_check=$("$VPN_DIR/vpn-manager" status 2> /dev/null | grep "VPN Status:" | grep -q "CONNECTED" && echo "connected" || echo "not_connected")
+            status_check=$(timeout 5 "$VPN_DIR/vpn-manager" status 2> /dev/null | grep "VPN Status:" | grep -q "CONNECTED" && echo "connected" || echo "not_connected")
             if [[ "$status_check" == "connected" ]]; then
+                if [[ -n "${SCREEN_READER_MODE:-}" ]] || [[ -n "${NO_COLOR:-}" ]]; then
+                    echo "  ⟳ Connected"
+                else
+                    echo -ne "\r  ⟳ Connected                      "
+                fi
                 connection_established=1
+                echo "" # Clear the progress line
                 break
             fi
-            echo -n "."
+
+            # Show progress dots for current stage (visual mode only, limit to 3)
+            if [[ -z "${SCREEN_READER_MODE:-}" ]] && [[ -z "${NO_COLOR:-}" ]]; then
+                local dot_count=$((interval_count % 4)) # Max 3 dots, then restart
+                if [[ $dot_count -le 3 ]]; then
+                    echo -n "."
+                fi
+            fi
         done
-        echo ""
 
         if [[ $connection_established -eq 1 ]]; then
             echo -e "\033[1;32m✓ Successfully connected to OpenVPN $profile_name\033[0m"
@@ -748,6 +785,7 @@ connect_openvpn_profile() {
             return 0
         fi
 
+        echo "" # Clear the progress line after failed attempt
         echo -e "\033[1;33m  Connection attempt $attempt failed\033[0m"
         log_message "Connection attempt $attempt failed for OpenVPN $profile_name" "$CONNECTION_LOG"
 
