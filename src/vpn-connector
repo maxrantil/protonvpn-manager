@@ -156,8 +156,8 @@ rebuild_cache() {
     local temp_cache
     temp_cache=$(mktemp "${cache_file}.XXXXXXXXXX") || return 1
 
-    # Ensure cleanup on any exit
-    trap 'rm -f "$temp_cache"' RETURN
+    # Ensure cleanup on any exit (use ${temp_cache:-} to handle unbound variable in strict mode)
+    trap 'rm -f "${temp_cache:-}"' RETURN
 
     # Security: Set restrictive permissions immediately after creation
     chmod 600 "$temp_cache" || {
