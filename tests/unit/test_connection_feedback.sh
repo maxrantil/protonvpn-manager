@@ -100,7 +100,7 @@ test_stage_ordering() {
 	fi
 
 	# Check if stages appear in logical order (line numbers should increase)
-	local init_line establish_line config_line verify_line
+	local init_line establish_line
 	init_line=$(grep -n "Initializing" "$VPN_DIR/vpn-connector" 2>/dev/null | head -1 | cut -d: -f1)
 	establish_line=$(grep -n "Establishing" "$VPN_DIR/vpn-connector" 2>/dev/null | head -1 | cut -d: -f1)
 
