@@ -107,7 +107,7 @@ Read CLAUDE.md to understand our workflow, then continue from Issue #76 completi
 - Previous: Issue #73 (stat optimization, merged)
 
 ### Testing Evidence
-```
+
 Unit Tests (tests/unit/test_vpn_doctor.sh):
 - Tests Passed: 14
 - Tests Failed: 1 (expected, system state)
