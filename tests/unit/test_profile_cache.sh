@@ -567,6 +567,151 @@ EOF
 }
 
 # ============================================================================
+# UNIT TESTS: Metadata Validation (Issue #155)
+# ============================================================================
+
+test_validate_cache_metadata_rejects_non_numeric_mtime() {
+    start_test "validate_cache_metadata rejects non-numeric MTIME"
+
+    setup_cache_test_env
+
+    # Create cache with invalid (non-numeric) MTIME
+    cat > "$LOG_DIR/vpn_profiles.cache" << EOF
+# VPN Profile Cache
+# CACHE_MTIME=invalid_not_numeric
+# CACHE_DIR=$LOCATIONS_DIR
+# GENERATED=2025-11-18T12:00:00Z
+# CACHE_COUNT=3
+$LOCATIONS_DIR/test-se-1.ovpn
+$LOCATIONS_DIR/test-se-2.ovpn
+$LOCATIONS_DIR/test-dk-1.ovpn
+EOF
+
+    chmod 600 "$LOG_DIR/vpn_profiles.cache"
+
+    # Should fail validation
+    if validate_cache_metadata "$LOG_DIR/vpn_profiles.cache" 2>/dev/null; then
+        fail_test "Should reject non-numeric MTIME"
+        cleanup_cache_test_env
+        return 1
+    else
+        pass_test
+        cleanup_cache_test_env
+        return 0
+    fi
+}
+
+test_validate_cache_metadata_rejects_mismatched_count() {
+    start_test "validate_cache_metadata rejects mismatched COUNT"
+
+    setup_cache_test_env
+
+    # Get current directory mtime
+    local dir_mtime
+    dir_mtime=$(stat -c %Y "$LOCATIONS_DIR")
+
+    # Create cache where COUNT doesn't match actual entries
+    cat > "$LOG_DIR/vpn_profiles.cache" << EOF
+# VPN Profile Cache
+# CACHE_MTIME=$dir_mtime
+# CACHE_DIR=$LOCATIONS_DIR
+# GENERATED=2025-11-18T12:00:00Z
+# CACHE_COUNT=100
+$LOCATIONS_DIR/test-se-1.ovpn
+$LOCATIONS_DIR/test-se-2.ovpn
+$LOCATIONS_DIR/test-dk-1.ovpn
+EOF
+
+    chmod 600 "$LOG_DIR/vpn_profiles.cache"
+
+    # Should fail validation (claims 100 entries but only has 3)
+    if validate_cache_metadata "$LOG_DIR/vpn_profiles.cache" 2>/dev/null; then
+        fail_test "Should reject mismatched COUNT"
+        cleanup_cache_test_env
+        return 1
+    else
+        pass_test
+        cleanup_cache_test_env
+        return 0
+    fi
+}
+
+test_validate_cache_metadata_accepts_valid_metadata() {
+    start_test "validate_cache_metadata accepts valid metadata"
+
+    setup_cache_test_env
+
+    # Create valid cache
+    rebuild_cache || {
+        fail_test "rebuild_cache failed"
+        cleanup_cache_test_env
+        return 1
+    }
+
+    # get_cached_profiles should use cache without rebuilding (validation passes)
+    # If metadata validation fails, it would rebuild and we'd see warning
+    local profiles
+    profiles=$(get_cached_profiles 2>&1)
+
+    # Check that we didn't see "metadata invalid" warning
+    if echo "$profiles" | grep -q "metadata invalid"; then
+        fail_test "Valid metadata was rejected"
+        cleanup_cache_test_env
+        return 1
+    fi
+
+    # Should successfully return profiles
+    local count
+    count=$(echo "$profiles" | grep -v "metadata invalid" | wc -l)
+
+    if [[ "$count" -eq 8 ]]; then
+        pass_test
+        cleanup_cache_test_env
+        return 0
+    else
+        fail_test "Expected 8 profiles, got $count"
+        cleanup_cache_test_env
+        return 1
+    fi
+}
+
+test_get_cached_profiles_rebuilds_on_invalid_metadata() {
+    start_test "get_cached_profiles rebuilds when metadata invalid"
+
+    setup_cache_test_env
+
+    # Create cache with invalid metadata
+    cat > "$LOG_DIR/vpn_profiles.cache" << EOF
+# VPN Profile Cache
+# CACHE_MTIME=not_numeric
+# CACHE_DIR=$LOCATIONS_DIR
+# GENERATED=2025-11-18T12:00:00Z
+# CACHE_COUNT=50
+$LOCATIONS_DIR/test-se-1.ovpn
+EOF
+
+    chmod 600 "$LOG_DIR/vpn_profiles.cache"
+
+    # get_cached_profiles should detect invalid metadata and rebuild
+    local profiles
+    profiles=$(get_cached_profiles 2>/dev/null)
+
+    # Should successfully return profiles after rebuild
+    local count
+    count=$(echo "$profiles" | wc -l)
+
+    if [[ "$count" -eq 8 ]]; then
+        pass_test
+        cleanup_cache_test_env
+        return 0
+    else
+        fail_test "Expected 8 profiles after rebuild, got $count"
+        cleanup_cache_test_env
+        return 1
+    fi
+}
+
+# ============================================================================
 # Run all tests
 # ============================================================================
 
@@ -599,6 +744,12 @@ test_get_cached_profiles_rebuilds_when_stale || true
 test_get_cached_profiles_filters_malicious_entries || true
 test_get_cached_profiles_filters_symlinks || true
 test_get_cached_profiles_filters_nonexistent_files || true
+
+# Metadata validation tests (Issue #155)
+test_validate_cache_metadata_rejects_non_numeric_mtime || true
+test_validate_cache_metadata_rejects_mismatched_count || true
+test_validate_cache_metadata_accepts_valid_metadata || true
+test_get_cached_profiles_rebuilds_on_invalid_metadata || true
 
 # Summary
 echo ""

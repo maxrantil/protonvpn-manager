@@ -194,6 +194,55 @@ validate_country_code() {
 	return 0
 }
 
+# Validate cache metadata integrity (Issue #155)
+# Args: $1 = cache file path
+# Returns: 0 if metadata valid, 1 otherwise
+# Validates: MTIME and COUNT are numeric, COUNT matches actual entries
+validate_cache_metadata() {
+	local cache_file="$1"
+
+	[[ -f "$cache_file" ]] || return 1
+
+	# Extract and validate CACHE_MTIME (must be numeric Unix timestamp)
+	local mtime
+	mtime=$(grep "^# CACHE_MTIME=" "$cache_file" 2>/dev/null | cut -d= -f2)
+
+	if [[ -z "$mtime" ]]; then
+		echo "ERROR: Missing CACHE_MTIME in cache metadata" >&2
+		return 1
+	fi
+
+	if ! [[ "$mtime" =~ ^[0-9]+$ ]]; then
+		echo "ERROR: Invalid CACHE_MTIME format: $mtime (expected numeric)" >&2
+		return 1
+	fi
+
+	# Extract and validate CACHE_COUNT (must be numeric)
+	local count
+	count=$(grep "^# CACHE_COUNT=" "$cache_file" 2>/dev/null | cut -d= -f2)
+
+	if [[ -z "$count" ]]; then
+		echo "ERROR: Missing CACHE_COUNT in cache metadata" >&2
+		return 1
+	fi
+
+	if ! [[ "$count" =~ ^[0-9]+$ ]]; then
+		echo "ERROR: Invalid CACHE_COUNT format: $count (expected numeric)" >&2
+		return 1
+	fi
+
+	# Verify COUNT matches actual entries (defense against tampering)
+	local actual
+	actual=$(grep -v "^#" "$cache_file" 2>/dev/null | wc -l)
+
+	if [[ $count -ne $actual ]]; then
+		echo "ERROR: Metadata count ($count) doesn't match actual entries ($actual)" >&2
+		return 1
+	fi
+
+	return 0
+}
+
 # Sanitize user input (remove dangerous characters)
 # Args: $1 = input string
 # Returns: sanitized string on stdout, 0 on success, 1 on failure
