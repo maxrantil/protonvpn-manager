@@ -46,7 +46,8 @@ test_doctor_has_aboutme_header() {
         return
     fi
 
-    local aboutme_count=$(grep -c "^# ABOUTME:" "$PROJECT_DIR/src/vpn-doctor" 2>/dev/null || echo 0)
+    local aboutme_count
+    aboutme_count=$(grep -c "^# ABOUTME:" "$PROJECT_DIR/src/vpn-doctor" 2>/dev/null || echo 0)
 
     if [[ $aboutme_count -ge 2 ]]; then
         log_test "PASS" "$CURRENT_TEST: Found $aboutme_count ABOUTME comments"
@@ -67,8 +68,10 @@ test_doctor_sources_dependencies() {
         return
     fi
 
-    local has_colors=$(grep -c 'source.*vpn-colors' "$PROJECT_DIR/src/vpn-doctor" 2>/dev/null || echo 0)
-    local has_errors=$(grep -c 'source.*vpn-error-handler' "$PROJECT_DIR/src/vpn-doctor" 2>/dev/null || echo 0)
+    local has_colors
+    local has_errors
+    has_colors=$(grep -c 'source.*vpn-colors' "$PROJECT_DIR/src/vpn-doctor" 2>/dev/null || echo 0)
+    has_errors=$(grep -c 'source.*vpn-error-handler' "$PROJECT_DIR/src/vpn-doctor" 2>/dev/null || echo 0)
 
     if [[ $has_colors -gt 0 ]] && [[ $has_errors -gt 0 ]]; then
         log_test "PASS" "$CURRENT_TEST: Sources both required components"

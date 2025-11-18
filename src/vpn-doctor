@@ -183,7 +183,8 @@ check_file_permissions() {
 
     # Check config directory
     if [[ -d "$CONFIG_DIR" ]]; then
-        local config_perms=$(stat -c %a "$CONFIG_DIR" 2>/dev/null || echo "unknown")
+        local config_perms
+        config_perms=$(stat -c %a "$CONFIG_DIR" 2>/dev/null || echo "unknown")
         if [[ "$config_perms" != "700" ]]; then
             issues+=("Config directory has insecure permissions ($config_perms, should be 700)")
             status="WARN"
@@ -196,7 +197,8 @@ check_file_permissions() {
 
     # Check credentials file
     if [[ -f "$CREDENTIALS_FILE" ]]; then
-        local cred_perms=$(stat -c %a "$CREDENTIALS_FILE" 2>/dev/null || echo "unknown")
+        local cred_perms
+        cred_perms=$(stat -c %a "$CREDENTIALS_FILE" 2>/dev/null || echo "unknown")
         if [[ "$cred_perms" != "600" ]]; then
             issues+=("Credentials file has insecure permissions ($cred_perms, should be 600)")
             if [[ "$status" != "FAIL" ]]; then
@@ -208,7 +210,8 @@ check_file_permissions() {
 
     # Check locations directory
     if [[ -d "$LOCATIONS_DIR" ]]; then
-        local loc_perms=$(stat -c %a "$LOCATIONS_DIR" 2>/dev/null || echo "unknown")
+        local loc_perms
+        loc_perms=$(stat -c %a "$LOCATIONS_DIR" 2>/dev/null || echo "unknown")
         if [[ "$loc_perms" =~ [0-9][0-9]5$ ]] || [[ "$loc_perms" =~ [0-9][0-9]7$ ]]; then
             issues+=("Locations directory is world-accessible ($loc_perms, should be 750 or stricter)")
             if [[ "$status" != "FAIL" ]]; then
@@ -239,7 +242,8 @@ check_configuration() {
         issues+=("Credentials file not found: $CREDENTIALS_FILE")
         status="FAIL"
     else
-        local line_count=$(wc -l < "$CREDENTIALS_FILE" 2>/dev/null || echo 0)
+        local line_count
+        line_count=$(wc -l < "$CREDENTIALS_FILE" 2>/dev/null || echo 0)
         if [[ $line_count -ne 2 ]]; then
             issues+=("Credentials file has incorrect format (expected 2 lines, found $line_count)")
             status="FAIL"
@@ -253,7 +257,8 @@ check_configuration() {
         issues+=("Locations directory not found: $LOCATIONS_DIR")
         status="FAIL"
     else
-        local ovpn_count=$(find "$LOCATIONS_DIR" -name "*.ovpn" 2>/dev/null | wc -l)
+        local ovpn_count
+        ovpn_count=$(find "$LOCATIONS_DIR" -name "*.ovpn" 2>/dev/null | wc -l)
         if [[ $ovpn_count -eq 0 ]]; then
             issues+=("No .ovpn profiles found in $LOCATIONS_DIR")
             status="FAIL"
@@ -433,7 +438,8 @@ generate_summary() {
 
 # Generate JSON output
 generate_json_output() {
-    local timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    local timestamp
+    timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
     local overall_status="HEALTHY"
     [[ $CRITICAL_COUNT -gt 0 ]] && overall_status="CRITICAL"
     [[ $WARNING_COUNT -gt 0 ]] && [[ "$overall_status" != "CRITICAL" ]] && overall_status="DEGRADED"
