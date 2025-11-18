@@ -6,192 +6,192 @@
 # Args: $1 = path to validate, $2 = allowed directory (defaults to LOCATIONS_DIR)
 # Returns: 0 on success, 1 on failure
 validate_profile_path() {
-	local path="$1"
-	local allowed_dir="${2:-$LOCATIONS_DIR}"
+    local path="$1"
+    local allowed_dir="${2:-$LOCATIONS_DIR}"
 
-	# Input must be provided
-	if [[ -z "$path" ]]; then
-		echo "ERROR: Profile path cannot be empty" >&2
-		return 1
-	fi
+    # Input must be provided
+    if [[ -z "$path" ]]; then
+        echo "ERROR: Profile path cannot be empty" >&2
+        return 1
+    fi
 
-	# Must exist
-	if [[ ! -e "$path" ]]; then
-		echo "ERROR: Profile does not exist: $path" >&2
-		return 1
-	fi
+    # Must exist
+    if [[ ! -e "$path" ]]; then
+        echo "ERROR: Profile does not exist: $path" >&2
+        return 1
+    fi
 
-	# Must be regular file (not symlink, directory, device, etc.)
-	if [[ ! -f "$path" ]] || [[ -L "$path" ]]; then
-		echo "ERROR: Profile must be a regular file, not symlink: $path" >&2
-		return 1
-	fi
+    # Must be regular file (not symlink, directory, device, etc.)
+    if [[ ! -f "$path" ]] || [[ -L "$path" ]]; then
+        echo "ERROR: Profile must be a regular file, not symlink: $path" >&2
+        return 1
+    fi
 
-	# Resolve to canonical path (follows symlinks, resolves ..)
-	local canonical
-	canonical=$(realpath "$path" 2>/dev/null) || {
-		echo "ERROR: Cannot resolve canonical path: $path" >&2
-		return 1
-	}
+    # Resolve to canonical path (follows symlinks, resolves ..)
+    local canonical
+    canonical=$(realpath "$path" 2> /dev/null) || {
+        echo "ERROR: Cannot resolve canonical path: $path" >&2
+        return 1
+    }
 
-	# Canonical path must be within allowed directory
-	local allowed_canonical
-	allowed_canonical=$(realpath "$allowed_dir" 2>/dev/null) || {
-		echo "ERROR: Cannot resolve allowed directory: $allowed_dir" >&2
-		return 1
-	}
+    # Canonical path must be within allowed directory
+    local allowed_canonical
+    allowed_canonical=$(realpath "$allowed_dir" 2> /dev/null) || {
+        echo "ERROR: Cannot resolve allowed directory: $allowed_dir" >&2
+        return 1
+    }
 
-	if [[ ! "$canonical" =~ ^"$allowed_canonical"/ ]]; then
-		echo "ERROR: Profile path outside allowed directory" >&2
-		echo "  Profile: $canonical" >&2
-		echo "  Allowed: $allowed_canonical" >&2
-		return 1
-	fi
+    if [[ ! "$canonical" =~ ^"$allowed_canonical"/ ]]; then
+        echo "ERROR: Profile path outside allowed directory" >&2
+        echo "  Profile: $canonical" >&2
+        echo "  Allowed: $allowed_canonical" >&2
+        return 1
+    fi
 
-	# Must have safe extension
-	if [[ ! "$canonical" =~ \.(ovpn|conf)$ ]]; then
-		echo "ERROR: Invalid profile extension (must be .ovpn or .conf)" >&2
-		return 1
-	fi
+    # Must have safe extension
+    if [[ ! "$canonical" =~ \.(ovpn|conf)$ ]]; then
+        echo "ERROR: Invalid profile extension (must be .ovpn or .conf)" >&2
+        return 1
+    fi
 
-	# Additional check: no special characters that might cause issues
-	if [[ "$canonical" =~ [\$\`\\] ]]; then
-		echo "ERROR: Profile path contains unsafe characters" >&2
-		return 1
-	fi
+    # Additional check: no special characters that might cause issues
+    if [[ "$canonical" =~ [\$\`\\] ]]; then
+        echo "ERROR: Profile path contains unsafe characters" >&2
+        return 1
+    fi
 
-	# Validate file ownership (must be owned by current user or root)
-	local file_owner
-	file_owner=$(stat -c "%U" "$canonical" 2>/dev/null)
-	if [[ "$file_owner" != "$(whoami)" ]] && [[ "$file_owner" != "root" ]]; then
-		echo "ERROR: Profile file has suspicious ownership: $file_owner" >&2
-		return 1
-	fi
+    # Validate file ownership (must be owned by current user or root)
+    local file_owner
+    file_owner=$(stat -c "%U" "$canonical" 2> /dev/null)
+    if [[ "$file_owner" != "$(whoami)" ]] && [[ "$file_owner" != "root" ]]; then
+        echo "ERROR: Profile file has suspicious ownership: $file_owner" >&2
+        return 1
+    fi
 
-	# All checks passed
-	return 0
+    # All checks passed
+    return 0
 }
 
 # Validate credentials file (stricter than regular profiles)
 # Args: $1 = credentials file path
 # Returns: 0 on success, 1 on failure
 validate_credentials_file() {
-	local cred_file="$1"
+    local cred_file="$1"
 
-	if [[ -z "$cred_file" ]]; then
-		echo "ERROR: Credentials file path cannot be empty" >&2
-		return 1
-	fi
+    if [[ -z "$cred_file" ]]; then
+        echo "ERROR: Credentials file path cannot be empty" >&2
+        return 1
+    fi
 
-	if [[ ! -f "$cred_file" ]]; then
-		echo "ERROR: Credentials file not found: $cred_file" >&2
-		return 1
-	fi
+    if [[ ! -f "$cred_file" ]]; then
+        echo "ERROR: Credentials file not found: $cred_file" >&2
+        return 1
+    fi
 
-	# Must not be symlink (strict security)
-	if [[ -L "$cred_file" ]]; then
-		echo "ERROR: Credentials file must not be a symlink" >&2
-		return 1
-	fi
+    # Must not be symlink (strict security)
+    if [[ -L "$cred_file" ]]; then
+        echo "ERROR: Credentials file must not be a symlink" >&2
+        return 1
+    fi
 
-	# Must be owned by current user
-	local owner
-	owner=$(stat -c "%U" "$cred_file" 2>/dev/null)
-	if [[ "$owner" != "$(whoami)" ]]; then
-		echo "ERROR: Credentials file must be owned by current user" >&2
-		return 1
-	fi
+    # Must be owned by current user
+    local owner
+    owner=$(stat -c "%U" "$cred_file" 2> /dev/null)
+    if [[ "$owner" != "$(whoami)" ]]; then
+        echo "ERROR: Credentials file must be owned by current user" >&2
+        return 1
+    fi
 
-	# Must have 600 permissions
-	local perms
-	perms=$(stat -c "%a" "$cred_file" 2>/dev/null)
-	if [[ "$perms" != "600" ]]; then
-		echo "ERROR: Credentials file must have 600 permissions, has $perms" >&2
-		return 1
-	fi
+    # Must have 600 permissions
+    local perms
+    perms=$(stat -c "%a" "$cred_file" 2> /dev/null)
+    if [[ "$perms" != "600" ]]; then
+        echo "ERROR: Credentials file must have 600 permissions, has $perms" >&2
+        return 1
+    fi
 
-	return 0
+    return 0
 }
 
 # Validate and secure credentials file (fixes permissions if needed)
 # Args: $1 = credentials file path
 # Returns: 0 on success, 1 on failure
 validate_and_secure_credentials() {
-	local cred_file="$1"
+    local cred_file="$1"
 
-	if [[ ! -f "$cred_file" ]]; then
-		echo "ERROR: Credentials file not found: $cred_file" >&2
-		return 1
-	fi
+    if [[ ! -f "$cred_file" ]]; then
+        echo "ERROR: Credentials file not found: $cred_file" >&2
+        return 1
+    fi
 
-	# Check for symlink
-	if [[ -L "$cred_file" ]]; then
-		echo "ERROR: Credentials file must not be a symlink" >&2
-		return 1
-	fi
+    # Check for symlink
+    if [[ -L "$cred_file" ]]; then
+        echo "ERROR: Credentials file must not be a symlink" >&2
+        return 1
+    fi
 
-	# Check ownership
-	local owner
-	owner=$(stat -c "%U" "$cred_file" 2>/dev/null)
-	if [[ "$owner" != "$(whoami)" ]]; then
-		echo "ERROR: Credentials file must be owned by current user (owner: $owner)" >&2
-		return 1
-	fi
+    # Check ownership
+    local owner
+    owner=$(stat -c "%U" "$cred_file" 2> /dev/null)
+    if [[ "$owner" != "$(whoami)" ]]; then
+        echo "ERROR: Credentials file must be owned by current user (owner: $owner)" >&2
+        return 1
+    fi
 
-	# Check and fix permissions
-	local perms
-	perms=$(stat -c "%a" "$cred_file" 2>/dev/null)
+    # Check and fix permissions
+    local perms
+    perms=$(stat -c "%a" "$cred_file" 2> /dev/null)
 
-	if [[ "$perms" != "600" ]]; then
-		echo "WARNING: Insecure credentials file permissions: $perms" >&2
-		echo "Attempting to secure credentials file..." >&2
+    if [[ "$perms" != "600" ]]; then
+        echo "WARNING: Insecure credentials file permissions: $perms" >&2
+        echo "Attempting to secure credentials file..." >&2
 
-		# Attempt to fix
-		if ! chmod 600 "$cred_file" 2>/dev/null; then
-			echo "FATAL: Cannot change credentials file permissions" >&2
-			echo "  File: $cred_file" >&2
-			echo "  Current permissions: $perms" >&2
-			echo "  Required permissions: 600" >&2
-			echo "  Fix manually: chmod 600 $cred_file" >&2
-			return 1
-		fi
+        # Attempt to fix
+        if ! chmod 600 "$cred_file" 2> /dev/null; then
+            echo "FATAL: Cannot change credentials file permissions" >&2
+            echo "  File: $cred_file" >&2
+            echo "  Current permissions: $perms" >&2
+            echo "  Required permissions: 600" >&2
+            echo "  Fix manually: chmod 600 $cred_file" >&2
+            return 1
+        fi
 
-		# Re-verify after change (HIGH-5 fix)
-		perms=$(stat -c "%a" "$cred_file" 2>/dev/null)
-		if [[ "$perms" != "600" ]]; then
-			echo "FATAL: Permissions remain insecure after chmod attempt" >&2
-			echo "  Current: $perms" >&2
-			echo "  Required: 600" >&2
-			echo "  This may indicate a read-only filesystem or security policy" >&2
-			return 1
-		fi
+        # Re-verify after change (HIGH-5 fix)
+        perms=$(stat -c "%a" "$cred_file" 2> /dev/null)
+        if [[ "$perms" != "600" ]]; then
+            echo "FATAL: Permissions remain insecure after chmod attempt" >&2
+            echo "  Current: $perms" >&2
+            echo "  Required: 600" >&2
+            echo "  This may indicate a read-only filesystem or security policy" >&2
+            return 1
+        fi
 
-		echo "✓ Credentials file secured with 600 permissions" >&2
-	fi
+        echo "✓ Credentials file secured with 600 permissions" >&2
+    fi
 
-	return 0
+    return 0
 }
 
 # Validate country code format
 # Args: $1 = country code
 # Returns: 0 on success, 1 on failure
 validate_country_code() {
-	local code="$1"
+    local code="$1"
 
-	# Length check
-	[[ ${#code} -eq 2 ]] || return 1
+    # Length check
+    [[ ${#code} -eq 2 ]] || return 1
 
-	# Only lowercase letters
-	[[ "$code" =~ ^[a-z]{2}$ ]] || return 1
+    # Only lowercase letters
+    [[ "$code" =~ ^[a-z]{2}$ ]] || return 1
 
-	# Optional: Whitelist known codes (can be extended)
-	local supported="se dk no nl de ch us uk fr ca jp au is br"
-	[[ " $supported " == *" $code "* ]] || {
-		echo "WARNING: Unknown country code: $code" >&2
-		return 1
-	}
+    # Optional: Whitelist known codes (can be extended)
+    local supported="se dk no nl de ch us uk fr ca jp au is br"
+    [[ " $supported " == *" $code "* ]] || {
+        echo "WARNING: Unknown country code: $code" >&2
+        return 1
+    }
 
-	return 0
+    return 0
 }
 
 # Validate cache metadata integrity (Issue #155)
@@ -199,130 +199,130 @@ validate_country_code() {
 # Returns: 0 if metadata valid, 1 otherwise
 # Validates: MTIME and COUNT are numeric, COUNT matches actual entries
 validate_cache_metadata() {
-	local cache_file="$1"
+    local cache_file="$1"
 
-	[[ -f "$cache_file" ]] || return 1
+    [[ -f "$cache_file" ]] || return 1
 
-	# Extract and validate CACHE_MTIME (must be numeric Unix timestamp)
-	local mtime
-	mtime=$(grep "^# CACHE_MTIME=" "$cache_file" 2>/dev/null | cut -d= -f2)
+    # Extract and validate CACHE_MTIME (must be numeric Unix timestamp)
+    local mtime
+    mtime=$(grep "^# CACHE_MTIME=" "$cache_file" 2> /dev/null | cut -d= -f2)
 
-	if [[ -z "$mtime" ]]; then
-		echo "ERROR: Missing CACHE_MTIME in cache metadata" >&2
-		return 1
-	fi
+    if [[ -z "$mtime" ]]; then
+        echo "ERROR: Missing CACHE_MTIME in cache metadata" >&2
+        return 1
+    fi
 
-	if ! [[ "$mtime" =~ ^[0-9]+$ ]]; then
-		echo "ERROR: Invalid CACHE_MTIME format: $mtime (expected numeric)" >&2
-		return 1
-	fi
+    if ! [[ "$mtime" =~ ^[0-9]+$ ]]; then
+        echo "ERROR: Invalid CACHE_MTIME format: $mtime (expected numeric)" >&2
+        return 1
+    fi
 
-	# Extract and validate CACHE_COUNT (must be numeric)
-	local count
-	count=$(grep "^# CACHE_COUNT=" "$cache_file" 2>/dev/null | cut -d= -f2)
+    # Extract and validate CACHE_COUNT (must be numeric)
+    local count
+    count=$(grep "^# CACHE_COUNT=" "$cache_file" 2> /dev/null | cut -d= -f2)
 
-	if [[ -z "$count" ]]; then
-		echo "ERROR: Missing CACHE_COUNT in cache metadata" >&2
-		return 1
-	fi
+    if [[ -z "$count" ]]; then
+        echo "ERROR: Missing CACHE_COUNT in cache metadata" >&2
+        return 1
+    fi
 
-	if ! [[ "$count" =~ ^[0-9]+$ ]]; then
-		echo "ERROR: Invalid CACHE_COUNT format: $count (expected numeric)" >&2
-		return 1
-	fi
+    if ! [[ "$count" =~ ^[0-9]+$ ]]; then
+        echo "ERROR: Invalid CACHE_COUNT format: $count (expected numeric)" >&2
+        return 1
+    fi
 
-	# Verify COUNT matches actual entries (defense against tampering)
-	local actual
-	actual=$(grep -v "^#" "$cache_file" 2>/dev/null | wc -l)
+    # Verify COUNT matches actual entries (defense against tampering)
+    local actual
+    actual=$(grep -v "^#" "$cache_file" 2> /dev/null | wc -l)
 
-	if [[ $count -ne $actual ]]; then
-		echo "ERROR: Metadata count ($count) doesn't match actual entries ($actual)" >&2
-		return 1
-	fi
+    if [[ $count -ne $actual ]]; then
+        echo "ERROR: Metadata count ($count) doesn't match actual entries ($actual)" >&2
+        return 1
+    fi
 
-	return 0
+    return 0
 }
 
 # Sanitize user input (remove dangerous characters)
 # Args: $1 = input string
 # Returns: sanitized string on stdout, 0 on success, 1 on failure
 sanitize_user_input() {
-	local input="$1"
-	local max_length=255
+    local input="$1"
+    local max_length=255
 
-	# Length limit
-	if [[ ${#input} -gt $max_length ]]; then
-		echo "ERROR: Input exceeds maximum length" >&2
-		return 1
-	fi
+    # Length limit
+    if [[ ${#input} -gt $max_length ]]; then
+        echo "ERROR: Input exceeds maximum length" >&2
+        return 1
+    fi
 
-	# No null bytes
-	if [[ "$input" =~ $'\0' ]]; then
-		echo "ERROR: Invalid characters in input" >&2
-		return 1
-	fi
+    # No null bytes
+    if [[ "$input" =~ $'\0' ]]; then
+        echo "ERROR: Invalid characters in input" >&2
+        return 1
+    fi
 
-	# Reject dangerous shell metacharacters in certain contexts
-	if [[ "$input" =~ [\$\`\;] ]]; then
-		echo "ERROR: Unsafe characters in input" >&2
-		return 1
-	fi
+    # Reject dangerous shell metacharacters in certain contexts
+    if [[ "$input" =~ [\$\`\;] ]]; then
+        echo "ERROR: Unsafe characters in input" >&2
+        return 1
+    fi
 
-	echo "$input"
+    echo "$input"
 }
 
 # Validate PID format and bounds
 # Args: $1 = PID to validate
 # Returns: 0 if valid, 1 if invalid
 validate_pid() {
-	local pid="$1"
+    local pid="$1"
 
-	# Must be non-empty and numeric only
-	[[ -n "$pid" ]] || return 1
-	[[ "$pid" =~ ^[0-9]+$ ]] || return 1
+    # Must be non-empty and numeric only
+    [[ -n "$pid" ]] || return 1
+    [[ "$pid" =~ ^[0-9]+$ ]] || return 1
 
-	# Reject leading zeros (octal confusion risk)
-	[[ "$pid" =~ ^0[0-9] ]] && return 1
+    # Reject leading zeros (octal confusion risk)
+    [[ "$pid" =~ ^0[0-9] ]] && return 1
 
-	# Must be positive
-	[[ "$pid" -gt 0 ]] || return 1
+    # Must be positive
+    [[ "$pid" -gt 0 ]] || return 1
 
-	# Check against system PID_MAX (read from /proc if available)
-	local system_pid_max
-	system_pid_max=$(cat /proc/sys/kernel/pid_max 2>/dev/null || echo "4194304")
-	[[ "$pid" -lt "$system_pid_max" ]] || return 1
+    # Check against system PID_MAX (read from /proc if available)
+    local system_pid_max
+    system_pid_max=$(cat /proc/sys/kernel/pid_max 2> /dev/null || echo "4194304")
+    [[ "$pid" -lt "$system_pid_max" ]] || return 1
 
-	return 0
+    return 0
 }
 
 # Validate that a PID belongs to an OpenVPN process
 # Args: $1 = PID to validate
 # Returns: 0 if valid OpenVPN process, 1 otherwise
 validate_openvpn_process() {
-	local pid="$1"
-	if ! validate_pid "$pid"; then
-		return 1
-	fi
-	local cmd_line
-	cmd_line=$(ps -p "$pid" -o cmd= 2>/dev/null || true)
-	[[ "$cmd_line" =~ ^openvpn.*--config ]]
+    local pid="$1"
+    if ! validate_pid "$pid"; then
+        return 1
+    fi
+    local cmd_line
+    cmd_line=$(ps -p "$pid" -o cmd= 2> /dev/null || true)
+    [[ "$cmd_line" =~ ^openvpn.*--config ]]
 }
 
 # Discover all VPN-related processes including zombies
 # Returns: newline-separated list of PIDs
 validate_and_discover_processes() {
-	local openvpn_pids zombie_pids pids
+    local openvpn_pids zombie_pids pids
 
-	# Find running OpenVPN processes
-	openvpn_pids=$(pgrep -f "openvpn.*--config" 2>/dev/null || true)
+    # Find running OpenVPN processes
+    openvpn_pids=$(pgrep -f "openvpn.*--config" 2> /dev/null || true)
 
-	# Find zombie OpenVPN processes
-	zombie_pids=$(ps -eo pid,stat,comm | awk '$2~/^Z/ && $3=="openvpn" {print $1}' 2>/dev/null || true)
+    # Find zombie OpenVPN processes
+    zombie_pids=$(ps -eo pid,stat,comm | awk '$2~/^Z/ && $3=="openvpn" {print $1}' 2> /dev/null || true)
 
-	# Combine and deduplicate PIDs
-	pids=$(echo -e "$openvpn_pids\n$zombie_pids" | grep -v '^$' | sort -u || true)
+    # Combine and deduplicate PIDs
+    pids=$(echo -e "$openvpn_pids\n$zombie_pids" | grep -v '^$' | sort -u || true)
 
-	echo "$pids"
+    echo "$pids"
 }
 
 # Export functions for use in other scripts
