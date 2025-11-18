@@ -213,6 +213,7 @@ rebuild_cache() {
 
 # Get cached profile list (or rebuild if stale)
 # Returns: Newline-separated list of profile paths
+# Security: Validates each cached entry before returning (Issue #143)
 get_cached_profiles() {
     # Validate or rebuild cache
     if ! is_cache_valid; then
@@ -225,11 +226,39 @@ get_cached_profiles() {
     fi
 
     # Load cached profiles (skip header lines starting with #)
-    grep -v "^#" "$PROFILE_CACHE" 2> /dev/null || {
+    local cached_entries
+    cached_entries=$(grep -v "^#" "$PROFILE_CACHE" 2> /dev/null) || {
         # If grep fails, rebuild and try again
         rebuild_cache
-        grep -v "^#" "$PROFILE_CACHE" 2> /dev/null || echo ""
+        cached_entries=$(grep -v "^#" "$PROFILE_CACHE" 2> /dev/null) || echo ""
     }
+
+    # Defense-in-depth: Validate each cached entry before returning
+    # Protects against cache poisoning attacks (Issue #143, M-2)
+    local validated_profiles=""
+    local invalid_count=0
+
+    while IFS= read -r profile_path; do
+        # Skip empty lines
+        [[ -z "$profile_path" ]] && continue
+
+        # Validate path using centralized validator
+        # This checks: path traversal, symlinks, file existence, extension, ownership
+        if validate_profile_path "$profile_path" "$LOCATIONS_DIR" 2> /dev/null; then
+            validated_profiles+="$profile_path"$'\n'
+        else
+            # Log invalid entry (silent warning to avoid user confusion)
+            ((invalid_count++))
+        fi
+    done <<< "$cached_entries"
+
+    # Log summary if invalid entries were filtered
+    if [[ $invalid_count -gt 0 ]]; then
+        echo "WARNING: Filtered $invalid_count invalid entries from cache" >&2
+    fi
+
+    # Return validated profiles (remove trailing newline)
+    echo -n "$validated_profiles"
 }
 
 # ============================================================================
