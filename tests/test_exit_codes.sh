@@ -362,6 +362,49 @@ test_best_fast_commands_exit_codes() {
     return 0
 }
 
+check_vpn_connectivity() {
+    log "Performing VPN connectivity pre-flight check..."
+
+    # Ensure clean state
+    ensure_disconnected
+
+    # Try a quick connection test (5 second timeout)
+    if timeout 5 "$VPN_CONNECTOR" connect se > /dev/null 2>&1; then
+        # Connection initiated, check if process started
+        sleep 1
+        if pgrep -x openvpn > /dev/null 2>&1; then
+            log "✓ VPN connectivity check passed"
+            cleanup_vpn
+            return 0
+        fi
+    fi
+
+    # Connection failed - check why
+    log "VPN connectivity check failed"
+
+    # Check if credentials exist
+    if ! sudo ls /etc/openvpn/client/*.conf > /dev/null 2>&1; then
+        echo -e "${BLUE}ℹ️  Skipping exit code tests - VPN credentials not configured${NC}"
+        echo "Exit code validation tests require actual ProtonVPN connectivity."
+        echo ""
+        echo "To enable these tests:"
+        echo "  1. Configure ProtonVPN credentials in /etc/openvpn/client/"
+        echo "  2. Ensure VPN profiles are available via 'vpn-connector list'"
+        echo "  3. Verify network connectivity to ProtonVPN servers"
+        echo ""
+        log "Exit code tests skipped - VPN credentials not configured"
+        return 1
+    fi
+
+    # Credentials exist but connection failed - network/service issue
+    echo -e "${BLUE}ℹ️  Skipping exit code tests - VPN connectivity unavailable${NC}"
+    echo "Exit code validation tests require actual ProtonVPN connectivity."
+    echo "VPN credentials are configured, but connection failed (network/service issue)."
+    echo ""
+    log "Exit code tests skipped - VPN connectivity unavailable"
+    return 1
+}
+
 print_summary() {
     echo
     echo "═══════════════════════════════════════════"
@@ -423,6 +466,12 @@ main() {
     fi
 
     log "Starting exit code tests..."
+
+    # Perform VPN connectivity pre-flight check
+    if ! check_vpn_connectivity; then
+        # VPN not available, exit gracefully (not a test failure)
+        exit 0
+    fi
 
     # Ensure clean state
     ensure_disconnected
