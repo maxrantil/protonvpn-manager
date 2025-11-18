@@ -4,10 +4,13 @@ set -euo pipefail
 # ABOUTME: Provides consistent, accessible error formatting, codes, and logging
 
 # Script locations - detect installed vs development mode
-if [[ -f "/usr/local/bin/vpn-colors" ]]; then
-    VPN_DIR="/usr/local/bin"
-else
-    VPN_DIR="$(dirname "$(realpath "$0")")"
+# Only set VPN_DIR if not already set (when sourced from vpn-connector, it's already set)
+if [[ -z "${VPN_DIR:-}" ]]; then
+    if [[ -f "/usr/local/bin/vpn-colors" ]]; then
+        VPN_DIR="/usr/local/bin"
+    else
+        VPN_DIR="$(dirname "$(realpath "$0")")"
+    fi
 fi
 
 # Source color definitions (required for error display)

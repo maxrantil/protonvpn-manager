@@ -119,10 +119,11 @@ STAT_MTIME_FLAG=$(detect_stat_format)
 # Source centralized error handling, utilities, and security validators
 # ============================================================================
 # Note: Sourced early to make validators available for cache functions
+# Order matters: vpn-colors must be first (vpn-error-handler depends on it)
 
+source "$VPN_DIR/vpn-colors"
 source "$VPN_DIR/vpn-error-handler"
 source "$VPN_DIR/vpn-utils"
-source "$VPN_DIR/vpn-colors"
 source "$VPN_DIR/vpn-validators"
 
 # ============================================================================
