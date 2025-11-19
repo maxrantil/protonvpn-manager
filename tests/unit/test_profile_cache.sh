@@ -64,18 +64,18 @@ source "$PROJECT_DIR/src/vpn-connector" 2> /dev/null || {
 # Test helper functions
 start_test() {
     local test_name="$1"
-    TESTS_RUN=$((TESTS_RUN + 1))
+    ((TESTS_RUN++))
     echo -n "Testing: $test_name ... "
 }
 
 pass_test() {
-    TESTS_PASSED=$((TESTS_PASSED + 1))
+    ((TESTS_PASSED++))
     echo "✓ PASS"
 }
 
 fail_test() {
     local message="${1:-}"
-    TESTS_FAILED=$((TESTS_FAILED + 1))
+    ((TESTS_FAILED++))
     echo "✗ FAIL${message:+: $message}"
 }
 
@@ -567,6 +567,279 @@ EOF
 }
 
 # ============================================================================
+# UNIT TESTS: Edge Cases (Issue #144)
+# ============================================================================
+
+test_corrupted_cache_recovery() {
+    start_test "Corrupted cache triggers rebuild"
+
+    setup_cache_test_env
+
+    # Create corrupted cache file (invalid format, missing metadata)
+    cat > "$LOG_DIR/vpn_profiles.cache" << EOF
+This is not a valid cache file
+Random garbage data
+No metadata headers
+EOF
+
+    chmod 600 "$LOG_DIR/vpn_profiles.cache"
+
+    # get_cached_profiles should detect corruption and rebuild
+    local profiles
+    profiles=$(get_cached_profiles 2> /dev/null)
+
+    # Should successfully return profiles despite corruption
+    local count
+    count=$(echo "$profiles" | wc -l)
+
+    if [[ "$count" -eq 8 ]]; then
+        pass_test
+        cleanup_cache_test_env
+        return 0
+    else
+        fail_test "Expected 8 profiles after rebuild, got $count"
+        cleanup_cache_test_env
+        return 1
+    fi
+}
+
+test_symlink_cache_file_rejected() {
+    start_test "Symlink cache file is rejected and rebuilt"
+
+    setup_cache_test_env
+
+    # Create legitimate cache file elsewhere
+    local fake_cache
+    fake_cache=$(mktemp)
+    echo "# FAKE CACHE" > "$fake_cache"
+
+    # Create symlink as cache file (symlink attack)
+    ln -s "$fake_cache" "$LOG_DIR/vpn_profiles.cache"
+
+    # rebuild_cache should detect and remove symlink
+    if rebuild_cache; then
+        # Verify cache is now a regular file (not symlink)
+        if [[ -f "$LOG_DIR/vpn_profiles.cache" ]] && [[ ! -L "$LOG_DIR/vpn_profiles.cache" ]]; then
+            pass_test
+            rm -f "$fake_cache"
+            cleanup_cache_test_env
+            return 0
+        else
+            fail_test "Cache is still a symlink"
+            rm -f "$fake_cache"
+            cleanup_cache_test_env
+            return 1
+        fi
+    else
+        fail_test "rebuild_cache failed"
+        rm -f "$fake_cache"
+        cleanup_cache_test_env
+        return 1
+    fi
+}
+
+test_permission_denied_cache_handled() {
+    start_test "Unreadable cache triggers rebuild"
+
+    setup_cache_test_env
+
+    # Create cache with no read permissions
+    rebuild_cache || {
+        fail_test "Initial rebuild failed"
+        cleanup_cache_test_env
+        return 1
+    }
+
+    chmod 000 "$LOG_DIR/vpn_profiles.cache"
+
+    # get_cached_profiles should detect unreadable cache and rebuild
+    local profiles
+    profiles=$(get_cached_profiles 2> /dev/null)
+
+    # Should successfully return profiles despite permission issue
+    local count
+    count=$(echo "$profiles" | wc -l)
+
+    if [[ "$count" -eq 8 ]]; then
+        pass_test
+        cleanup_cache_test_env
+        return 0
+    else
+        fail_test "Expected 8 profiles after rebuild, got $count"
+        cleanup_cache_test_env
+        return 1
+    fi
+}
+
+test_concurrent_cache_rebuild_safety() {
+    start_test "Concurrent cache rebuilds don't corrupt data"
+
+    setup_cache_test_env
+
+    # Simulate concurrent rebuilds (background processes)
+    rebuild_cache &
+    local pid1=$!
+    rebuild_cache &
+    local pid2=$!
+    rebuild_cache &
+    local pid3=$!
+
+    # Wait for all to complete
+    wait "$pid1" "$pid2" "$pid3" 2> /dev/null
+
+    # Verify cache is valid and not corrupted
+    if [[ -f "$LOG_DIR/vpn_profiles.cache" ]]; then
+        # Check cache has valid metadata
+        if grep -q "^# CACHE_MTIME=" "$LOG_DIR/vpn_profiles.cache" &&
+            grep -q "^# CACHE_COUNT=" "$LOG_DIR/vpn_profiles.cache"; then
+            pass_test
+            cleanup_cache_test_env
+            return 0
+        else
+            fail_test "Cache corrupted by concurrent access"
+            cleanup_cache_test_env
+            return 1
+        fi
+    else
+        fail_test "Cache file missing after concurrent rebuilds"
+        cleanup_cache_test_env
+        return 1
+    fi
+}
+
+test_empty_locations_directory() {
+    start_test "Empty locations directory handled gracefully"
+
+    setup_cache_test_env
+
+    # Remove all profile files
+    rm -f "$LOCATIONS_DIR"/*.ovpn
+
+    # get_cached_profiles should handle empty directory
+    local profiles
+    profiles=$(get_cached_profiles 2> /dev/null)
+
+    # Should return empty result (no profiles)
+    if [[ -z "$profiles" ]]; then
+        pass_test
+        cleanup_cache_test_env
+        return 0
+    else
+        fail_test "Expected empty result, got profiles"
+        cleanup_cache_test_env
+        return 1
+    fi
+}
+
+test_locations_directory_missing() {
+    start_test "Missing locations directory handled gracefully"
+
+    setup_cache_test_env
+
+    # Remove locations directory entirely
+    rm -rf "$LOCATIONS_DIR"
+
+    # get_cached_profiles should handle missing directory
+    local profiles
+    profiles=$(get_cached_profiles 2> /dev/null)
+
+    # Should return empty result or handle error gracefully
+    local exit_code=$?
+
+    # Either empty result or non-zero exit is acceptable
+    if [[ -z "$profiles" ]] || [[ $exit_code -ne 0 ]]; then
+        pass_test
+        cleanup_cache_test_env
+        return 0
+    else
+        fail_test "Should handle missing directory gracefully"
+        cleanup_cache_test_env
+        return 1
+    fi
+}
+
+test_cache_directory_readonly() {
+    start_test "Read-only cache directory uses fallback"
+
+    setup_cache_test_env
+
+    # Make LOG_DIR read-only (can't create cache)
+    chmod 555 "$LOG_DIR"
+
+    # get_cached_profiles should fall back to direct scan
+    local profiles
+    profiles=$(get_cached_profiles 2> /dev/null)
+
+    # Restore permissions for cleanup
+    chmod 755 "$LOG_DIR"
+
+    # Should still return profiles via fallback
+    local count
+    count=$(echo "$profiles" | wc -l)
+
+    if [[ "$count" -eq 8 ]]; then
+        pass_test
+        cleanup_cache_test_env
+        return 0
+    else
+        fail_test "Expected 8 profiles via fallback, got $count"
+        cleanup_cache_test_env
+        return 1
+    fi
+}
+
+test_large_profile_count_performance() {
+    start_test "Large profile count (1000+) handled efficiently"
+
+    setup_cache_test_env
+
+    # Remove initial test profiles to have clean count
+    rm -f "$LOCATIONS_DIR"/*.ovpn
+
+    # Create 1000 test profiles
+    for i in {1..1000}; do
+        cat > "$LOCATIONS_DIR/test-profile-$i.ovpn" << EOF
+remote 10.0.$((i / 256)).$((i % 256)) 1194
+proto udp
+dev tun
+EOF
+    done
+
+    # Measure cache rebuild time
+    local start_time
+    start_time=$(date +%s%N)
+
+    rebuild_cache || {
+        fail_test "rebuild_cache failed with 1000 profiles"
+        cleanup_cache_test_env
+        return 1
+    }
+
+    local end_time
+    end_time=$(date +%s%N)
+    local duration_ms=$(( (end_time - start_time) / 1000000 ))
+
+    # Verify cache contains all profiles
+    local count
+    count=$(grep -v "^#" "$LOG_DIR/vpn_profiles.cache" | wc -l)
+
+    # Performance threshold: rebuild should complete in <5 seconds
+    if [[ "$count" -eq 1000 ]] && [[ $duration_ms -lt 5000 ]]; then
+        pass_test
+        cleanup_cache_test_env
+        return 0
+    elif [[ "$count" -ne 1000 ]]; then
+        fail_test "Expected 1000 profiles, got $count"
+        cleanup_cache_test_env
+        return 1
+    else
+        fail_test "Rebuild took ${duration_ms}ms (expected <5000ms)"
+        cleanup_cache_test_env
+        return 1
+    fi
+}
+
+# ============================================================================
 # UNIT TESTS: Metadata Validation (Issue #155)
 # ============================================================================
 
@@ -744,6 +1017,16 @@ test_get_cached_profiles_rebuilds_when_stale || true
 test_get_cached_profiles_filters_malicious_entries || true
 test_get_cached_profiles_filters_symlinks || true
 test_get_cached_profiles_filters_nonexistent_files || true
+
+# Edge case tests (Issue #144)
+test_corrupted_cache_recovery || true
+test_symlink_cache_file_rejected || true
+test_permission_denied_cache_handled || true
+test_concurrent_cache_rebuild_safety || true
+test_empty_locations_directory || true
+test_locations_directory_missing || true
+test_cache_directory_readonly || true
+test_large_profile_count_performance || true
 
 # Metadata validation tests (Issue #155)
 test_validate_cache_metadata_rejects_non_numeric_mtime || true
