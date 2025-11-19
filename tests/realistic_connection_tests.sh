@@ -44,8 +44,9 @@ test_ovpn_file_validation() {
     local connector_script="$PROJECT_DIR/src/vpn-connector"
 
     # Test that connector can read test .ovpn files
+    # Set XDG_STATE_HOME to test directory to isolate cache from production
     local profile_output
-    profile_output=$(LOCATIONS_DIR="$TEST_LOCATIONS_DIR" "$connector_script" list 2> /dev/null)
+    profile_output=$(LOCATIONS_DIR="$TEST_LOCATIONS_DIR" XDG_STATE_HOME="$TEST_TEMP_DIR" "$connector_script" list 2> /dev/null)
 
     assert_contains "$profile_output" "se-test" "Should find SE test profile"
     assert_contains "$profile_output" "dk-test" "Should find DK test profile"
