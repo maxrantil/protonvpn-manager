@@ -119,16 +119,28 @@ test_stage_ordering || true
 
 # Test 6: Verify visual indicators (spinner or progress)
 test_visual_indicators() {
-	# Check if code uses visual feedback during stages
-	local code_section
-	code_section=$(grep -A 50 "Establishing connection" "$VPN_DIR/vpn-connector" 2>/dev/null || echo "")
+	# Issue #147: Updated to check for announce_connection_status function
+	# which provides visual indicators (echo -ne with \r) in visual mode
 
-	# Should have some form of progress indicator (dots, spinner, etc.)
-	if [[ "$code_section" == *"echo -n"* ]] || [[ "$code_section" == *"\r"* ]]; then
-		assert_true "true" "Uses visual progress indicators during connection stages"
+	# Check if announce_connection_status function exists and contains visual indicators
+	if grep -q "^announce_connection_status()" "$VPN_DIR/vpn-connector" 2>/dev/null; then
+		# Verify function has visual mode with echo -ne and \r
+		local function_code
+		function_code=$(grep -A 40 "^announce_connection_status()" "$VPN_DIR/vpn-connector" 2>/dev/null || echo "")
+		if [[ "$function_code" == *"echo -ne"* ]] && [[ "$function_code" == *"\r"* ]]; then
+			assert_true "true" "Uses visual progress indicators during connection stages"
+		else
+			assert_true "false" "Uses visual progress indicators during connection stages"
+		fi
 	else
-		# No visual indicators found - test will fail initially
-		assert_true "false" "Uses visual progress indicators during connection stages"
+		# Fallback to old check for direct echo statements
+		local code_section
+		code_section=$(grep -A 50 "Establishing connection" "$VPN_DIR/vpn-connector" 2>/dev/null || echo "")
+		if [[ "$code_section" == *"echo -n"* ]] || [[ "$code_section" == *"\r"* ]]; then
+			assert_true "true" "Uses visual progress indicators during connection stages"
+		else
+			assert_true "false" "Uses visual progress indicators during connection stages"
+		fi
 	fi
 }
 
