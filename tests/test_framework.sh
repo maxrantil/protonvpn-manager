@@ -10,7 +10,7 @@ unalias grep 2> /dev/null || true
 if [[ -z "${TEST_FRAMEWORK_LOADED:-}" ]]; then
     TEST_FRAMEWORK_LOADED=1
     # shellcheck disable=SC2034  # TEST_DIR used by tests that source this framework
-    TEST_DIR="$(dirname "$(realpath "$0")")"
+    TEST_DIR="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
     # shellcheck disable=SC2034  # PROJECT_DIR used by tests that source this framework
     PROJECT_DIR="$(dirname "$TEST_DIR")"
     TESTS_PASSED=0
@@ -64,12 +64,12 @@ assert_equals() {
 
     if [[ "$expected" == "$actual" ]]; then
         log_test "PASS" "$CURRENT_TEST: $message"
-        ((TESTS_PASSED++))
+        TESTS_PASSED=$((TESTS_PASSED + 1))
         return 0
     else
         log_test "FAIL" "$CURRENT_TEST: $message - Expected: '$expected', Got: '$actual'"
         FAILED_TESTS+=("$CURRENT_TEST: $message")
-        ((TESTS_FAILED++))
+        TESTS_FAILED=$((TESTS_FAILED + 1))
         return 1
     fi
 }
@@ -81,12 +81,12 @@ assert_not_equals() {
 
     if [[ "$not_expected" != "$actual" ]]; then
         log_test "PASS" "$CURRENT_TEST: $message"
-        ((TESTS_PASSED++))
+        TESTS_PASSED=$((TESTS_PASSED + 1))
         return 0
     else
         log_test "FAIL" "$CURRENT_TEST: $message - Expected NOT: '$not_expected', Got: '$actual'"
         FAILED_TESTS+=("$CURRENT_TEST: $message")
-        ((TESTS_FAILED++))
+        TESTS_FAILED=$((TESTS_FAILED + 1))
         return 1
     fi
 }
@@ -98,12 +98,12 @@ assert_contains() {
 
     if [[ "$haystack" == *"$needle"* ]]; then
         log_test "PASS" "$CURRENT_TEST: $message"
-        ((TESTS_PASSED++))
+        TESTS_PASSED=$((TESTS_PASSED + 1))
         return 0
     else
         log_test "FAIL" "$CURRENT_TEST: $message - '$haystack' does not contain '$needle'"
         FAILED_TESTS+=("$CURRENT_TEST: $message")
-        ((TESTS_FAILED++))
+        TESTS_FAILED=$((TESTS_FAILED + 1))
         return 1
     fi
 }
@@ -115,12 +115,12 @@ assert_not_contains() {
 
     if [[ "$haystack" != *"$needle"* ]]; then
         log_test "PASS" "$CURRENT_TEST: $message"
-        ((TESTS_PASSED++))
+        TESTS_PASSED=$((TESTS_PASSED + 1))
         return 0
     else
         log_test "FAIL" "$CURRENT_TEST: $message - '$haystack' contains '$needle'"
         FAILED_TESTS+=("$CURRENT_TEST: $message")
-        ((TESTS_FAILED++))
+        TESTS_FAILED=$((TESTS_FAILED + 1))
         return 1
     fi
 }
@@ -131,12 +131,12 @@ assert_file_exists() {
 
     if [[ -f "$filepath" ]]; then
         log_test "PASS" "$CURRENT_TEST: $message - $filepath"
-        ((TESTS_PASSED++))
+        TESTS_PASSED=$((TESTS_PASSED + 1))
         return 0
     else
         log_test "FAIL" "$CURRENT_TEST: $message - $filepath does not exist"
         FAILED_TESTS+=("$CURRENT_TEST: $message")
-        ((TESTS_FAILED++))
+        TESTS_FAILED=$((TESTS_FAILED + 1))
         return 1
     fi
 }
@@ -154,12 +154,12 @@ assert_command_succeeds() {
         bash -c "$command"
     ) > /dev/null 2>&1; then
         log_test "PASS" "$CURRENT_TEST: $message - '$command'"
-        ((TESTS_PASSED++))
+        TESTS_PASSED=$((TESTS_PASSED + 1))
         return 0
     else
         log_test "FAIL" "$CURRENT_TEST: $message - '$command' failed"
         FAILED_TESTS+=("$CURRENT_TEST: $message")
-        ((TESTS_FAILED++))
+        TESTS_FAILED=$((TESTS_FAILED + 1))
         return 1
     fi
 }
@@ -177,12 +177,12 @@ assert_command_fails() {
         bash -c "$command"
     ) > /dev/null 2>&1; then
         log_test "PASS" "$CURRENT_TEST: $message - '$command'"
-        ((TESTS_PASSED++))
+        TESTS_PASSED=$((TESTS_PASSED + 1))
         return 0
     else
         log_test "FAIL" "$CURRENT_TEST: $message - '$command' succeeded when it should have failed"
         FAILED_TESTS+=("$CURRENT_TEST: $message")
-        ((TESTS_FAILED++))
+        TESTS_FAILED=$((TESTS_FAILED + 1))
         return 1
     fi
 }
