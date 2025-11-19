@@ -698,6 +698,90 @@ test_server_latency() {
     fi
 }
 
+# Issue #147: WCAG 2.1 Level AA accessibility - Screen reader detection
+# Detects if accessibility mode should be enabled based on:
+# 1. Explicit environment variables (VPN_ACCESSIBLE_MODE, SCREEN_READER_MODE)
+# 2. GNOME screen reader settings (gsettings)
+# 3. Active screen reader processes (Orca, Fenrir)
+# 4. NO_COLOR preference
+detect_accessibility_mode() {
+    # 1. Explicit user preference (highest priority)
+    if [[ -n "${VPN_ACCESSIBLE_MODE:-}" ]] || [[ -n "${SCREEN_READER_MODE:-}" ]]; then
+        return 0
+    fi
+
+    # 2. GNOME accessibility settings (most reliable for GUI screen readers)
+    if command -v gsettings &> /dev/null; then
+        local screen_reader_enabled
+        screen_reader_enabled=$(gsettings get org.gnome.desktop.a11y.applications screen-reader-enabled 2> /dev/null || echo "false")
+        if [[ "$screen_reader_enabled" == "true" ]]; then
+            return 0
+        fi
+    fi
+
+    # 3. Active screen reader process detection
+    if pgrep -x "orca" &> /dev/null || pgrep -x "fenrir" &> /dev/null; then
+        return 0
+    fi
+
+    # 4. Console-based indicators (braille display)
+    if [[ "$TERM" == "linux" ]] && command -v brltty &> /dev/null; then
+        return 0 # Console with braille display
+    fi
+
+    # 5. NO_COLOR also implies text-only preference
+    if [[ -n "${NO_COLOR:-}" ]]; then
+        return 0
+    fi
+
+    return 1
+}
+
+# Issue #147: WCAG 2.1 Level AA accessibility - Semantic status announcements
+# Provides accessible connection status updates with semantic prefixes
+# Args: $1 = stage (initializing|establishing|configuring|verifying|connected|failed)
+#       $2 = message (human-readable status message)
+announce_connection_status() {
+    local stage="$1"
+    local message="$2"
+
+    if detect_accessibility_mode; then
+        # Screen reader mode: semantic prefix + clear message
+        case "$stage" in
+            initializing)
+                echo "[INFO] VPN connection starting: $message"
+                ;;
+            establishing | configuring | verifying)
+                echo "[PROGRESS] VPN connection in progress: $message"
+                ;;
+            connected)
+                echo "[SUCCESS] VPN connection established: $message"
+                ;;
+            failed)
+                echo "[ERROR] VPN connection failed: $message"
+                ;;
+            *)
+                echo "[INFO] VPN status: $message"
+                ;;
+        esac
+    else
+        # Visual mode: carriage return + spinner + message
+        case "$stage" in
+            connected)
+                echo "" # New line for final state
+                echo -e "\033[1;32m✓ $message\033[0m"
+                ;;
+            failed)
+                echo "" # New line for final state
+                echo -e "\033[1;31m✗ $message\033[0m"
+                ;;
+            *)
+                echo -ne "\r  ⟳ $message                    "
+                ;;
+        esac
+    fi
+}
+
 connect_to_profile() {
     local profile_path="$1"
     local max_attempts=3
@@ -812,6 +896,7 @@ connect_openvpn_profile() {
             --verb 3
 
         # Issue #69: Progressive connection feedback for better UX
+        # Issue #147: WCAG 2.1 Level AA accessibility with semantic status announcements
         # Issue #62: Exponential backoff for 40% faster connection establishment
         # Old: Fixed 4s intervals (12s auth + 32s connection = 44s max)
         # New: Exponential backoff [1,1,2,2,3,4,5,6] = 24s max (45% improvement)
@@ -821,8 +906,9 @@ connect_openvpn_profile() {
         local connection_stage="initializing"
         local interval_count=0
 
-        echo "  ⟳ Initializing connection..."
-        echo -n "  ⟳ Establishing connection"
+        # Issue #147: Use semantic status announcements for accessibility
+        announce_connection_status "initializing" "Initializing connection..."
+        announce_connection_status "establishing" "Establishing connection"
 
         for interval in "${BACKOFF_INTERVALS[@]}"; do
             sleep "$interval"
@@ -832,7 +918,8 @@ connect_openvpn_profile() {
             # openvpn may write to /tmp/openvpn.log as fallback if it can't write to LOG_DIR
             for log_location in "$LOG_DIR/openvpn.log" "/tmp/openvpn.log"; do
                 if [[ -f "$log_location" ]] && sudo grep -q "AUTH_FAILED" "$log_location" 2> /dev/null; then
-                    echo -e "\033[1;31m✗ Authentication failed - check credentials in $CREDENTIALS_FILE\033[0m"
+                    # Issue #147: Use semantic announcement for accessibility
+                    announce_connection_status "failed" "Authentication failed - check credentials in $CREDENTIALS_FILE"
                     log_message "Authentication failed for $profile_name - invalid credentials" "$CONNECTION_LOG"
                     echo "[$(date '+%Y-%m-%d %H:%M:%S')] [ERROR] AUTH_FAILED: $profile_name" >> "$CONNECTION_LOG" 2> /dev/null || true
                     notify_event "auth_failed" "$profile_name"
@@ -844,11 +931,8 @@ connect_openvpn_profile() {
                 if [[ -f "$log_location" ]] && sudo grep -q "Peer Connection Initiated" "$log_location" 2> /dev/null; then
                     # Connection initiated, continue waiting for full establishment
                     if [[ "$connection_stage" != "configuring" ]]; then
-                        if [[ -n "${SCREEN_READER_MODE:-}" ]] || [[ -n "${NO_COLOR:-}" ]]; then
-                            echo "  ⟳ Configuring tunnel"
-                        else
-                            echo -ne "\r  ⟳ Configuring tunnel             "
-                        fi
+                        # Issue #147: Use semantic status announcement
+                        announce_connection_status "configuring" "Configuring tunnel"
                         connection_stage="configuring"
                         interval_count=0
                     fi
@@ -856,12 +940,9 @@ connect_openvpn_profile() {
             done
 
             # Issue #69: Show "Verifying" stage during status check
+            # Issue #147: Use semantic status announcement
             if [[ "$connection_stage" == "configuring" && "$interval_count" -ge 2 ]]; then
-                if [[ -n "${SCREEN_READER_MODE:-}" ]] || [[ -n "${NO_COLOR:-}" ]]; then
-                    echo "  ⟳ Verifying connection"
-                else
-                    echo -ne "\r  ⟳ Verifying connection           "
-                fi
+                announce_connection_status "verifying" "Verifying connection"
                 connection_stage="verifying"
                 interval_count=0
             fi
@@ -870,18 +951,19 @@ connect_openvpn_profile() {
             local status_check
             status_check=$(timeout 5 "$VPN_DIR/vpn-manager" status 2> /dev/null | grep "VPN Status:" | grep -q "CONNECTED" && echo "connected" || echo "not_connected")
             if [[ "$status_check" == "connected" ]]; then
-                if [[ -n "${SCREEN_READER_MODE:-}" ]] || [[ -n "${NO_COLOR:-}" ]]; then
-                    echo "  ⟳ Connected"
-                else
-                    echo -ne "\r  ⟳ Connected                      "
-                fi
+                # Issue #147: Use semantic status announcement
+                announce_connection_status "connected" "Connected"
                 connection_established=1
-                echo "" # Clear the progress line
+                # Clear the progress line in visual mode
+                if ! detect_accessibility_mode; then
+                    echo ""
+                fi
                 break
             fi
 
             # Show progress dots for current stage (visual mode only, limit to 3)
-            if [[ -z "${SCREEN_READER_MODE:-}" ]] && [[ -z "${NO_COLOR:-}" ]]; then
+            # Issue #147: Respect accessibility mode - no dots in screen reader mode
+            if ! detect_accessibility_mode; then
                 local dot_count=$((interval_count % 4)) # Max 3 dots, then restart
                 if [[ $dot_count -le 3 ]]; then
                     echo -n "."
@@ -890,7 +972,8 @@ connect_openvpn_profile() {
         done
 
         if [[ $connection_established -eq 1 ]]; then
-            echo -e "\033[1;32m✓ Successfully connected to OpenVPN $profile_name\033[0m"
+            # Note: Status already announced at line ~954 with announce_connection_status "connected" "Connected"
+            # This log entry captures the full connection details
             log_message "Successfully connected to OpenVPN $profile_name on attempt $attempt" "$CONNECTION_LOG"
             echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] Connected successfully: $profile_name (attempt $attempt/$max_attempts)" >> "$CONNECTION_LOG" 2> /dev/null || true
 
