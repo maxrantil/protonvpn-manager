@@ -37,14 +37,14 @@ run_test() {
 }
 
 test_pass() {
-	((TESTS_RUN++))
-	((TESTS_PASSED++))
+	TESTS_RUN=$((TESTS_RUN + 1))
+	TESTS_PASSED=$((TESTS_PASSED + 1))
 	echo -e "  ${T_GREEN}✓${T_NC} $1"
 }
 
 test_fail() {
-	((TESTS_RUN++))
-	((TESTS_FAILED++))
+	TESTS_RUN=$((TESTS_RUN + 1))
+	TESTS_FAILED=$((TESTS_FAILED + 1))
 	FAILED_TESTS+=("$1")
 	echo -e "  ${T_RED}✗${T_NC} $1"
 	[[ -n "${2:-}" ]] && echo -e "    $2"

@@ -116,6 +116,17 @@ detect_stat_format() {
 STAT_MTIME_FLAG=$(detect_stat_format)
 
 # ============================================================================
+# Source centralized error handling, utilities, and security validators
+# ============================================================================
+# Note: Sourced early to make validators available for cache functions
+# Order matters: vpn-colors must be first (vpn-error-handler depends on it)
+
+source "$VPN_DIR/vpn-colors"
+source "$VPN_DIR/vpn-error-handler"
+source "$VPN_DIR/vpn-utils"
+source "$VPN_DIR/vpn-validators"
+
+# ============================================================================
 # Profile Cache Functions (Issue #63 - 90% performance improvement)
 # ============================================================================
 
@@ -151,22 +162,43 @@ is_cache_valid() {
 # Returns: 0 on success, 1 on failure
 rebuild_cache() {
     local cache_file="$PROFILE_CACHE"
+    local lock_file="${cache_file}.lock"
+
+    # Security: Acquire exclusive lock to prevent concurrent rebuild corruption (Issue #155)
+    # File descriptor 201 is used for lock file
+    exec 201> "$lock_file" || return 1
+    if ! flock -x 201 2> /dev/null; then
+        exec 201>&- # Close file descriptor on failure
+        return 1
+    fi
+
+    # Security: Check if another process already rebuilt cache while we waited for lock
+    if is_cache_valid; then
+        exec 201>&- # Release lock
+        return 0
+    fi
 
     # Security: Use mktemp for unpredictable temp file name (prevents race conditions)
     local temp_cache
-    temp_cache=$(mktemp "${cache_file}.XXXXXXXXXX") || return 1
+    temp_cache=$(mktemp "${cache_file}.XXXXXXXXXX") || {
+        exec 201>&- # Release lock on error
+        return 1
+    }
 
     # Ensure cleanup on any exit (use ${temp_cache:-} to handle unbound variable in strict mode)
+    # Lock file will be released automatically when FD 201 closes on function exit
     trap 'rm -f "${temp_cache:-}"' RETURN
 
     # Security: Set restrictive permissions immediately after creation
     chmod 600 "$temp_cache" || {
         rm -f "$temp_cache"
+        exec 201>&- # Release lock
         return 1
     }
 
-    # Security: Reject symlink attacks on cache file
-    if [[ -L "$cache_file" ]]; then
+    # Security: Reject symlink attacks on cache file (Issue #155 - TOCTOU fix)
+    # Remove any existing cache file (including symlinks) before atomic move
+    if [[ -L "$cache_file" ]] || [[ -e "$cache_file" ]]; then
         rm -f "$cache_file"
     fi
 
@@ -174,6 +206,7 @@ rebuild_cache() {
     local dir_mtime
     dir_mtime=$(stat -c %Y "$LOCATIONS_DIR" 2> /dev/null) || {
         rm -f "$temp_cache"
+        exec 201>&- # Release lock
         return 1
     }
 
@@ -189,6 +222,7 @@ rebuild_cache() {
 
     } > "$temp_cache" || {
         rm -f "$temp_cache"
+        exec 201>&- # Release lock
         return 1
     }
 
@@ -199,15 +233,37 @@ rebuild_cache() {
     # Add count to metadata (using marker-based insertion for maintainability)
     sed -i "/^# GENERATED=/a# CACHE_COUNT=${count}" "$temp_cache" || {
         rm -f "$temp_cache"
+        exec 201>&- # Release lock
         return 1
     }
 
-    # Atomic move (prevents partial reads during rebuild)
-    mv "$temp_cache" "$cache_file" || {
-        rm -f "$temp_cache"
-        return 1
-    }
+    # Security: Atomic move with TOCTOU protection (Issue #155)
+    # Use mv -n (no-clobber) to prevent following symlinks that may be created between rm and mv
+    if ! mv -n "$temp_cache" "$cache_file" 2> /dev/null; then
+        # Move failed - verify we're not being attacked
+        if [[ -e "$cache_file" ]]; then
+            # File exists - check if it's safe
+            if [[ -f "$cache_file" ]] && [[ ! -L "$cache_file" ]]; then
+                # Safe regular file exists - another process may have created it
+                # Remove our temp file and use the existing cache
+                rm -f "$temp_cache"
+                exec 201>&- # Release lock
+                return 0
+            else
+                # Symlink or other dangerous file type detected
+                rm -f "$cache_file" "$temp_cache"
+                exec 201>&- # Release lock
+                return 1
+            fi
+        else
+            # Move failed for other reason
+            rm -f "$temp_cache"
+            exec 201>&- # Release lock
+            return 1
+        fi
+    fi
 
+    # Success - lock will be released automatically on function exit
     return 0
 }
 
@@ -220,6 +276,18 @@ get_cached_profiles() {
         rebuild_cache || {
             # Fallback: Direct find if cache rebuild fails
             echo -e "\033[1;33mCache unavailable, using direct scan\033[0m" >&2
+            find "$LOCATIONS_DIR" -maxdepth 3 -xtype f \( -name "*.ovpn" -o -name "*.conf" \) 2> /dev/null | sort
+            return 0
+        }
+    fi
+
+    # Security: Validate cache metadata integrity (Issue #155)
+    # Detects corrupted or tampered cache files
+    if ! validate_cache_metadata "$PROFILE_CACHE" 2> /dev/null; then
+        # Metadata validation failed - rebuild cache
+        rebuild_cache || {
+            # Fallback: Direct find if cache rebuild fails
+            echo -e "\033[1;33mCache metadata invalid, using direct scan\033[0m" >&2
             find "$LOCATIONS_DIR" -maxdepth 3 -xtype f \( -name "*.ovpn" -o -name "*.conf" \) 2> /dev/null | sort
             return 0
         }
@@ -262,13 +330,8 @@ get_cached_profiles() {
 }
 
 # ============================================================================
-# Source centralized error handling, utilities, and security validators
+# Protocol Detection Functions
 # ============================================================================
-
-source "$VPN_DIR/vpn-error-handler"
-source "$VPN_DIR/vpn-utils"
-source "$VPN_DIR/vpn-colors"
-source "$VPN_DIR/vpn-validators"
 
 detect_protocol() {
     local profile_path="$1"

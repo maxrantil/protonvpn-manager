@@ -15,11 +15,11 @@ test_doctor_script_exists() {
 
     if [[ -f "$PROJECT_DIR/src/vpn-doctor" ]]; then
         log_test "PASS" "$CURRENT_TEST: Script file found"
-        ((TESTS_PASSED++))
+        TESTS_PASSED=$((TESTS_PASSED + 1))
     else
         log_test "FAIL" "$CURRENT_TEST: Script not found at src/vpn-doctor"
         FAILED_TESTS+=("$CURRENT_TEST")
-        ((TESTS_FAILED++))
+        TESTS_FAILED=$((TESTS_FAILED + 1))
     fi
 }
 
@@ -29,11 +29,11 @@ test_doctor_script_executable() {
 
     if [[ -x "$PROJECT_DIR/src/vpn-doctor" ]]; then
         log_test "PASS" "$CURRENT_TEST: Script has executable permissions"
-        ((TESTS_PASSED++))
+        TESTS_PASSED=$((TESTS_PASSED + 1))
     else
         log_test "FAIL" "$CURRENT_TEST: Script is not executable"
         FAILED_TESTS+=("$CURRENT_TEST")
-        ((TESTS_FAILED++))
+        TESTS_FAILED=$((TESTS_FAILED + 1))
     fi
 }
 
@@ -51,11 +51,11 @@ test_doctor_has_aboutme_header() {
 
     if [[ $aboutme_count -ge 2 ]]; then
         log_test "PASS" "$CURRENT_TEST: Found $aboutme_count ABOUTME comments"
-        ((TESTS_PASSED++))
+        TESTS_PASSED=$((TESTS_PASSED + 1))
     else
         log_test "FAIL" "$CURRENT_TEST: Expected 2+ ABOUTME comments, found $aboutme_count"
         FAILED_TESTS+=("$CURRENT_TEST")
-        ((TESTS_FAILED++))
+        TESTS_FAILED=$((TESTS_FAILED + 1))
     fi
 }
 
@@ -75,11 +75,11 @@ test_doctor_sources_dependencies() {
 
     if [[ $has_colors -gt 0 ]] && [[ $has_errors -gt 0 ]]; then
         log_test "PASS" "$CURRENT_TEST: Sources both required components"
-        ((TESTS_PASSED++))
+        TESTS_PASSED=$((TESTS_PASSED + 1))
     else
         log_test "FAIL" "$CURRENT_TEST: Missing required source statements (colors=$has_colors, errors=$has_errors)"
         FAILED_TESTS+=("$CURRENT_TEST")
-        ((TESTS_FAILED++))
+        TESTS_FAILED=$((TESTS_FAILED + 1))
     fi
 }
 
@@ -97,11 +97,11 @@ test_doctor_shows_help() {
 
     if echo "$help_output" | grep -qi "diagnostic\|usage\|help"; then
         log_test "PASS" "$CURRENT_TEST: Help message displayed"
-        ((TESTS_PASSED++))
+        TESTS_PASSED=$((TESTS_PASSED + 1))
     else
         log_test "FAIL" "$CURRENT_TEST: No help message found (output: ${help_output:0:50}...)"
         FAILED_TESTS+=("$CURRENT_TEST")
-        ((TESTS_FAILED++))
+        TESTS_FAILED=$((TESTS_FAILED + 1))
     fi
 }
 
@@ -116,11 +116,11 @@ test_check_dependencies_function_exists() {
 
     if grep -q "^check_dependencies()" "$PROJECT_DIR/src/vpn-doctor" 2>/dev/null; then
         log_test "PASS" "$CURRENT_TEST: Function found"
-        ((TESTS_PASSED++))
+        TESTS_PASSED=$((TESTS_PASSED + 1))
     else
         log_test "FAIL" "$CURRENT_TEST: check_dependencies() not defined"
         FAILED_TESTS+=("$CURRENT_TEST")
-        ((TESTS_FAILED++))
+        TESTS_FAILED=$((TESTS_FAILED + 1))
     fi
 }
 
@@ -135,11 +135,11 @@ test_check_permissions_function_exists() {
 
     if grep -q "^check_file_permissions()" "$PROJECT_DIR/src/vpn-doctor" 2>/dev/null; then
         log_test "PASS" "$CURRENT_TEST: Function found"
-        ((TESTS_PASSED++))
+        TESTS_PASSED=$((TESTS_PASSED + 1))
     else
         log_test "FAIL" "$CURRENT_TEST: check_file_permissions() not defined"
         FAILED_TESTS+=("$CURRENT_TEST")
-        ((TESTS_FAILED++))
+        TESTS_FAILED=$((TESTS_FAILED + 1))
     fi
 }
 
@@ -154,11 +154,11 @@ test_check_configuration_function_exists() {
 
     if grep -q "^check_configuration()" "$PROJECT_DIR/src/vpn-doctor" 2>/dev/null; then
         log_test "PASS" "$CURRENT_TEST: Function found"
-        ((TESTS_PASSED++))
+        TESTS_PASSED=$((TESTS_PASSED + 1))
     else
         log_test "FAIL" "$CURRENT_TEST: check_configuration() not defined"
         FAILED_TESTS+=("$CURRENT_TEST")
-        ((TESTS_FAILED++))
+        TESTS_FAILED=$((TESTS_FAILED + 1))
     fi
 }
 
@@ -173,11 +173,11 @@ test_check_network_function_exists() {
 
     if grep -q "^check_network()" "$PROJECT_DIR/src/vpn-doctor" 2>/dev/null; then
         log_test "PASS" "$CURRENT_TEST: Function found"
-        ((TESTS_PASSED++))
+        TESTS_PASSED=$((TESTS_PASSED + 1))
     else
         log_test "FAIL" "$CURRENT_TEST: check_network() not defined"
         FAILED_TESTS+=("$CURRENT_TEST")
-        ((TESTS_FAILED++))
+        TESTS_FAILED=$((TESTS_FAILED + 1))
     fi
 }
 
@@ -192,11 +192,11 @@ test_check_process_health_function_exists() {
 
     if grep -q "^check_process_health()" "$PROJECT_DIR/src/vpn-doctor" 2>/dev/null; then
         log_test "PASS" "$CURRENT_TEST: Function found"
-        ((TESTS_PASSED++))
+        TESTS_PASSED=$((TESTS_PASSED + 1))
     else
         log_test "FAIL" "$CURRENT_TEST: check_process_health() not defined"
         FAILED_TESTS+=("$CURRENT_TEST")
-        ((TESTS_FAILED++))
+        TESTS_FAILED=$((TESTS_FAILED + 1))
     fi
 }
 
@@ -215,11 +215,11 @@ test_doctor_exits_zero_when_healthy() {
 
     if [[ $exit_code -eq 0 ]]; then
         log_test "PASS" "$CURRENT_TEST: Exited with code 0"
-        ((TESTS_PASSED++))
+        TESTS_PASSED=$((TESTS_PASSED + 1))
     else
         log_test "FAIL" "$CURRENT_TEST: Expected exit code 0, got $exit_code"
         FAILED_TESTS+=("$CURRENT_TEST")
-        ((TESTS_FAILED++))
+        TESTS_FAILED=$((TESTS_FAILED + 1))
     fi
 }
 
@@ -241,11 +241,11 @@ test_doctor_detects_missing_dependency() {
     # For now, just check that it runs (exit code doesn't matter for this test)
     if [[ $exit_code -ge 0 ]]; then
         log_test "PASS" "$CURRENT_TEST: Script executed (actual validation pending implementation)"
-        ((TESTS_PASSED++))
+        TESTS_PASSED=$((TESTS_PASSED + 1))
     else
         log_test "FAIL" "$CURRENT_TEST: Script failed to execute"
         FAILED_TESTS+=("$CURRENT_TEST")
-        ((TESTS_FAILED++))
+        TESTS_FAILED=$((TESTS_FAILED + 1))
     fi
 }
 
@@ -275,11 +275,11 @@ test_doctor_detects_insecure_permissions() {
     # Should exit with warning (code 2) or error (code 1)
     if [[ $exit_code -eq 1 ]] || [[ $exit_code -eq 2 ]]; then
         log_test "PASS" "$CURRENT_TEST: Detected insecure permissions (exit code $exit_code)"
-        ((TESTS_PASSED++))
+        TESTS_PASSED=$((TESTS_PASSED + 1))
     else
         log_test "FAIL" "$CURRENT_TEST: Should detect insecure permissions (exit code $exit_code)"
         FAILED_TESTS+=("$CURRENT_TEST")
-        ((TESTS_FAILED++))
+        TESTS_FAILED=$((TESTS_FAILED + 1))
     fi
 }
 
@@ -310,11 +310,11 @@ test_doctor_validates_credential_format() {
     # Should detect invalid format
     if [[ $exit_code -ne 0 ]] || echo "$output" | grep -qi "credential\|format\|invalid"; then
         log_test "PASS" "$CURRENT_TEST: Detected invalid credential format"
-        ((TESTS_PASSED++))
+        TESTS_PASSED=$((TESTS_PASSED + 1))
     else
         log_test "FAIL" "$CURRENT_TEST: Should detect invalid credential format"
         FAILED_TESTS+=("$CURRENT_TEST")
-        ((TESTS_FAILED++))
+        TESTS_FAILED=$((TESTS_FAILED + 1))
     fi
 }
 
@@ -346,11 +346,11 @@ test_doctor_counts_ovpn_profiles() {
     # Should mention finding profiles
     if echo "$output" | grep -qi "profile\|ovpn\|3"; then
         log_test "PASS" "$CURRENT_TEST: Detected .ovpn profiles"
-        ((TESTS_PASSED++))
+        TESTS_PASSED=$((TESTS_PASSED + 1))
     else
         log_test "FAIL" "$CURRENT_TEST: Should report .ovpn profile count"
         FAILED_TESTS+=("$CURRENT_TEST")
-        ((TESTS_FAILED++))
+        TESTS_FAILED=$((TESTS_FAILED + 1))
     fi
 }
 
