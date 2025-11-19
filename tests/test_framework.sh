@@ -10,7 +10,7 @@ unalias grep 2> /dev/null || true
 if [[ -z "${TEST_FRAMEWORK_LOADED:-}" ]]; then
     TEST_FRAMEWORK_LOADED=1
     # shellcheck disable=SC2034  # TEST_DIR used by tests that source this framework
-    TEST_DIR="$(dirname "$(realpath "$0")")"
+    TEST_DIR="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
     # shellcheck disable=SC2034  # PROJECT_DIR used by tests that source this framework
     PROJECT_DIR="$(dirname "$TEST_DIR")"
     TESTS_PASSED=0
