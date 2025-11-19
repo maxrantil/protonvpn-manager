@@ -64,18 +64,18 @@ source "$PROJECT_DIR/src/vpn-connector" 2> /dev/null || {
 # Test helper functions
 start_test() {
     local test_name="$1"
-    ((TESTS_RUN++))
+    TESTS_RUN=$((TESTS_RUN + 1))
     echo -n "Testing: $test_name ... "
 }
 
 pass_test() {
-    ((TESTS_PASSED++))
+    TESTS_PASSED=$((TESTS_PASSED + 1))
     echo "✓ PASS"
 }
 
 fail_test() {
     local message="${1:-}"
-    ((TESTS_FAILED++))
+    TESTS_FAILED=$((TESTS_FAILED + 1))
     echo "✗ FAIL${message:+: $message}"
 }
 
