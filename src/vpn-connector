@@ -711,22 +711,22 @@ detect_accessibility_mode() {
     fi
 
     # 2. GNOME accessibility settings (most reliable for GUI screen readers)
-    if command -v gsettings &>/dev/null; then
+    if command -v gsettings &> /dev/null; then
         local screen_reader_enabled
-        screen_reader_enabled=$(gsettings get org.gnome.desktop.a11y.applications screen-reader-enabled 2>/dev/null || echo "false")
+        screen_reader_enabled=$(gsettings get org.gnome.desktop.a11y.applications screen-reader-enabled 2> /dev/null || echo "false")
         if [[ "$screen_reader_enabled" == "true" ]]; then
             return 0
         fi
     fi
 
     # 3. Active screen reader process detection
-    if pgrep -x "orca" &>/dev/null || pgrep -x "fenrir" &>/dev/null; then
+    if pgrep -x "orca" &> /dev/null || pgrep -x "fenrir" &> /dev/null; then
         return 0
     fi
 
     # 4. Console-based indicators (braille display)
-    if [[ "$TERM" == "linux" ]] && command -v brltty &>/dev/null; then
-        return 0  # Console with braille display
+    if [[ "$TERM" == "linux" ]] && command -v brltty &> /dev/null; then
+        return 0 # Console with braille display
     fi
 
     # 5. NO_COLOR also implies text-only preference
@@ -751,7 +751,7 @@ announce_connection_status() {
             initializing)
                 echo "[INFO] VPN connection starting: $message"
                 ;;
-            establishing|configuring|verifying)
+            establishing | configuring | verifying)
                 echo "[PROGRESS] VPN connection in progress: $message"
                 ;;
             connected)
@@ -768,11 +768,11 @@ announce_connection_status() {
         # Visual mode: carriage return + spinner + message
         case "$stage" in
             connected)
-                echo ""  # New line for final state
+                echo "" # New line for final state
                 echo -e "\033[1;32m✓ $message\033[0m"
                 ;;
             failed)
-                echo ""  # New line for final state
+                echo "" # New line for final state
                 echo -e "\033[1;31m✗ $message\033[0m"
                 ;;
             *)
