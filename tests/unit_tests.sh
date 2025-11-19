@@ -24,11 +24,11 @@ test_country_code_validation() {
     for code in "${valid_codes[@]}"; do
         if echo "$supported_countries" | grep -q "$code"; then
             log_test "PASS" "$CURRENT_TEST: $code is a valid country code"
-            ((TESTS_PASSED++))
+            TESTS_PASSED=$((TESTS_PASSED + 1))
         else
             log_test "FAIL" "$CURRENT_TEST: $code should be valid"
             FAILED_TESTS+=("$CURRENT_TEST: $code validation")
-            ((TESTS_FAILED++))
+            TESTS_FAILED=$((TESTS_FAILED + 1))
         fi
     done
 
@@ -37,11 +37,11 @@ test_country_code_validation() {
     for code in "${invalid_codes[@]}"; do
         if [[ ${#code} -ne 2 ]] || ! echo "$supported_countries" | grep -q "$code"; then
             log_test "PASS" "$CURRENT_TEST: $code is correctly identified as invalid"
-            ((TESTS_PASSED++))
+            TESTS_PASSED=$((TESTS_PASSED + 1))
         else
             log_test "FAIL" "$CURRENT_TEST: $code should be invalid"
             FAILED_TESTS+=("$CURRENT_TEST: $code invalidation")
-            ((TESTS_FAILED++))
+            TESTS_FAILED=$((TESTS_FAILED + 1))
         fi
     done
 }
@@ -125,10 +125,10 @@ profile3.ovpn|100|$(date +%s)"
     # Cache should be very recent (less than 10 seconds)
     if [[ $cache_age -lt 10 ]]; then
         log_test "PASS" "$CURRENT_TEST: Cache age calculation works ($cache_age seconds)"
-        ((TESTS_PASSED++))
+        TESTS_PASSED=$((TESTS_PASSED + 1))
     else
         log_test "FAIL" "$CURRENT_TEST: Cache age calculation failed ($cache_age seconds)"
-        ((TESTS_FAILED++))
+        TESTS_FAILED=$((TESTS_FAILED + 1))
     fi
 
     rm -f "$test_cache"
@@ -143,11 +143,11 @@ test_command_availability() {
     for cmd in "${required_commands[@]}"; do
         if command -v "$cmd" > /dev/null 2>&1; then
             log_test "PASS" "$CURRENT_TEST: Command '$cmd' is available"
-            ((TESTS_PASSED++))
+            TESTS_PASSED=$((TESTS_PASSED + 1))
         else
             log_test "FAIL" "$CURRENT_TEST: Required command '$cmd' not found"
             FAILED_TESTS+=("$CURRENT_TEST: Missing command $cmd")
-            ((TESTS_FAILED++))
+            TESTS_FAILED=$((TESTS_FAILED + 1))
         fi
     done
 }
@@ -167,10 +167,10 @@ test_path_resolution() {
     # Test that scripts are executable
     if [[ -x "$vpn_script" ]]; then
         log_test "PASS" "$CURRENT_TEST: VPN script is executable"
-        ((TESTS_PASSED++))
+        TESTS_PASSED=$((TESTS_PASSED + 1))
     else
         log_test "FAIL" "$CURRENT_TEST: VPN script is not executable"
-        ((TESTS_FAILED++))
+        TESTS_FAILED=$((TESTS_FAILED + 1))
     fi
 }
 
