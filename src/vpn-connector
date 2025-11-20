@@ -233,7 +233,7 @@ rebuild_cache() {
         echo "# CACHE_MTIME=${dir_mtime}"
         echo "# CACHE_DIR=${LOCATIONS_DIR}"
         echo "# GENERATED=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-        echo "# CACHE_VALIDATED=1"  # Issue #163: Signature indicating all entries were validated
+        echo "# CACHE_VALIDATED=1" # Issue #163: Signature indicating all entries were validated
     } > "$temp_cache" || {
         rm -f "$temp_cache"
         exec 201>&- # Release lock
