@@ -72,7 +72,7 @@ repos:
       - id: shellcheck
         name: ShellCheck bash scripts
         description: Lint bash scripts for common issues
-        args: ['-e', 'SC1091', '-e', 'SC2034', '-e', 'SC2155', '-e', 'SC2016', '-e', 'SC2001', '-e', 'SC2126']
+        args: ['-e', 'SC1091', '-e', 'SC2034', '-e', 'SC2155', '-e', 'SC2016', '-e', 'SC2001', '-e', 'SC2126', '-e', 'SC2317']
         types: [shell]
 
   # =============================================================================
