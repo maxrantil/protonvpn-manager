@@ -156,6 +156,12 @@ validate_and_secure_credentials() {
             return 1
         fi
 
+        # CRITICAL: Re-verify it's not a symlink after chmod (TOCTOU protection)
+        if [[ -L "$cred_file" ]]; then
+            echo "FATAL: Credentials file became symlink during chmod (TOCTOU attack detected)" >&2
+            return 1
+        fi
+
         # Re-verify after change (HIGH-5 fix)
         perms=$(stat -c "%a" "$cred_file" 2> /dev/null)
         if [[ "$perms" != "600" ]]; then
