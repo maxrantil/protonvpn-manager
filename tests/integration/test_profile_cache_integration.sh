@@ -5,7 +5,6 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(dirname "$(realpath "$0")")"
-TEST_DIR="$SCRIPT_DIR"
 PROJECT_DIR="$(realpath "$SCRIPT_DIR/../..")"
 
 # Source test framework
