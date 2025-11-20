@@ -1,0 +1,156 @@
+#!/bin/bash
+# ABOUTME: Centralized temp file manager for coordinated cleanup
+# ABOUTME: Provides registry, crash recovery, and thread-safe temp file tracking
+
+# Default registry location (can be overridden by tests)
+: "${TEMP_FILE_REGISTRY:=/tmp/vpn-temp-registry-$$}"
+: "${TEMP_FILE_LOCK:=${TEMP_FILE_REGISTRY}.lock}"
+
+# Initialize temp file manager
+# Sets up registry and installs trap handlers
+# Call this explicitly from scripts that use temp file management
+init_temp_file_manager() {
+    # Ensure parent directory exists for registry and lock files
+    local registry_dir
+    registry_dir=$(dirname "$TEMP_FILE_REGISTRY")
+    mkdir -p "$registry_dir" 2>/dev/null || true
+
+    # Create registry file if it doesn't exist
+    touch "$TEMP_FILE_REGISTRY" 2>/dev/null || {
+        echo "Warning: Could not create temp file registry at $TEMP_FILE_REGISTRY" >&2
+        return 1
+    }
+
+    # Set restrictive permissions
+    chmod 600 "$TEMP_FILE_REGISTRY" 2>/dev/null
+
+    # Install trap handlers for cleanup on exit/crash
+    # Use EXIT for normal exits, INT/TERM for signals
+    # Note: These append to existing traps if any
+    trap 'cleanup_temp_files; rm -f "$TEMP_FILE_REGISTRY" "$TEMP_FILE_LOCK"' EXIT
+    trap 'cleanup_temp_files; rm -f "$TEMP_FILE_REGISTRY" "$TEMP_FILE_LOCK"; exit 130' INT
+    trap 'cleanup_temp_files; rm -f "$TEMP_FILE_REGISTRY" "$TEMP_FILE_LOCK"; exit 143' TERM
+
+    return 0
+}
+
+# Register a temp file for cleanup
+# Usage: register_temp_file <filepath>
+register_temp_file() {
+    local filepath="$1"
+
+    if [[ -z "$filepath" ]]; then
+        echo "Error: register_temp_file requires a file path" >&2
+        return 1
+    fi
+
+    # Use flock for thread-safe concurrent access
+    (
+        flock -x 200 || return 1
+
+        # Add to registry if not already present
+        if ! grep -qxF "$filepath" "$TEMP_FILE_REGISTRY" 2>/dev/null; then
+            echo "$filepath" >> "$TEMP_FILE_REGISTRY"
+        fi
+
+    ) 200>"$TEMP_FILE_LOCK"
+
+    return 0
+}
+
+# Unregister a temp file (removes from registry without deleting)
+# Usage: unregister_temp_file <filepath>
+unregister_temp_file() {
+    local filepath="$1"
+
+    if [[ -z "$filepath" ]]; then
+        echo "Error: unregister_temp_file requires a file path" >&2
+        return 1
+    fi
+
+    # Use flock for thread-safe concurrent access
+    (
+        flock -x 200 || return 1
+
+        # Create temp file for filtered output
+        local temp_registry
+        temp_registry=$(mktemp "${TEMP_FILE_REGISTRY}.XXXXXX") || return 1
+
+        # Remove the specified file from registry
+        if [[ -f "$TEMP_FILE_REGISTRY" ]]; then
+            grep -vxF "$filepath" "$TEMP_FILE_REGISTRY" > "$temp_registry" 2>/dev/null || true
+            mv "$temp_registry" "$TEMP_FILE_REGISTRY"
+            chmod 600 "$TEMP_FILE_REGISTRY" 2>/dev/null
+        fi
+
+        rm -f "$temp_registry" 2>/dev/null || true
+
+    ) 200>"$TEMP_FILE_LOCK"
+
+    return 0
+}
+
+# Cleanup all registered temp files
+# Safe to call multiple times - handles missing files gracefully
+cleanup_temp_files() {
+    # Skip if registry doesn't exist (already cleaned up)
+    [[ -f "$TEMP_FILE_REGISTRY" ]] || return 0
+
+    # Use flock for thread-safe access
+    # Create lock file parent directory if needed
+    local lock_dir
+    lock_dir=$(dirname "$TEMP_FILE_LOCK")
+    mkdir -p "$lock_dir" 2>/dev/null || true
+
+    (
+        # Try to acquire lock, but don't fail if lock file can't be created
+        flock -x 200 2>/dev/null || return 0
+
+        # Read all registered files and remove them
+        if [[ -f "$TEMP_FILE_REGISTRY" ]]; then
+            while IFS= read -r filepath; do
+                # Skip empty lines
+                [[ -z "$filepath" ]] && continue
+
+                # Remove file if it exists (no error if missing)
+                rm -f "$filepath" 2>/dev/null || true
+            done < "$TEMP_FILE_REGISTRY"
+
+            # Empty the registry
+            : > "$TEMP_FILE_REGISTRY"
+        fi
+
+    ) 200>"$TEMP_FILE_LOCK" 2>/dev/null
+
+    return 0
+}
+
+# List all registered temp files (for debugging)
+list_temp_files() {
+    if [[ -f "$TEMP_FILE_REGISTRY" ]]; then
+        cat "$TEMP_FILE_REGISTRY"
+    fi
+}
+
+# Create and register a temp file in one operation
+# Returns the temp file path
+# Usage: filepath=$(create_temp_file [template])
+create_temp_file() {
+    local template="${1:-/tmp/vpn-temp.XXXXXXXXXX}"
+    local filepath
+
+    filepath=$(mktemp "$template") || {
+        echo "Error: Failed to create temp file" >&2
+        return 1
+    }
+
+    # Set restrictive permissions
+    chmod 600 "$filepath" 2>/dev/null
+
+    # Register for cleanup
+    register_temp_file "$filepath"
+
+    # Return the filepath
+    echo "$filepath"
+    return 0
+}
