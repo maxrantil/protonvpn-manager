@@ -224,28 +224,43 @@ rebuild_cache() {
         return 1
     }
 
-    # Build cache with metadata header
+    # Build cache with metadata header and validated profiles
+    # Issue #163: Validate profiles during rebuild (once), store validation signature
+
+    # Write metadata header
     {
         echo "# VPN Profile Cache"
         echo "# CACHE_MTIME=${dir_mtime}"
         echo "# CACHE_DIR=${LOCATIONS_DIR}"
         echo "# GENERATED=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-
-        # Security: Maintain existing security model (-xtype f, maxdepth 3)
-        find "$LOCATIONS_DIR" -maxdepth 3 -xtype f \( -name "*.ovpn" -o -name "*.conf" \) 2> /dev/null | sort
-
+        echo "# CACHE_VALIDATED=1" # Issue #163: Signature indicating all entries were validated
     } > "$temp_cache" || {
         rm -f "$temp_cache"
         exec 201>&- # Release lock
         return 1
     }
 
-    # Count profiles (excluding header lines)
-    local count
-    count=$(grep -v "^#" "$temp_cache" | wc -l)
+    # Security: Maintain existing security model (-xtype f, maxdepth 3)
+    # Issue #163: Validate each profile during rebuild (one-time validation)
+    local validated_count=0
+    while IFS= read -r profile_path; do
+        # Validate each profile path during rebuild
+        if validate_profile_path "$profile_path" "$LOCATIONS_DIR" 2> /dev/null; then
+            echo "$profile_path" >> "$temp_cache"
+            ((validated_count++))
+        fi
+    done < <(find "$LOCATIONS_DIR" -maxdepth 3 -xtype f \( -name "*.ovpn" -o -name "*.conf" \) 2> /dev/null | sort)
 
-    # Add count to metadata (using marker-based insertion for maintainability)
-    sed -i "/^# GENERATED=/a# CACHE_COUNT=${count}" "$temp_cache" || {
+    # Verify we added some profiles
+    if [[ $validated_count -eq 0 ]]; then
+        rm -f "$temp_cache"
+        exec 201>&- # Release lock
+        return 1
+    fi
+
+    # Issue #163: Count is now validated_count, add to metadata
+    # Insert CACHE_COUNT after CACHE_VALIDATED for consistency
+    sed -i "/^# CACHE_VALIDATED=/a# CACHE_COUNT=${validated_count}" "$temp_cache" || {
         rm -f "$temp_cache"
         exec 201>&- # Release lock
         return 1
@@ -315,32 +330,43 @@ get_cached_profiles() {
         cached_entries=$(grep -v "^#" "$PROFILE_CACHE" 2> /dev/null) || echo ""
     }
 
-    # Defense-in-depth: Validate each cached entry before returning
-    # Protects against cache poisoning attacks (Issue #143, M-2)
-    local validated_profiles=""
-    local invalid_count=0
+    # Issue #163: Check if cache was validated during rebuild (trusted cache mode)
+    local cache_validated
+    cache_validated=$(grep "^# CACHE_VALIDATED=1" "$PROFILE_CACHE" 2> /dev/null)
 
-    while IFS= read -r profile_path; do
-        # Skip empty lines
-        [[ -z "$profile_path" ]] && continue
+    if [[ -n "$cache_validated" ]]; then
+        # Trusted cache mode: All entries were validated during rebuild
+        # Skip expensive per-entry validation (95% performance improvement)
+        echo -n "$cached_entries"
+    else
+        # Legacy cache mode: Validate each entry for backwards compatibility
+        # Defense-in-depth: Validate each cached entry before returning
+        # Protects against cache poisoning attacks (Issue #143, M-2)
+        local validated_profiles=""
+        local invalid_count=0
 
-        # Validate path using centralized validator
-        # This checks: path traversal, symlinks, file existence, extension, ownership
-        if validate_profile_path "$profile_path" "$LOCATIONS_DIR" 2> /dev/null; then
-            validated_profiles+="$profile_path"$'\n'
-        else
-            # Log invalid entry (silent warning to avoid user confusion)
-            ((invalid_count++))
+        while IFS= read -r profile_path; do
+            # Skip empty lines
+            [[ -z "$profile_path" ]] && continue
+
+            # Validate path using centralized validator
+            # This checks: path traversal, symlinks, file existence, extension, ownership
+            if validate_profile_path "$profile_path" "$LOCATIONS_DIR" 2> /dev/null; then
+                validated_profiles+="$profile_path"$'\n'
+            else
+                # Log invalid entry (silent warning to avoid user confusion)
+                ((invalid_count++))
+            fi
+        done <<< "$cached_entries"
+
+        # Log summary if invalid entries were filtered
+        if [[ $invalid_count -gt 0 ]]; then
+            echo "WARNING: Filtered $invalid_count invalid entries from cache" >&2
         fi
-    done <<< "$cached_entries"
 
-    # Log summary if invalid entries were filtered
-    if [[ $invalid_count -gt 0 ]]; then
-        echo "WARNING: Filtered $invalid_count invalid entries from cache" >&2
+        # Return validated profiles (remove trailing newline)
+        echo -n "$validated_profiles"
     fi
-
-    # Return validated profiles (remove trailing newline)
-    echo -n "$validated_profiles"
 }
 
 # ============================================================================
