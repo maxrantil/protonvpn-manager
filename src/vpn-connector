@@ -1127,19 +1127,45 @@ save_performance_cache() {
     log_message "Performance cache updated with $(echo "$cache_data" | wc -l) entries" "$CONNECTION_LOG"
 }
 
+# Resolve profile path from profile name (Issue #141: Extract duplicate logic)
+# Args: $1 = profile_name, $2 = country_filter (optional)
+# Returns: Full path to profile file, or empty string if not found
+resolve_profile_path() {
+    local profile_name="$1"
+    local country_filter="${2:-}"
+
+    # Validate input: reject empty profile names (prevents matching all profiles)
+    [[ -z "$profile_name" ]] && return 1
+
+    local profile_path
+
+    # Primary resolution: match with extension
+    if [[ -n "$country_filter" ]]; then
+        # Flexible matching for country-filtered profiles (anywhere in path)
+        profile_path=$(get_cached_profiles | grep -E "${profile_name}.*\.(ovpn|conf)$" | head -n1)
+    else
+        # Strict matching for non-country profiles (exact filename)
+        profile_path=$(get_cached_profiles | grep -E "/${profile_name}\.(ovpn|conf)$" | head -n1)
+    fi
+
+    # Fallback: Partial match if primary resolution failed
+    if [[ ! -f "$profile_path" ]]; then
+        profile_path=$(get_cached_profiles | grep "$profile_name" | head -n1)
+    fi
+
+    # Return path (will be empty if no match found)
+    echo "$profile_path"
+}
+
 get_cached_best_profile() {
     local country_filter="$1"
 
     # Use our comprehensive performance cache system
     local best_profile_name
     if best_profile_name=$("$VPN_DIR/best-vpn-profile" best "$country_filter" 2> /dev/null); then
-        # Use cached profile list for performance (Issue #63)
+        # Use helper function to resolve profile path (Issue #141)
         local profile_path
-        if [[ -n "$country_filter" ]]; then
-            profile_path=$(get_cached_profiles | grep -E "${best_profile_name}.*\.(ovpn|conf)$" | head -n1)
-        else
-            profile_path=$(get_cached_profiles | grep -E "/${best_profile_name}\.(ovpn|conf)$" | head -n1)
-        fi
+        profile_path=$(resolve_profile_path "$best_profile_name" "$country_filter")
 
         if [[ -f "$profile_path" ]]; then
             echo -e "\033[1;32mCached best server: $best_profile_name\033[0m"
@@ -1147,13 +1173,6 @@ get_cached_best_profile() {
             return 0
         else
             echo -e "\033[1;33mCached profile path not found for: $best_profile_name\033[0m"
-            # Fallback: Search cached profiles for partial match
-            profile_path=$(get_cached_profiles | grep "$best_profile_name" | head -n1)
-            if [[ -f "$profile_path" ]]; then
-                echo -e "\033[1;32mUsing cached closest match: $(basename "$profile_path")\033[0m"
-                echo "$profile_path"
-                return 0
-            fi
         fi
     fi
 
@@ -1177,13 +1196,9 @@ test_and_cache_performance() {
     # Use our comprehensive performance testing engine
     local best_profile_name
     if best_profile_name=$("$VPN_DIR/best-vpn-profile" fresh "$country_filter" 2> /dev/null); then
-        # Use cached profile list for performance (Issue #63)
+        # Use helper function to resolve profile path (Issue #141)
         local profile_path
-        if [[ -n "$country_filter" ]]; then
-            profile_path=$(get_cached_profiles | grep -E "${best_profile_name}.*\.(ovpn|conf)$" | head -n1)
-        else
-            profile_path=$(get_cached_profiles | grep -E "/${best_profile_name}\.(ovpn|conf)$" | head -n1)
-        fi
+        profile_path=$(resolve_profile_path "$best_profile_name" "$country_filter")
 
         if [[ -f "$profile_path" ]]; then
             echo
@@ -1192,13 +1207,6 @@ test_and_cache_performance() {
             return 0
         else
             echo -e "\033[1;33mProfile path not found for: $best_profile_name\033[0m"
-            # Fallback: Search cached profiles for partial match
-            profile_path=$(get_cached_profiles | grep "$best_profile_name" | head -n1)
-            if [[ -f "$profile_path" ]]; then
-                echo -e "\033[1;32mUsing closest match: $(basename "$profile_path")\033[0m"
-                echo "$profile_path"
-                return 0
-            fi
         fi
     fi
 
