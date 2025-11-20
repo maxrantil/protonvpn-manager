@@ -27,7 +27,7 @@ fi
 
 # Source temp file manager for coordinated cleanup
 # shellcheck source=src/temp-file-manager
-source "$VPN_DIR/temp-file-manager" 2>/dev/null || {
+source "$VPN_DIR/temp-file-manager" 2> /dev/null || {
     echo "Warning: Could not load temp-file-manager, temp file cleanup may be incomplete" >&2
 }
 
@@ -187,7 +187,7 @@ rebuild_cache() {
     # Security: Use mktemp for unpredictable temp file name (prevents race conditions)
     # Use temp-file-manager if available for coordinated cleanup
     local temp_cache
-    if type create_temp_file &>/dev/null; then
+    if type create_temp_file &> /dev/null; then
         temp_cache=$(create_temp_file "${cache_file}.XXXXXXXXXX") || {
             exec 201>&- # Release lock on error
             return 1
@@ -434,14 +434,14 @@ release_lock() {
 cleanup_on_exit() {
     release_lock
     # Cleanup temp files if temp-file-manager is loaded
-    if type cleanup_temp_files &>/dev/null; then
-        cleanup_temp_files 2>/dev/null || true
+    if type cleanup_temp_files &> /dev/null; then
+        cleanup_temp_files 2> /dev/null || true
     fi
 }
 
 # Initialize temp file manager if available
-if type init_temp_file_manager &>/dev/null; then
-    init_temp_file_manager 2>/dev/null || true
+if type init_temp_file_manager &> /dev/null; then
+    init_temp_file_manager 2> /dev/null || true
 fi
 
 trap cleanup_on_exit EXIT
