@@ -535,22 +535,15 @@ verify_cleanup_success() {
     fi
 }
 
-hierarchical_process_cleanup() {
-    local force="${1:-false}"
-    local max_cleanup_time=30
-    local start_time
-    start_time=$(date +%s)
-
-    echo -e "\033[1;33mPerforming hierarchical VPN process cleanup...\033[0m"
-    log_message "Hierarchical process cleanup requested (force=$force)" "$VPN_LOG_FILE"
-
-    # Discover all VPN-related processes
+# Discovers and validates VPN processes for cleanup
+# Returns: PIDs via echo (empty if none found)
+discover_and_validate_vpn_processes() {
     local pids
     pids=$(validate_and_discover_processes)
 
     if [[ -z "$pids" ]]; then
         echo -e "\033[1;32m✓ No VPN processes found to cleanup\033[0m"
-        return 0
+        return 1  # Signal no processes found
     fi
 
     local process_count
@@ -562,8 +555,17 @@ hierarchical_process_cleanup() {
     fi
 
     echo "Target processes for cleanup: $(echo "$pids" | tr '\n' ' ')"
+    echo "$pids"
+    return 0
+}
 
-    # Try escalating termination methods
+# Attempts escalated cleanup with timeout protection
+# Args: pids, start_time, max_cleanup_time
+# Returns: 0 if cleanup successful, 1 if all methods exhausted
+attempt_escalated_cleanup_with_timeout() {
+    local pids="$1"
+    local start_time="$2"
+    local max_cleanup_time="$3"
     local escalation_levels=("graceful" "forceful" "sudo" "pattern")
 
     for level in "${escalation_levels[@]}"; do
@@ -571,7 +573,7 @@ hierarchical_process_cleanup() {
         current_time=$(date +%s)
         if [[ $((current_time - start_time)) -gt $max_cleanup_time ]]; then
             echo -e "\033[1;31mCleanup timeout reached (${max_cleanup_time}s), escalating to emergency mode\033[0m"
-            break
+            return 1  # Timeout reached
         fi
 
         echo "Cleanup escalation level: $level"
@@ -613,50 +615,92 @@ hierarchical_process_cleanup() {
         fi
     done
 
-    # Final verification with emergency cleanup if force mode enabled
-    sleep 1
-    if ! verify_cleanup_success; then
-        local final_check
-        final_check=$(pgrep -f "openvpn.*--config" 2> /dev/null || true)
+    return 1  # All escalation methods exhausted
+}
 
-        if [[ "$force" == "true" ]]; then
-            echo -e "\033[1;33mForce mode: Attempting validated emergency process group termination...\033[0m"
-            # Try to kill entire process groups, but only if they contain only OpenVPN processes
-            while IFS= read -r pid; do
-                if validate_openvpn_process "$pid"; then
-                    local pgid
-                    pgid=$(ps -o pgid= -p "$pid" 2> /dev/null | tr -d ' ')
-                    if [[ -n "$pgid" ]]; then
-                        # Check if process group contains only OpenVPN processes
-                        local non_openvpn_count
-                        non_openvpn_count=$(pgrep -g "$pgid" | xargs -r ps -o comm= | grep -c -v "openvpn" || echo 0)
-                        if [[ $non_openvpn_count -eq 0 ]]; then
-                            echo "  Killing validated OpenVPN-only process group $pgid..."
-                            sudo kill -KILL -"$pgid" 2> /dev/null || true
-                        else
-                            log_message "SECURITY: Skipped process group $pgid - contains non-OpenVPN processes" "$VPN_LOG_FILE"
-                        fi
-                    fi
+# Performs emergency process group termination in force mode
+# Returns: 0 if successful, 1 if failed
+perform_emergency_process_group_cleanup() {
+    local final_check
+    final_check=$(pgrep -f "openvpn.*--config" 2> /dev/null || true)
+
+    echo -e "\033[1;33mForce mode: Attempting validated emergency process group termination...\033[0m"
+    # Try to kill entire process groups, but only if they contain only OpenVPN processes
+    while IFS= read -r pid; do
+        if validate_openvpn_process "$pid"; then
+            local pgid
+            pgid=$(ps -o pgid= -p "$pid" 2> /dev/null | tr -d ' ')
+            if [[ -n "$pgid" ]]; then
+                # Check if process group contains only OpenVPN processes
+                local non_openvpn_count
+                non_openvpn_count=$(pgrep -g "$pgid" | xargs -r ps -o comm= | grep -c -v "openvpn" || echo 0)
+                if [[ $non_openvpn_count -eq 0 ]]; then
+                    echo "  Killing validated OpenVPN-only process group $pgid..."
+                    sudo kill -KILL -"$pgid" 2> /dev/null || true
+                else
+                    log_message "SECURITY: Skipped process group $pgid - contains non-OpenVPN processes" "$VPN_LOG_FILE"
                 fi
-            done <<< "$final_check"
-
-            sleep 2
+            fi
         fi
+    done <<< "$final_check"
 
-        # Final check
-        if ! verify_cleanup_success; then
-            final_check=$(pgrep -f "openvpn.*--config" 2> /dev/null || true)
-            echo -e "\033[1;31mFAILED: Cannot cleanup processes $(echo "$final_check" | tr '\n' ' ')\033[0m"
-            echo -e "\033[1;33mRecommendation: Run 'vpn emergency-reset' or consider system reboot\033[0m"
-            return 1
-        else
-            echo -e "\033[1;32m✓ Emergency cleanup successful\033[0m"
-        fi
+    sleep 2
+
+    # Verify emergency cleanup
+    if verify_cleanup_success; then
+        echo -e "\033[1;32m✓ Emergency cleanup successful\033[0m"
+        return 0
     else
-        echo -e "\033[1;32m✓ All VPN processes successfully terminated\033[0m"
+        final_check=$(pgrep -f "openvpn.*--config" 2> /dev/null || true)
+        echo -e "\033[1;31mFAILED: Cannot cleanup processes $(echo "$final_check" | tr '\n' ' ')\033[0m"
+        echo -e "\033[1;33mRecommendation: Run 'vpn emergency-reset' or consider system reboot\033[0m"
+        return 1
+    fi
+}
+
+hierarchical_process_cleanup() {
+    local force="${1:-false}"
+    local max_cleanup_time=30
+    local start_time
+    start_time=$(date +%s)
+
+    echo -e "\033[1;33mPerforming hierarchical VPN process cleanup...\033[0m"
+    log_message "Hierarchical process cleanup requested (force=$force)" "$VPN_LOG_FILE"
+
+    # Discover all VPN-related processes
+    local pids
+    pids=$(discover_and_validate_vpn_processes)
+    local discover_exit=$?
+    if [[ $discover_exit -ne 0 ]]; then
+        return 0  # No processes found, cleanup successful
     fi
 
-    return 0
+    # Try escalating termination methods
+    if attempt_escalated_cleanup_with_timeout "$pids" "$start_time" "$max_cleanup_time"; then
+        return 0  # Cleanup successful
+    fi
+
+    # Final verification with emergency cleanup if force mode enabled
+    sleep 1
+    if verify_cleanup_success; then
+        echo -e "\033[1;32m✓ All VPN processes successfully terminated\033[0m"
+        return 0
+    fi
+
+    # Emergency cleanup in force mode
+    if [[ "$force" == "true" ]]; then
+        if perform_emergency_process_group_cleanup; then
+            return 0
+        else
+            return 1
+        fi
+    else
+        local final_check
+        final_check=$(pgrep -f "openvpn.*--config" 2> /dev/null || true)
+        echo -e "\033[1;31mFAILED: Cannot cleanup processes $(echo "$final_check" | tr '\n' ' ')\033[0m"
+        echo -e "\033[1;33mRecommendation: Run 'vpn cleanup' with force mode or 'vpn emergency-reset'\033[0m"
+        return 1
+    fi
 }
 
 kill_all_vpn() {
