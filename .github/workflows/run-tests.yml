@@ -29,6 +29,14 @@ jobs:
           cd tests
           ./run_tests.sh
 
+      - name: Install VPN Manager
+        run: |
+          ./install.sh
+
+      - name: Run smoke tests
+        run: |
+          ./tests/smoke/run_smoke_tests.sh
+
       - name: Cleanup test processes
         if: always()
         run: |
