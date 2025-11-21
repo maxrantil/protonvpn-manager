@@ -1,0 +1,27 @@
+# Docker test environment for Ubuntu
+FROM ubuntu:22.04
+
+# Prevent interactive prompts during package installation
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install dependencies
+RUN apt-get update && \
+    apt-get install -y openvpn curl bc sudo git && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Create test user (non-root for realistic testing)
+RUN useradd -m -s /bin/bash testuser && \
+    echo "testuser ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+
+# Set working directory
+WORKDIR /app
+
+# Copy VPN manager source
+COPY . /app/
+
+# Switch to test user
+USER testuser
+
+# Default command runs install + smoke tests
+CMD ["bash", "-c", "./install.sh && ./tests/smoke/run_smoke_tests.sh"]

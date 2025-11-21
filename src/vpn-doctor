@@ -63,6 +63,7 @@ QUIET=false
 FIX=false
 JSON_OUTPUT=false
 NO_NETWORK=false
+POST_INSTALL=false
 CHECK_FILTER=""
 
 show_banner() {
@@ -88,6 +89,7 @@ Options:
   --fix               Attempt to auto-fix non-critical issues
   --json              Output results in JSON format
   --no-network        Skip network connectivity checks
+  --post-install      Run post-installation validation checks
   --check=<category>  Run specific check (deps, perms, config, network, process)
 
 Exit Codes:
@@ -98,6 +100,7 @@ Exit Codes:
 
 Examples:
   vpn doctor                    # Run all diagnostic checks
+  vpn doctor --post-install     # Validate post-installation setup
   vpn doctor --verbose          # Detailed diagnostic output
   vpn doctor --fix              # Auto-fix permissions and minor issues
   vpn doctor --check=deps       # Only check dependencies
@@ -538,6 +541,12 @@ parse_args() {
                 NO_NETWORK=true
                 shift
                 ;;
+            --post-install)
+                POST_INSTALL=true
+                QUIET=true
+                NO_NETWORK=true
+                shift
+                ;;
             --check=*)
                 CHECK_FILTER="${1#*=}"
                 shift
@@ -551,9 +560,81 @@ parse_args() {
     done
 }
 
+# Post-installation validation check
+post_install_check() {
+    local install_dir="/usr/local/bin"
+    local required_components=(
+        "vpn"
+        "vpn-manager"
+        "vpn-connector"
+        "vpn-error-handler"
+        "vpn-utils"
+        "vpn-colors"
+        "vpn-validators"
+        "best-vpn-profile"
+        "vpn-doctor"
+    )
+    local failed=0
+
+    # Check 1: All components installed
+    for component in "${required_components[@]}"; do
+        if [[ ! -f "$install_dir/$component" ]]; then
+            echo "ERROR: Component missing: $component" >&2
+            ((failed++))
+        fi
+    done
+
+    # Check 2: Components are executable with correct permissions
+    for component in "${required_components[@]}"; do
+        if [[ -f "$install_dir/$component" ]]; then
+            if [[ ! -x "$install_dir/$component" ]]; then
+                echo "ERROR: Component not executable: $component" >&2
+                ((failed++))
+            fi
+
+            # Check permissions are 755
+            local perms
+            perms=$(stat -c "%a" "$install_dir/$component" 2>/dev/null || stat -f "%OLp" "$install_dir/$component" 2>/dev/null)
+            if [[ "$perms" != "755" ]]; then
+                echo "WARNING: Incorrect permissions: $component ($perms, expected 755)" >&2
+                # Don't count as failure, just warning
+            fi
+        fi
+    done
+
+    # Check 3: Config directory exists
+    if [[ ! -d "$CONFIG_DIR" ]]; then
+        echo "ERROR: Config directory missing: $CONFIG_DIR" >&2
+        ((failed++))
+    fi
+
+    if [[ ! -d "$LOCATIONS_DIR" ]]; then
+        echo "ERROR: Locations directory missing: $LOCATIONS_DIR" >&2
+        ((failed++))
+    fi
+
+    # Return appropriate exit code
+    if [[ $failed -eq 0 ]]; then
+        echo "✓ Post-installation validation passed"
+        return 0
+    else
+        echo "✗ Post-installation validation failed ($failed errors)"
+        return 1
+    fi
+}
+
 # Main execution
 main() {
     parse_args "$@"
+
+    # Post-installation check uses different flow
+    if [[ "$POST_INSTALL" == "true" ]]; then
+        if post_install_check; then
+            exit $EXIT_HEALTHY
+        else
+            exit $EXIT_CRITICAL
+        fi
+    fi
 
     show_banner
 
