@@ -593,7 +593,8 @@ post_install_check() {
             fi
 
             # Check permissions are 755
-            local perms=$(stat -c "%a" "$install_dir/$component" 2>/dev/null || stat -f "%OLp" "$install_dir/$component" 2>/dev/null)
+            local perms
+            perms=$(stat -c "%a" "$install_dir/$component" 2>/dev/null || stat -f "%OLp" "$install_dir/$component" 2>/dev/null)
             if [[ "$perms" != "755" ]]; then
                 echo "WARNING: Incorrect permissions: $component ($perms, expected 755)" >&2
                 # Don't count as failure, just warning
