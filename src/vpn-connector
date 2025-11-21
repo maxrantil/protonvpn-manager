@@ -8,6 +8,10 @@ CONFIG_DIR="${VPN_CONFIG_DIR:-$HOME/.config/vpn}"
 LOCATIONS_DIR="${LOCATIONS_DIR:-$CONFIG_DIR/locations}"
 CREDENTIALS_FILE="${CREDENTIALS_FILE:-$CONFIG_DIR/vpn-credentials.txt}"
 
+# Security: Hardcode trusted OpenVPN binary path to prevent PATH manipulation (Issue #165)
+# HIGH-severity: Prevents privilege escalation via malicious PATH
+OPENVPN_BINARY="/usr/bin/openvpn"
+
 # Backward compatibility: Check for old credentials filename
 if [[ ! -f "$CREDENTIALS_FILE" ]] && [[ -f "$CONFIG_DIR/credentials.txt" ]]; then
     echo "⚠️  WARNING: Found old credentials file 'credentials.txt'" >&2
@@ -910,6 +914,14 @@ connect_openvpn_profile() {
         return 1
     fi
 
+    # Security: Verify OpenVPN binary exists at trusted path (Issue #165, HIGH-severity)
+    # Prevents privilege escalation via PATH manipulation
+    if [[ ! -x "$OPENVPN_BINARY" ]]; then
+        echo "ERROR: OpenVPN not found at trusted path: $OPENVPN_BINARY" >&2
+        log_message "SECURITY: OpenVPN binary not found at trusted path" "$CONNECTION_LOG"
+        return 1
+    fi
+
     # Check for existing VPN processes (any protocol)
     if ! check_vpn_processes; then
         return 1
@@ -936,7 +948,8 @@ connect_openvpn_profile() {
         sudo rm -f "/tmp/openvpn.log" 2> /dev/null || true # Fallback location cleanup
 
         # Start OpenVPN daemon without aggressive timeout
-        sudo openvpn \
+        # Security: Use hardcoded trusted path (Issue #165)
+        sudo "$OPENVPN_BINARY" \
             --config "$profile_path" \
             --auth-user-pass "$CREDENTIALS_FILE" \
             --daemon \
