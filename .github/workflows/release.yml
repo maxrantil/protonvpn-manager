@@ -1,0 +1,310 @@
+name: Release Workflow
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+      - 'v*.*.*-alpha.*'
+      - 'v*.*.*-beta.*'
+      - 'v*.*.*-rc.*'
+
+permissions:
+  contents: write
+
+jobs:
+  validate-tag:
+    name: Validate Release Tag
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.extract.outputs.version }}
+      is_prerelease: ${{ steps.extract.outputs.is_prerelease }}
+    steps:
+      - name: Extract version info
+        id: extract
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          VERSION="${TAG#v}"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+          # Check if this is a pre-release
+          if [[ "$VERSION" =~ (alpha|beta|rc) ]]; then
+            echo "is_prerelease=true" >> $GITHUB_OUTPUT
+            echo "Pre-release detected: $VERSION"
+          else
+            echo "is_prerelease=false" >> $GITHUB_OUTPUT
+            echo "Stable release: $VERSION"
+          fi
+
+  run-tests:
+    name: Run Full Test Suite
+    runs-on: ubuntu-latest
+    needs: validate-tag
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for changelog
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y openvpn coreutils curl bc libnotify-bin wireguard-tools iproute2
+
+      - name: Run all tests
+        run: |
+          cd tests
+          ./run_tests.sh
+
+      - name: Cleanup test processes
+        if: always()
+        run: |
+          pkill -f "sleep" || true
+          jobs -p | xargs -r kill 2>/dev/null || true
+          wait 2>/dev/null || true
+
+  build-release:
+    name: Build Release Artifacts
+    runs-on: ubuntu-latest
+    needs: [validate-tag, run-tests]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for changelog
+
+      - name: Install release tools
+        run: |
+          # Install git-chglog for changelog generation
+          wget https://github.com/git-chglog/git-chglog/releases/download/v0.15.4/git-chglog_0.15.4_linux_amd64.tar.gz
+          tar -xzf git-chglog_0.15.4_linux_amd64.tar.gz
+          sudo mv git-chglog /usr/local/bin/
+          chmod +x /usr/local/bin/git-chglog
+
+          # Verify installation
+          git-chglog --version
+
+      - name: Setup GPG for signing (if configured)
+        if: ${{ secrets.GPG_PRIVATE_KEY != '' }}  # gitleaks:allow
+        run: |
+          echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --import --batch --yes  # gitleaks:allow
+          echo "${{ secrets.GPG_PASSPHRASE }}" | gpg --batch --yes --pinentry-mode loopback --passphrase-fd 0 --quick-add-uid "$(gpg --list-secret-keys --keyid-format LONG | grep sec | awk '{print $2}' | cut -d'/' -f2)" "GitHub Release Bot"
+
+      - name: Inject version into scripts
+        run: |
+          VERSION="${{ needs.validate-tag.outputs.version }}"
+
+          # Run version injection script
+          ./scripts/inject-version.sh "$VERSION"
+
+          # Verify version was injected
+          echo "Verifying version injection:"
+          grep "VERSION=" src/vpn || echo "Warning: VERSION not found in src/vpn"
+
+      - name: Generate changelog for this release
+        run: |
+          # Configure git-chglog
+          mkdir -p .chglog
+          cp scripts/chglog-config.yml .chglog/config.yml
+          cp scripts/chglog-template.md .chglog/CHANGELOG.tpl.md
+
+          # Generate changelog for current tag
+          PREVIOUS_TAG=$(git tag --sort=-version:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -2 | tail -1)
+          CURRENT_TAG="${GITHUB_REF#refs/tags/}"
+
+          echo "Generating changelog from $PREVIOUS_TAG to $CURRENT_TAG"
+
+          if [[ -z "$PREVIOUS_TAG" ]]; then
+            # First release - include all history
+            git-chglog --output RELEASE_CHANGELOG.md "$CURRENT_TAG"
+          else
+            # Generate diff from previous tag
+            git-chglog --output RELEASE_CHANGELOG.md "${PREVIOUS_TAG}..${CURRENT_TAG}"
+          fi
+
+          # Show generated changelog
+          echo "Generated changelog:"
+          cat RELEASE_CHANGELOG.md
+
+      - name: Build release artifact
+        run: |
+          VERSION="${{ needs.validate-tag.outputs.version }}"
+          ARTIFACT_NAME="protonvpn-manager-${VERSION}"
+
+          # Create release directory structure
+          mkdir -p "release/${ARTIFACT_NAME}"
+
+          # Copy essential files
+          cp -r src/ "release/${ARTIFACT_NAME}/"
+          cp install.sh "release/${ARTIFACT_NAME}/"
+          cp uninstall.sh "release/${ARTIFACT_NAME}/"
+          cp README.md "release/${ARTIFACT_NAME}/"
+          cp LICENSE "release/${ARTIFACT_NAME}/"
+          cp SECURITY.md "release/${ARTIFACT_NAME}/"
+          cp RELEASE_CHANGELOG.md "release/${ARTIFACT_NAME}/CHANGELOG.md"
+
+          # Copy essential docs (not full docs/ to keep artifact small)
+          mkdir -p "release/${ARTIFACT_NAME}/docs"
+          cp CONTRIBUTING.md "release/${ARTIFACT_NAME}/docs/"
+
+          # Create tarball
+          cd release
+          tar -czf "${ARTIFACT_NAME}.tar.gz" "${ARTIFACT_NAME}/"
+
+          # Generate checksums
+          sha256sum "${ARTIFACT_NAME}.tar.gz" > "${ARTIFACT_NAME}.tar.gz.sha256"
+
+          # Display artifact info
+          echo "Artifact created:"
+          ls -lh "${ARTIFACT_NAME}.tar.gz"
+          echo ""
+          echo "SHA256 checksum:"
+          cat "${ARTIFACT_NAME}.tar.gz.sha256"
+
+      - name: Sign artifact (if GPG configured)
+        if: ${{ secrets.GPG_PRIVATE_KEY != '' }}  # gitleaks:allow
+        run: |
+          VERSION="${{ needs.validate-tag.outputs.version }}"
+          ARTIFACT_NAME="protonvpn-manager-${VERSION}"
+
+          cd release
+          echo "${{ secrets.GPG_PASSPHRASE }}" | gpg --batch --yes --pinentry-mode loopback --passphrase-fd 0 --armor --detach-sign "${ARTIFACT_NAME}.tar.gz"
+
+          echo "GPG signature created:"
+          ls -lh "${ARTIFACT_NAME}.tar.gz.asc"
+
+      - name: Prepare release notes
+        run: |
+          VERSION="${{ needs.validate-tag.outputs.version }}"
+          IS_PRERELEASE="${{ needs.validate-tag.outputs.is_prerelease }}"
+
+          cat > release_notes.md << 'NOTES_EOF'
+          # ProtonVPN Manager v$VERSION
+
+          $(if [[ "$IS_PRERELEASE" == "true" ]]; then echo "**⚠️ Pre-release version - Use with caution**"; echo ""; fi)
+
+          ## Installation
+
+          ```bash
+          # Download and extract
+          wget https://github.com/maxrantil/protonvpn-manager/releases/download/v$VERSION/protonvpn-manager-$VERSION.tar.gz
+          tar -xzf protonvpn-manager-$VERSION.tar.gz
+          cd protonvpn-manager-$VERSION
+
+          # Verify checksum (recommended)
+          sha256sum -c protonvpn-manager-$VERSION.tar.gz.sha256
+
+          # Install
+          ./install.sh
+          ```
+
+          ## Verification
+
+          **SHA256 Checksum:**
+          ```
+          $(cat release/protonvpn-manager-$VERSION.tar.gz.sha256)
+          ```
+
+          $(if [[ -f "release/protonvpn-manager-$VERSION.tar.gz.asc" ]]; then
+            echo "**GPG Signature:**"
+            echo "This release is signed with GPG. Verify with:"
+            echo '```bash'
+            echo "gpg --verify protonvpn-manager-$VERSION.tar.gz.asc protonvpn-manager-$VERSION.tar.gz"
+            echo '```'
+          fi)
+
+          ## Changes
+
+          $(cat RELEASE_CHANGELOG.md)
+
+          ---
+
+          **Full Changelog**: https://github.com/maxrantil/protonvpn-manager/compare/$(git tag --sort=-version:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -2 | tail -1)...v$VERSION
+          NOTES_EOF
+
+          # Expand variables in release notes
+          envsubst < release_notes.md > release_notes_final.md
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "v${{ needs.validate-tag.outputs.version }}"
+          body_path: release_notes_final.md
+          prerelease: ${{ needs.validate-tag.outputs.is_prerelease == 'true' }}
+          files: |
+            release/protonvpn-manager-${{ needs.validate-tag.outputs.version }}.tar.gz
+            release/protonvpn-manager-${{ needs.validate-tag.outputs.version }}.tar.gz.sha256
+            release/protonvpn-manager-${{ needs.validate-tag.outputs.version }}.tar.gz.asc
+          fail_on_unmatched_files: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload artifacts for validation
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-artifacts
+          path: |
+            release/protonvpn-manager-${{ needs.validate-tag.outputs.version }}.tar.gz
+            release/protonvpn-manager-${{ needs.validate-tag.outputs.version }}.tar.gz.sha256
+            release/protonvpn-manager-${{ needs.validate-tag.outputs.version }}.tar.gz.asc
+          retention-days: 90
+
+  validate-release:
+    name: Validate Release Artifact
+    runs-on: ubuntu-latest
+    needs: [validate-tag, build-release]
+    steps:
+      - name: Download release artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: release-artifacts
+
+      - name: Verify checksum
+        run: |
+          VERSION="${{ needs.validate-tag.outputs.version }}"
+          sha256sum -c "protonvpn-manager-${VERSION}.tar.gz.sha256"
+          echo "✅ Checksum verification passed"
+
+      - name: Extract and verify structure
+        run: |
+          VERSION="${{ needs.validate-tag.outputs.version }}"
+          tar -xzf "protonvpn-manager-${VERSION}.tar.gz"
+
+          echo "Verifying artifact structure..."
+          REQUIRED_FILES=(
+            "protonvpn-manager-${VERSION}/src/vpn"
+            "protonvpn-manager-${VERSION}/src/vpn-manager"
+            "protonvpn-manager-${VERSION}/src/vpn-connector"
+            "protonvpn-manager-${VERSION}/install.sh"
+            "protonvpn-manager-${VERSION}/README.md"
+            "protonvpn-manager-${VERSION}/LICENSE"
+          )
+
+          for file in "${REQUIRED_FILES[@]}"; do
+            if [[ ! -f "$file" ]]; then
+              echo "❌ Missing required file: $file"
+              exit 1
+            fi
+          done
+
+          echo "✅ All required files present"
+
+      - name: Test installation (dry-run)
+        run: |
+          VERSION="${{ needs.validate-tag.outputs.version }}"
+          cd "protonvpn-manager-${VERSION}"
+
+          # Verify install script syntax
+          bash -n install.sh
+          echo "✅ Installation script syntax valid"
+
+          # Verify all source scripts have valid syntax
+          for script in src/*; do
+            if [[ -f "$script" ]] && [[ -x "$script" ]]; then
+              bash -n "$script" || {
+                echo "❌ Syntax error in: $script"
+                exit 1
+              }
+            fi
+          done
+
+          echo "✅ All source scripts have valid syntax"
