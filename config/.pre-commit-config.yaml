@@ -381,7 +381,7 @@ repos:
         args:
           - -c
           - |
-            if grep -r --include="*.sh" --include="*.bash" --include="*.py" --include="*.js" --include="*.ts" --include="*.txt" --include="*.yml" --include="*.yaml" --exclude=".pre-commit-config.yaml" -iE "(password|api_key|secret|token|github_token).*=.*['\"\`]\S+" --exclude-dir=tests --exclude-dir=node_modules --exclude-dir=.git .; then
+            if grep -r --include="*.sh" --include="*.bash" --include="*.py" --include="*.js" --include="*.ts" --include="*.txt" --include="*.yml" --include="*.yaml" --exclude=".pre-commit-config.yaml" -iE "(password|api_key|secret|token|github_token).*=.*['\"\`]\S+" --exclude-dir=tests --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=.github .; then
               echo "⚠️  WARNING: Potential credentials found!"
               echo "Review carefully before committing"
               exit 1
