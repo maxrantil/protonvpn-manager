@@ -1279,21 +1279,46 @@ test_and_cache_performance() {
 best_server_connect() {
     local use_cache="$1"
     local country_filter="$2"
+    local profile_path
 
-    if [[ "$use_cache" == "fast" ]] && get_cached_best_profile "$country_filter" > /dev/null; then
-        echo -e "\033[1;36mUsing cached performance data for fast connection\033[0m"
-        # For TDD GREEN phase: simulate fast connection for tests
-        echo -e "\033[1;32m✓ Fast connection simulation completed\033[0m"
-        return 0
-    else
-        # Use best-vpn-profile for performance testing (will create connection)
-        if "$VPN_DIR/best-vpn-profile" best "$country_filter" > /dev/null 2>&1; then
-            echo -e "\033[1;32m✓ Best server connection simulation completed\033[0m"
-            return 0
+    # Fast mode: use cached profile if available
+    if [[ "$use_cache" == "fast" ]]; then
+        local cached_profile
+        if cached_profile=$(get_cached_best_profile "$country_filter" 2> /dev/null); then
+            echo -e "\033[1;36mUsing cached performance data for fast connection\033[0m"
+
+            # Resolve profile path from cached profile name
+            profile_path=$(resolve_profile_path "$cached_profile" "$country_filter")
+
+            if [[ -f "$profile_path" ]]; then
+                echo -e "\033[1;32mCached best server: $cached_profile\033[0m"
+                connect_to_profile "$profile_path"
+                return $?
+            else
+                echo -e "\033[1;33mCached profile not found, running full performance test\033[0m"
+            fi
+        fi
+    fi
+
+    # Full mode: run performance testing to find best server
+    local best_profile_name
+    if best_profile_name=$("$VPN_DIR/best-vpn-profile" best "$country_filter" 2> /dev/null); then
+        # Resolve profile path
+        profile_path=$(resolve_profile_path "$best_profile_name" "$country_filter")
+
+        if [[ -f "$profile_path" ]]; then
+            echo
+            echo -e "\033[1;32mBest server selected: $best_profile_name\033[0m"
+            connect_to_profile "$profile_path"
+            return $?
         else
+            echo -e "\033[1;33mProfile path not found for: $best_profile_name\033[0m"
             return 1
         fi
     fi
+
+    echo -e "\033[1;31mNo suitable server found through performance testing\033[0m"
+    return 1
 }
 
 secure_core_connect() {
