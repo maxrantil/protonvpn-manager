@@ -13,7 +13,7 @@ CREDENTIALS_FILE="${CREDENTIALS_FILE:-$CONFIG_DIR/vpn-credentials.txt}"
 OPENVPN_BINARY="/usr/bin/openvpn"
 
 # Backward compatibility: Check for old credentials filename
-if [[ ! -f "$CREDENTIALS_FILE" ]] && [[ -f "$CONFIG_DIR/credentials.txt" ]]; then
+if [[ ! -f $CREDENTIALS_FILE ]] && [[ -f "$CONFIG_DIR/credentials.txt" ]]; then
     echo "⚠️  WARNING: Found old credentials file 'credentials.txt'" >&2
     echo "   Please rename it to 'vpn-credentials.txt' for consistency:" >&2
     echo "   mv ~/.config/vpn/credentials.txt ~/.config/vpn/vpn-credentials.txt" >&2
@@ -31,27 +31,27 @@ fi
 
 # Source temp file manager for coordinated cleanup
 # shellcheck source=src/temp-file-manager
-source "$VPN_DIR/temp-file-manager" 2>/dev/null || {
+source "$VPN_DIR/temp-file-manager" 2> /dev/null || {
     echo "Warning: Could not load temp-file-manager, temp file cleanup may be incomplete" >&2
 }
 
 # Create secure log directory
 LOG_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/vpn"
-mkdir -p "$LOG_DIR" 2>/dev/null
+mkdir -p "$LOG_DIR" 2> /dev/null
 
 # Security: Use XDG runtime directory for lock files (prevents symlink attacks)
 LOCK_DIR="${XDG_RUNTIME_DIR:-/run/user/$UID}/vpn"
-if [[ ! -d "$LOCK_DIR" ]]; then
-    mkdir -p "$LOCK_DIR" 2>/dev/null || LOCK_DIR="/tmp/vpn_$$"
-    chmod 700 "$LOCK_DIR" 2>/dev/null || {
+if [[ ! -d $LOCK_DIR ]]; then
+    mkdir -p "$LOCK_DIR" 2> /dev/null || LOCK_DIR="/tmp/vpn_$$"
+    chmod 700 "$LOCK_DIR" 2> /dev/null || {
         echo "ERROR: Cannot create secure lock directory" >&2
         exit 1
     }
 fi
 
 # Verify directory permissions after creation
-actual_perms=$(stat -c '%a' "$LOCK_DIR" 2>/dev/null)
-if [[ "$actual_perms" != "700" ]]; then
+actual_perms=$(stat -c '%a' "$LOCK_DIR" 2> /dev/null)
+if [[ $actual_perms != "700" ]]; then
     echo "ERROR: Lock directory has insecure permissions: $actual_perms" >&2
     exit 1
 fi
@@ -65,20 +65,20 @@ PROFILE_CACHE="$LOG_DIR/vpn_profiles.cache"
 # Protection against TOCTOU race conditions and symlink attacks
 for logfile in "$CONNECTION_LOG" "$PERFORMANCE_CACHE" "$PROFILE_CACHE"; do
     # Remove if symlink or non-regular file
-    if [[ -L "$logfile" ]] || [[ -e "$logfile" && ! -f "$logfile" ]]; then
+    if [[ -L $logfile ]] || [[ -e $logfile && ! -f $logfile ]]; then
         rm -f "$logfile"
     fi
 
     # Atomic creation with secure permissions using noclobber
-    if [[ ! -f "$logfile" ]]; then
+    if [[ ! -f $logfile ]]; then
         (
             set -o noclobber
             umask 077
-            : >"$logfile"
-        ) 2>/dev/null || {
+            : > "$logfile"
+        ) 2> /dev/null || {
             # File exists, verify it's not a symlink and fix permissions
-            if [[ -f "$logfile" ]] && [[ ! -L "$logfile" ]]; then
-                chmod 600 "$logfile" 2>/dev/null || {
+            if [[ -f $logfile ]] && [[ ! -L $logfile ]]; then
+                chmod 600 "$logfile" 2> /dev/null || {
                     echo "ERROR: Cannot secure log file: $logfile" >&2
                     exit 1
                 }
@@ -89,14 +89,14 @@ for logfile in "$CONNECTION_LOG" "$PERFORMANCE_CACHE" "$PROFILE_CACHE"; do
         }
     else
         # File exists, ensure correct permissions
-        chmod 600 "$logfile" 2>/dev/null || {
+        chmod 600 "$logfile" 2> /dev/null || {
             echo "ERROR: Cannot secure existing log file: $logfile" >&2
             exit 1
         }
     fi
 
     # Final verification: must be regular file with 600 permissions
-    if [[ -L "$logfile" ]] || [[ "$(stat -c %a "$logfile" 2>/dev/null)" != "600" ]]; then
+    if [[ -L $logfile ]] || [[ "$(stat -c %a "$logfile" 2> /dev/null)" != "600" ]]; then
         echo "ERROR: Log file security verification failed: $logfile" >&2
         exit 1
     fi
@@ -110,10 +110,10 @@ done
 # Returns: Correct stat flags for mtime retrieval ("-f %m" for BSD or "-c %Y" for GNU)
 detect_stat_format() {
     # Try GNU format first (most common on Linux)
-    if stat -c %Y "$0" &>/dev/null; then
+    if stat -c %Y "$0" &> /dev/null; then
         echo "-c %Y"
     # Fall back to BSD format (macOS, BSD systems)
-    elif stat -f %m "$0" &>/dev/null; then
+    elif stat -f %m "$0" &> /dev/null; then
         echo "-f %m"
     else
         # Fallback to GNU if neither works (shouldn't happen)
@@ -146,26 +146,26 @@ is_cache_valid() {
     local cache_file="$PROFILE_CACHE"
 
     # Check 1: Cache file must exist and be a regular file (not symlink)
-    [[ -f "$cache_file" ]] && [[ ! -L "$cache_file" ]] || return 1
+    [[ -f $cache_file ]] && [[ ! -L $cache_file ]] || return 1
 
     # Check 2: Cache must have secure permissions (600)
-    [[ "$(stat -c %a "$cache_file" 2>/dev/null)" == "600" ]] || return 1
+    [[ "$(stat -c %a "$cache_file" 2> /dev/null)" == "600" ]] || return 1
 
     # Check 3: Cache must be owned by current user (prevent substitution attacks)
-    [[ "$(stat -c %U "$cache_file" 2>/dev/null)" == "$(whoami)" ]] || return 1
+    [[ "$(stat -c %U "$cache_file" 2> /dev/null)" == "$(whoami)" ]] || return 1
 
     # Check 4: Extract cached directory mtime
     local cached_mtime
-    cached_mtime=$(grep "^# CACHE_MTIME=" "$cache_file" 2>/dev/null | cut -d= -f2)
-    [[ -n "$cached_mtime" ]] || return 1
+    cached_mtime=$(grep "^# CACHE_MTIME=" "$cache_file" 2> /dev/null | cut -d= -f2)
+    [[ -n $cached_mtime ]] || return 1
 
     # Check 5: Get current directory mtime
     local current_mtime
-    current_mtime=$(stat -c %Y "$LOCATIONS_DIR" 2>/dev/null)
-    [[ -n "$current_mtime" ]] || return 1
+    current_mtime=$(stat -c %Y "$LOCATIONS_DIR" 2> /dev/null)
+    [[ -n $current_mtime ]] || return 1
 
     # Check 6: Compare timestamps (cache is valid if mtime matches)
-    [[ "$cached_mtime" == "$current_mtime" ]]
+    [[ $cached_mtime == "$current_mtime" ]]
 }
 
 # Rebuild profile cache from filesystem
@@ -176,8 +176,8 @@ rebuild_cache() {
 
     # Security: Acquire exclusive lock to prevent concurrent rebuild corruption (Issue #155)
     # File descriptor 201 is used for lock file
-    exec 201>"$lock_file" || return 1
-    if ! flock -x 201 2>/dev/null; then
+    exec 201> "$lock_file" || return 1
+    if ! flock -x 201 2> /dev/null; then
         exec 201>&- # Close file descriptor on failure
         return 1
     fi
@@ -191,7 +191,7 @@ rebuild_cache() {
     # Security: Use mktemp for unpredictable temp file name (prevents race conditions)
     # Use temp-file-manager if available for coordinated cleanup
     local temp_cache
-    if type create_temp_file &>/dev/null; then
+    if type create_temp_file &> /dev/null; then
         temp_cache=$(create_temp_file "${cache_file}.XXXXXXXXXX") || {
             exec 201>&- # Release lock on error
             return 1
@@ -216,13 +216,13 @@ rebuild_cache() {
 
     # Security: Reject symlink attacks on cache file (Issue #155 - TOCTOU fix)
     # Remove any existing cache file (including symlinks) before atomic move
-    if [[ -L "$cache_file" ]] || [[ -e "$cache_file" ]]; then
+    if [[ -L $cache_file ]] || [[ -e $cache_file ]]; then
         rm -f "$cache_file"
     fi
 
     # Get current directory mtime (cache key)
     local dir_mtime
-    dir_mtime=$(stat -c %Y "$LOCATIONS_DIR" 2>/dev/null) || {
+    dir_mtime=$(stat -c %Y "$LOCATIONS_DIR" 2> /dev/null) || {
         rm -f "$temp_cache"
         exec 201>&- # Release lock
         return 1
@@ -238,7 +238,7 @@ rebuild_cache() {
         echo "# CACHE_DIR=${LOCATIONS_DIR}"
         echo "# GENERATED=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
         echo "# CACHE_VALIDATED=1" # Issue #163: Signature indicating all entries were validated
-    } >"$temp_cache" || {
+    } > "$temp_cache" || {
         rm -f "$temp_cache"
         exec 201>&- # Release lock
         return 1
@@ -249,11 +249,11 @@ rebuild_cache() {
     local validated_count=0
     while IFS= read -r profile_path; do
         # Validate each profile path during rebuild
-        if validate_profile_path "$profile_path" "$LOCATIONS_DIR" 2>/dev/null; then
-            echo "$profile_path" >>"$temp_cache"
+        if validate_profile_path "$profile_path" "$LOCATIONS_DIR" 2> /dev/null; then
+            echo "$profile_path" >> "$temp_cache"
             ((validated_count++))
         fi
-    done < <(find "$LOCATIONS_DIR" -maxdepth 3 -xtype f \( -name "*.ovpn" -o -name "*.conf" \) 2>/dev/null | sort)
+    done < <(find "$LOCATIONS_DIR" -maxdepth 3 -xtype f \( -name "*.ovpn" -o -name "*.conf" \) 2> /dev/null | sort)
 
     # Verify we added some profiles
     if [[ $validated_count -eq 0 ]]; then
@@ -272,11 +272,11 @@ rebuild_cache() {
 
     # Security: Atomic move with TOCTOU protection (Issue #155)
     # Use mv -n (no-clobber) to prevent following symlinks that may be created between rm and mv
-    if ! mv -n "$temp_cache" "$cache_file" 2>/dev/null; then
+    if ! mv -n "$temp_cache" "$cache_file" 2> /dev/null; then
         # Move failed - verify we're not being attacked
-        if [[ -e "$cache_file" ]]; then
+        if [[ -e $cache_file ]]; then
             # File exists - check if it's safe
-            if [[ -f "$cache_file" ]] && [[ ! -L "$cache_file" ]]; then
+            if [[ -f $cache_file ]] && [[ ! -L $cache_file ]]; then
                 # Safe regular file exists - another process may have created it
                 # Remove our temp file and use the existing cache
                 rm -f "$temp_cache"
@@ -309,36 +309,36 @@ get_cached_profiles() {
         rebuild_cache || {
             # Fallback: Direct find if cache rebuild fails
             echo -e "\033[1;33mCache unavailable, using direct scan\033[0m" >&2
-            find "$LOCATIONS_DIR" -maxdepth 3 -xtype f \( -name "*.ovpn" -o -name "*.conf" \) 2>/dev/null | sort
+            find "$LOCATIONS_DIR" -maxdepth 3 -xtype f \( -name "*.ovpn" -o -name "*.conf" \) 2> /dev/null | sort
             return 0
         }
     fi
 
     # Security: Validate cache metadata integrity (Issue #155)
     # Detects corrupted or tampered cache files
-    if ! validate_cache_metadata "$PROFILE_CACHE" 2>/dev/null; then
+    if ! validate_cache_metadata "$PROFILE_CACHE" 2> /dev/null; then
         # Metadata validation failed - rebuild cache
         rebuild_cache || {
             # Fallback: Direct find if cache rebuild fails
             echo -e "\033[1;33mCache metadata invalid, using direct scan\033[0m" >&2
-            find "$LOCATIONS_DIR" -maxdepth 3 -xtype f \( -name "*.ovpn" -o -name "*.conf" \) 2>/dev/null | sort
+            find "$LOCATIONS_DIR" -maxdepth 3 -xtype f \( -name "*.ovpn" -o -name "*.conf" \) 2> /dev/null | sort
             return 0
         }
     fi
 
     # Load cached profiles (skip header lines starting with #)
     local cached_entries
-    cached_entries=$(grep -v "^#" "$PROFILE_CACHE" 2>/dev/null) || {
+    cached_entries=$(grep -v "^#" "$PROFILE_CACHE" 2> /dev/null) || {
         # If grep fails, rebuild and try again
         rebuild_cache
-        cached_entries=$(grep -v "^#" "$PROFILE_CACHE" 2>/dev/null) || echo ""
+        cached_entries=$(grep -v "^#" "$PROFILE_CACHE" 2> /dev/null) || echo ""
     }
 
     # Issue #163: Check if cache was validated during rebuild (trusted cache mode)
     local cache_validated
-    cache_validated=$(grep "^# CACHE_VALIDATED=1" "$PROFILE_CACHE" 2>/dev/null)
+    cache_validated=$(grep "^# CACHE_VALIDATED=1" "$PROFILE_CACHE" 2> /dev/null)
 
-    if [[ -n "$cache_validated" ]]; then
+    if [[ -n $cache_validated ]]; then
         # Trusted cache mode: All entries were validated during rebuild
         # Skip expensive per-entry validation (95% performance improvement)
         echo -n "$cached_entries"
@@ -351,17 +351,17 @@ get_cached_profiles() {
 
         while IFS= read -r profile_path; do
             # Skip empty lines
-            [[ -z "$profile_path" ]] && continue
+            [[ -z $profile_path ]] && continue
 
             # Validate path using centralized validator
             # This checks: path traversal, symlinks, file existence, extension, ownership
-            if validate_profile_path "$profile_path" "$LOCATIONS_DIR" 2>/dev/null; then
+            if validate_profile_path "$profile_path" "$LOCATIONS_DIR" 2> /dev/null; then
                 validated_profiles+="$profile_path"$'\n'
             else
                 # Log invalid entry (silent warning to avoid user confusion)
                 ((invalid_count++))
             fi
-        done <<<"$cached_entries"
+        done <<< "$cached_entries"
 
         # Log summary if invalid entries were filtered
         if [[ $invalid_count -gt 0 ]]; then
@@ -381,10 +381,10 @@ detect_protocol() {
     local profile_path="$1"
 
     # Protocol detection: .ovpn files are OpenVPN protocol
-    if [[ "$profile_path" == *.ovpn ]]; then
+    if [[ $profile_path == *.ovpn ]]; then
         echo "openvpn"
     # Protocol detection: .conf files are WireGuard protocol
-    elif [[ "$profile_path" == *.conf ]]; then
+    elif [[ $profile_path == *.conf ]]; then
         echo "wireguard"
     else
         echo "unknown"
@@ -409,7 +409,7 @@ validate_wireguard_config() {
 }
 
 check_internet() {
-    if ping -c 1 -W 5 8.8.8.8 >/dev/null 2>&1; then
+    if ping -c 1 -W 5 8.8.8.8 > /dev/null 2>&1; then
         return 0
     else
         network_error "$COMP_VPN_CONNECTOR" "Cannot reach external servers for connectivity test"
@@ -420,14 +420,14 @@ check_internet() {
 check_dependencies() {
     local missing_deps=()
 
-    command -v openvpn >/dev/null || missing_deps+=("openvpn")
-    command -v curl >/dev/null || missing_deps+=("curl")
-    command -v bc >/dev/null || missing_deps+=("bc")
-    command -v notify-send >/dev/null || missing_deps+=("libnotify")
-    command -v ip >/dev/null || missing_deps+=("iproute2")
+    command -v openvpn > /dev/null || missing_deps+=("openvpn")
+    command -v curl > /dev/null || missing_deps+=("curl")
+    command -v bc > /dev/null || missing_deps+=("bc")
+    command -v notify-send > /dev/null || missing_deps+=("libnotify")
+    command -v ip > /dev/null || missing_deps+=("iproute2")
 
     # WireGuard support - wg-quick for .conf protocol handling
-    command -v wg-quick >/dev/null || missing_deps+=("wireguard-tools")
+    command -v wg-quick > /dev/null || missing_deps+=("wireguard-tools")
 
     if [[ ${#missing_deps[@]} -gt 0 ]]; then
         dependency_error "$COMP_VPN_CONNECTOR" "${missing_deps[*]}" "sudo pacman -S ${missing_deps[*]}"
@@ -440,11 +440,11 @@ check_dependencies() {
 acquire_lock() {
     # Security: Use flock for atomic locking (prevents race conditions)
     # File descriptor 200 is used for the lock
-    exec 200>"$LOCK_FILE"
+    exec 200> "$LOCK_FILE"
     if ! flock -n 200; then
         local lock_pid
-        lock_pid=$(cat "$LOCK_FILE" 2>/dev/null)
-        if [[ -n "$lock_pid" ]] && kill -0 "$lock_pid" 2>/dev/null; then
+        lock_pid=$(cat "$LOCK_FILE" 2> /dev/null)
+        if [[ -n $lock_pid ]] && kill -0 "$lock_pid" 2> /dev/null; then
             echo -e "\033[1;33mAnother VPN connection is already in progress (PID: $lock_pid)\033[0m"
         else
             echo -e "\033[1;33mAnother VPN connection is in progress\033[0m"
@@ -458,20 +458,20 @@ acquire_lock() {
 }
 
 release_lock() {
-    rm -f "$LOCK_FILE" 2>/dev/null || true
+    rm -f "$LOCK_FILE" 2> /dev/null || true
 }
 
 cleanup_on_exit() {
     release_lock
     # Cleanup temp files if temp-file-manager is loaded
-    if type cleanup_temp_files &>/dev/null; then
-        cleanup_temp_files 2>/dev/null || true
+    if type cleanup_temp_files &> /dev/null; then
+        cleanup_temp_files 2> /dev/null || true
     fi
 }
 
 # Initialize temp file manager if available
-if type init_temp_file_manager &>/dev/null; then
-    init_temp_file_manager 2>/dev/null || true
+if type init_temp_file_manager &> /dev/null; then
+    init_temp_file_manager 2> /dev/null || true
 fi
 
 trap cleanup_on_exit EXIT
@@ -480,21 +480,21 @@ list_profiles() {
     local filter="${1:-}"
     local show_details="${2:-}"
 
-    if [[ ! -d "$LOCATIONS_DIR" ]]; then
+    if [[ ! -d $LOCATIONS_DIR ]]; then
         file_not_found_error "$COMP_VPN_CONNECTOR" "$LOCATIONS_DIR" "Create the directory and add VPN configuration files (.ovpn or .conf)"
         return 1
     fi
 
     local profiles
-    if [[ -n "$filter" ]]; then
+    if [[ -n $filter ]]; then
         profiles=$(find_profiles_by_country "$filter")
     else
         # Use cached profile list for performance (Issue #63)
         profiles=$(get_cached_profiles)
     fi
 
-    if [[ -z "$profiles" ]]; then
-        if [[ -n "$filter" ]]; then
+    if [[ -z $profiles ]]; then
+        if [[ -n $filter ]]; then
             echo -e "\033[1;33mNo VPN profiles found matching: $filter\033[0m"
         else
             echo -e "\033[1;33mNo VPN profiles found in $LOCATIONS_DIR\033[0m"
@@ -510,14 +510,14 @@ list_profiles() {
         name=$(basename "$profile" .ovpn)
         ((++count))
 
-        if [[ "$show_details" == "detailed" ]]; then
+        if [[ $show_details == "detailed" ]]; then
             local server_ip country_info secure_core=""
             server_ip=$(grep -m1 "^remote " "$profile" | awk '{print $2}')
 
             # Check for secure core indicators using two-country-code pattern
-            if echo "$name" | grep -E '^[a-z]{2}-[a-z]{2}-[0-9]+' >/dev/null; then
+            if echo "$name" | grep -E '^[a-z]{2}-[a-z]{2}-[0-9]+' > /dev/null; then
                 # Secure core: extract entry and exit countries
-                if [[ "$name" =~ ^([a-z]{2})-([a-z]{2})-([0-9]+) ]]; then
+                if [[ $name =~ ^([a-z]{2})-([a-z]{2})-([0-9]+) ]]; then
                     country_info=" (${BASH_REMATCH[1]^^} → ${BASH_REMATCH[2]^^})"
                     secure_core=" [SECURE CORE]"
                 fi
@@ -525,12 +525,12 @@ list_profiles() {
                 # Legacy secure core detection
                 secure_core=" [SECURE CORE]"
                 # Extract country info from filename for legacy patterns
-                if [[ "$name" =~ ^([a-z]{2})-([0-9]+) ]]; then
+                if [[ $name =~ ^([a-z]{2})-([0-9]+) ]]; then
                     country_info=" (${BASH_REMATCH[1]^^})"
                 fi
             else
                 # Normal profile: extract single country
-                if [[ "$name" =~ ^([a-z]{2})-([0-9]+) ]]; then
+                if [[ $name =~ ^([a-z]{2})-([0-9]+) ]]; then
                     country_info=" (${BASH_REMATCH[1]^^})"
                 else
                     country_info=""
@@ -541,7 +541,7 @@ list_profiles() {
         else
             echo "  $count. $name"
         fi
-    done <<<"$profiles"
+    done <<< "$profiles"
 
     echo -e "\033[1;90mTotal: $count profiles\033[0m"
     return 0
@@ -556,12 +556,12 @@ detect_secure_core_profiles() {
 
         # Check for two-country-code pattern: [country1]-[country2]-[number]
         # Examples: is-br-01, se-au-01, ch-us-10
-        if echo "$name" | grep -E '^[a-z]{2}-[a-z]{2}-[0-9]+' >/dev/null; then
+        if echo "$name" | grep -E '^[a-z]{2}-[a-z]{2}-[0-9]+' > /dev/null; then
             echo "$profile"
         # Fallback: check for legacy secure core indicators in filename or content
         elif echo "$name" | grep -iq "secure\|core\|tor"; then
             echo "$profile"
-        elif grep -q "# Secure Core" "$profile" 2>/dev/null; then
+        elif grep -q "# Secure Core" "$profile" 2> /dev/null; then
             echo "$profile"
         fi
     done
@@ -571,7 +571,7 @@ interactive_profile_selection() {
     local filter="$1"
 
     local profiles
-    if [[ -n "$filter" ]]; then
+    if [[ -n $filter ]]; then
         profiles=$(find_profiles_by_country "$filter")
         echo -e "\033[1;36mProfiles matching '$filter':\033[0m"
     else
@@ -580,7 +580,7 @@ interactive_profile_selection() {
         echo -e "\033[1;36mAll available profiles:\033[0m"
     fi
 
-    if [[ -z "$profiles" ]]; then
+    if [[ -z $profiles ]]; then
         echo -e "\033[1;31mNo profiles found\033[0m"
         return 1
     fi
@@ -600,18 +600,18 @@ interactive_profile_selection() {
         fi
 
         printf "  %-3d %s%s\n" "$count" "$name" "$secure_core"
-    done <<<"$profiles"
+    done <<< "$profiles"
 
     echo
     echo -n "Select profile number (1-$count) or 'q' to quit: "
     read -r selection
 
-    if [[ "$selection" == "q" ]]; then
+    if [[ $selection == "q" ]]; then
         echo "Selection cancelled"
         return 1
     fi
 
-    if ! [[ "$selection" =~ ^[0-9]+$ ]] || [[ "$selection" -lt 1 ]] || [[ "$selection" -gt "$count" ]]; then
+    if ! [[ $selection =~ ^[0-9]+$ ]] || [[ $selection -lt 1 ]] || [[ $selection -gt $count ]]; then
         echo -e "\033[1;31mInvalid selection: $selection\033[0m"
         return 1
     fi
@@ -626,7 +626,7 @@ validate_country_code() {
     local country_code="$1"
 
     # Security: Reject empty input
-    if [[ -z "$country_code" ]]; then
+    if [[ -z $country_code ]]; then
         return 1
     fi
 
@@ -637,7 +637,7 @@ validate_country_code() {
 
     # Security: CRITICAL - Reject path traversal and command injection attempts
     # Only allow alphanumeric characters (a-z, A-Z, 0-9)
-    if [[ ! "$country_code" =~ ^[a-zA-Z0-9]+$ ]]; then
+    if [[ ! $country_code =~ ^[a-zA-Z0-9]+$ ]]; then
         return 1
     fi
 
@@ -656,7 +656,7 @@ validate_country_code() {
 
     # Whitelist validation
     for supported in $supported_countries; do
-        if [[ "$code_lower" == "$supported" ]]; then
+        if [[ $code_lower == "$supported" ]]; then
             return 0
         fi
     done
@@ -667,7 +667,7 @@ validate_country_code() {
 find_profiles_by_country() {
     local country_code="$1"
 
-    if [[ -z "$country_code" ]]; then
+    if [[ -z $country_code ]]; then
         # Use cached profile list for performance (Issue #63)
         get_cached_profiles
         return
@@ -688,7 +688,7 @@ find_profiles_by_country() {
     results=$(get_cached_profiles | grep -E "/${country_code}-[0-9]+\.(ovpn|conf)$")
 
     # Secondary pattern: try variations like *_se_*, *SE*, etc.
-    if [[ -z "$results" ]]; then
+    if [[ -z $results ]]; then
         local country_upper
         country_upper=$(echo "$country_code" | tr '[:lower:]' '[:upper:]')
 
@@ -699,14 +699,14 @@ find_profiles_by_country() {
         # Try patterns in order of preference
         for pattern in "_${country_code}_" "${country_upper}" "-${country_code}" "${country_code}[0-9]"; do
             results=$(echo "$cached_profiles" | grep -i "$pattern")
-            if [[ -n "$results" ]]; then
+            if [[ -n $results ]]; then
                 break
             fi
         done
     fi
 
     # Fallback: grep cached profiles for country code
-    if [[ -z "$results" ]]; then
+    if [[ -z $results ]]; then
         results=$(get_cached_profiles | grep -i "$country_code")
     fi
 
@@ -721,11 +721,11 @@ get_available_countries() {
         name=$(basename "$profile" | sed 's/\.\(ovpn\|conf\)$//')
 
         # Extract country code from common patterns
-        if [[ "$name" =~ ^([a-z]{2})-[0-9] ]]; then
+        if [[ $name =~ ^([a-z]{2})-[0-9] ]]; then
             echo "${BASH_REMATCH[1]}"
-        elif [[ "$name" =~ _([a-z]{2})_ ]]; then
+        elif [[ $name =~ _([a-z]{2})_ ]]; then
             echo "${BASH_REMATCH[1]}"
-        elif [[ "$name" =~ ([A-Z]{2})[0-9] ]]; then
+        elif [[ $name =~ ([A-Z]{2})[0-9] ]]; then
             echo "${BASH_REMATCH[1]}" | tr '[:upper:]' '[:lower:]'
         fi
     done | sort -u
@@ -735,14 +735,14 @@ test_server_latency() {
     local server_ip="$1"
     local timeout=5
 
-    if [[ -z "$server_ip" ]]; then
+    if [[ -z $server_ip ]]; then
         return 1
     fi
 
     local ping_result
-    ping_result=$(ping -c 3 -W $timeout "$server_ip" 2>/dev/null | grep "avg" | awk -F '/' '{print $5}')
+    ping_result=$(ping -c 3 -W $timeout "$server_ip" 2> /dev/null | grep "avg" | awk -F '/' '{print $5}')
 
-    if [[ -n "$ping_result" ]]; then
+    if [[ -n $ping_result ]]; then
         echo "$ping_result"
         return 0
     else
@@ -759,31 +759,31 @@ test_server_latency() {
 # 4. NO_COLOR preference
 detect_accessibility_mode() {
     # 1. Explicit user preference (highest priority)
-    if [[ -n "${VPN_ACCESSIBLE_MODE:-}" ]] || [[ -n "${SCREEN_READER_MODE:-}" ]]; then
+    if [[ -n ${VPN_ACCESSIBLE_MODE:-} ]] || [[ -n ${SCREEN_READER_MODE:-} ]]; then
         return 0
     fi
 
     # 2. GNOME accessibility settings (most reliable for GUI screen readers)
-    if command -v gsettings &>/dev/null; then
+    if command -v gsettings &> /dev/null; then
         local screen_reader_enabled
-        screen_reader_enabled=$(gsettings get org.gnome.desktop.a11y.applications screen-reader-enabled 2>/dev/null || echo "false")
-        if [[ "$screen_reader_enabled" == "true" ]]; then
+        screen_reader_enabled=$(gsettings get org.gnome.desktop.a11y.applications screen-reader-enabled 2> /dev/null || echo "false")
+        if [[ $screen_reader_enabled == "true" ]]; then
             return 0
         fi
     fi
 
     # 3. Active screen reader process detection
-    if pgrep -x "orca" &>/dev/null || pgrep -x "fenrir" &>/dev/null; then
+    if pgrep -x "orca" &> /dev/null || pgrep -x "fenrir" &> /dev/null; then
         return 0
     fi
 
     # 4. Console-based indicators (braille display)
-    if [[ "$TERM" == "linux" ]] && command -v brltty &>/dev/null; then
+    if [[ $TERM == "linux" ]] && command -v brltty &> /dev/null; then
         return 0 # Console with braille display
     fi
 
     # 5. NO_COLOR also implies text-only preference
-    if [[ -n "${NO_COLOR:-}" ]]; then
+    if [[ -n ${NO_COLOR:-} ]]; then
         return 0
     fi
 
@@ -839,7 +839,7 @@ connect_to_profile() {
     local profile_path="$1"
     local max_attempts=3
 
-    if [[ ! -f "$profile_path" ]]; then
+    if [[ ! -f $profile_path ]]; then
         file_not_found_error "$COMP_VPN_CONNECTOR" "$profile_path" "Check filename spelling and ensure file exists in locations directory"
         return 1
     fi
@@ -867,8 +867,8 @@ check_vpn_processes() {
     local openvpn_processes
     local wireguard_interfaces
 
-    openvpn_processes=$(pgrep -f "openvpn.*config" 2>/dev/null | wc -l)
-    wireguard_interfaces=$(wg show 2>/dev/null | grep -c "^interface:" 2>/dev/null || echo 0)
+    openvpn_processes=$(pgrep -f "openvpn.*config" 2> /dev/null | wc -l)
+    wireguard_interfaces=$(wg show 2> /dev/null | grep -c "^interface:" 2> /dev/null || echo 0)
 
     # Ensure we have clean numeric values
     openvpn_processes=${openvpn_processes//[^0-9]/}
@@ -898,7 +898,7 @@ check_vpn_processes() {
 validate_connection_prerequisites() {
     local profile_path="$1"
 
-    if [[ ! -f "$CREDENTIALS_FILE" ]]; then
+    if [[ ! -f $CREDENTIALS_FILE ]]; then
         file_not_found_error "$COMP_VPN_CONNECTOR" "$CREDENTIALS_FILE" "Create file with: echo -e 'username\\npassword' > $CREDENTIALS_FILE"
         return 1
     fi
@@ -917,7 +917,7 @@ validate_connection_prerequisites() {
 
     # Security: Verify OpenVPN binary exists at trusted path (Issue #165, HIGH-severity)
     # Prevents privilege escalation via PATH manipulation
-    if [[ ! -x "$OPENVPN_BINARY" ]]; then
+    if [[ ! -x $OPENVPN_BINARY ]]; then
         echo "ERROR: OpenVPN not found at trusted path: $OPENVPN_BINARY" >&2
         log_message "SECURITY: OpenVPN binary not found at trusted path" "$CONNECTION_LOG"
         return 1
@@ -943,10 +943,10 @@ initialize_connection_attempt() {
     log_message "Attempting OpenVPN connection to $profile_name" "$CONNECTION_LOG"
 
     # Log to secure log file
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] Connection attempt started: $profile_name" >>"$CONNECTION_LOG" 2>/dev/null || true
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] Connection attempt started: $profile_name" >> "$CONNECTION_LOG" 2> /dev/null || true
 
     # Clean state before connecting
-    "$VPN_DIR/vpn-manager" cleanup >/dev/null 2>&1
+    "$VPN_DIR/vpn-manager" cleanup > /dev/null 2>&1
     sleep 2
 
     echo "$profile_name"
@@ -959,8 +959,8 @@ start_openvpn_daemon() {
     local profile_path="$1"
 
     # Clear previous log to avoid false positives
-    sudo rm -f "$LOG_DIR/openvpn.log" 2>/dev/null || true
-    sudo rm -f "/tmp/openvpn.log" 2>/dev/null || true # Fallback location cleanup
+    sudo rm -f "$LOG_DIR/openvpn.log" 2> /dev/null || true
+    sudo rm -f "/tmp/openvpn.log" 2> /dev/null || true # Fallback location cleanup
 
     # Start OpenVPN daemon without aggressive timeout
     # Security: Use hardcoded trusted path (Issue #165)
@@ -984,13 +984,13 @@ check_authentication_failure() {
     # Check for authentication failures (both log locations)
     # openvpn may write to /tmp/openvpn.log as fallback if it can't write to LOG_DIR
     for log_location in "$LOG_DIR/openvpn.log" "/tmp/openvpn.log"; do
-        if [[ -f "$log_location" ]] && sudo grep -q "AUTH_FAILED" "$log_location" 2>/dev/null; then
+        if [[ -f $log_location ]] && sudo grep -q "AUTH_FAILED" "$log_location" 2> /dev/null; then
             # Issue #147: Use semantic announcement for accessibility
             announce_connection_status "failed" "Authentication failed - check credentials in $CREDENTIALS_FILE"
             log_message "Authentication failed for $profile_name - invalid credentials" "$CONNECTION_LOG"
-            echo "[$(date '+%Y-%m-%d %H:%M:%S')] [ERROR] AUTH_FAILED: $profile_name" >>"$CONNECTION_LOG" 2>/dev/null || true
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] [ERROR] AUTH_FAILED: $profile_name" >> "$CONNECTION_LOG" 2> /dev/null || true
             notify_event "auth_failed" "$profile_name"
-            sudo "$VPN_DIR/vpn-manager" cleanup >/dev/null 2>&1
+            sudo "$VPN_DIR/vpn-manager" cleanup > /dev/null 2>&1
             return 1
         fi
     done
@@ -1009,8 +1009,8 @@ check_connection_progress() {
 
     # Check for TLS handshake completion (Peer Connection Initiated)
     for log_location in "$LOG_DIR/openvpn.log" "/tmp/openvpn.log"; do
-        if [[ -f "$log_location" ]] && sudo grep -q "Peer Connection Initiated" "$log_location" 2>/dev/null; then
-            if [[ "$connection_stage" != "configuring" ]]; then
+        if [[ -f $log_location ]] && sudo grep -q "Peer Connection Initiated" "$log_location" 2> /dev/null; then
+            if [[ $connection_stage != "configuring" ]]; then
                 announce_connection_status "configuring" "Configuring tunnel"
                 eval "$connection_stage_var='configuring'"
                 eval "$interval_count_var=0"
@@ -1020,7 +1020,7 @@ check_connection_progress() {
     done
 
     # Update to verifying stage if we've been configuring for a while
-    if [[ "$connection_stage" == "configuring" && "$interval_count" -ge 2 ]]; then
+    if [[ $connection_stage == "configuring" && $interval_count -ge 2 ]]; then
         announce_connection_status "verifying" "Verifying connection"
         eval "$connection_stage_var='verifying'"
         eval "$interval_count_var=0"
@@ -1028,8 +1028,8 @@ check_connection_progress() {
 
     # Check if fully connected
     local status_check
-    status_check=$(timeout 5 "$VPN_DIR/vpn-manager" status 2>/dev/null | grep "VPN Status:" | grep -q "CONNECTED" && echo "connected" || echo "not_connected")
-    if [[ "$status_check" == "connected" ]]; then
+    status_check=$(timeout 5 "$VPN_DIR/vpn-manager" status 2> /dev/null | grep "VPN Status:" | grep -q "CONNECTED" && echo "connected" || echo "not_connected")
+    if [[ $status_check == "connected" ]]; then
         announce_connection_status "connected" "Connected"
         if ! detect_accessibility_mode; then
             echo ""
@@ -1051,10 +1051,10 @@ handle_connection_success() {
     local max_attempts="$3"
 
     log_message "Successfully connected to OpenVPN $profile_name on attempt $attempt" "$CONNECTION_LOG"
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] Connected successfully: $profile_name (attempt $attempt/$max_attempts)" >>"$CONNECTION_LOG" 2>/dev/null || true
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] Connected successfully: $profile_name (attempt $attempt/$max_attempts)" >> "$CONNECTION_LOG" 2> /dev/null || true
 
     notify_event "connection_established" "$profile_name"
-    pkill -RTMIN+4 dwmblocks 2>/dev/null || true
+    pkill -RTMIN+4 dwmblocks 2> /dev/null || true
 
     return 0
 }
@@ -1063,11 +1063,11 @@ handle_connection_success() {
 # Returns: 0
 cleanup_failed_connection_processes() {
     local failed_processes
-    failed_processes=$(pgrep -f "openvpn.*--config" 2>/dev/null | wc -l)
+    failed_processes=$(pgrep -f "openvpn.*--config" 2> /dev/null | wc -l)
     if [[ $failed_processes -gt 1 ]]; then
         echo -e "\033[1;33m  Cleaning up $((failed_processes - 1)) failed process(es)\033[0m"
         # Kill all but the most recent process (keep the one that might succeed)
-        pgrep -f "openvpn.*--config" 2>/dev/null | head -n -1 | xargs -r sudo kill 2>/dev/null || true
+        pgrep -f "openvpn.*--config" 2> /dev/null | head -n -1 | xargs -r sudo kill 2> /dev/null || true
     fi
 
     return 0
@@ -1102,7 +1102,7 @@ monitor_connection_establishment_with_backoff() {
         local progress_status
         progress_status=$(check_connection_progress connection_stage interval_count)
 
-        if [[ "$progress_status" == "connected" ]]; then
+        if [[ $progress_status == "connected" ]]; then
             return 0 # Connection established
         fi
 
@@ -1169,7 +1169,7 @@ connect_openvpn_profile() {
 
     echo -e "\033[1;31m✗ Failed to connect to OpenVPN $profile_name after $max_attempts attempts\033[0m"
     log_message "Failed to connect to OpenVPN $profile_name after $max_attempts attempts" "$CONNECTION_LOG"
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [ERROR] Connection failed: $profile_name (all $max_attempts attempts exhausted)" >>"$CONNECTION_LOG" 2>/dev/null || true
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [ERROR] Connection failed: $profile_name (all $max_attempts attempts exhausted)" >> "$CONNECTION_LOG" 2> /dev/null || true
     notify_event "connection_failed" "$profile_name"
 
     return 1
@@ -1203,7 +1203,7 @@ connect_wireguard_profile() {
         # WireGuard connection attempt notification removed - using centralized system for result only
 
         # Simple WireGuard connection attempt (reverted to prevent network disruption)
-        if sudo wg-quick up "$profile_path" >/dev/null 2>&1; then
+        if sudo wg-quick up "$profile_path" > /dev/null 2>&1; then
             sleep 3
 
             # Verify connection is up
@@ -1212,7 +1212,7 @@ connect_wireguard_profile() {
                 log_message "Successfully connected to WireGuard $interface_name on attempt $attempt" "$CONNECTION_LOG"
 
                 notify_event "connection_established" "$interface_name"
-                pkill -RTMIN+4 dwmblocks 2>/dev/null || true
+                pkill -RTMIN+4 dwmblocks 2> /dev/null || true
 
                 return 0
             fi
@@ -1222,7 +1222,7 @@ connect_wireguard_profile() {
         log_message "WireGuard connection attempt $attempt failed for $interface_name" "$CONNECTION_LOG"
 
         # Cleanup failed attempt - use full path to config file
-        sudo wg-quick down "$profile_path" >/dev/null 2>&1 || true
+        sudo wg-quick down "$profile_path" > /dev/null 2>&1 || true
 
         if [[ $attempt -lt $max_attempts ]]; then
             echo "  Waiting before retry..."
@@ -1243,8 +1243,8 @@ connect_random() {
     local profiles
     profiles=$(find_profiles_by_country "$country_code")
 
-    if [[ -z "$profiles" ]]; then
-        if [[ -n "$country_code" ]]; then
+    if [[ -z $profiles ]]; then
+        if [[ -n $country_code ]]; then
             echo -e "\033[1;31mNo profiles found for country: $country_code\033[0m"
         else
             echo -e "\033[1;31mNo VPN profiles available\033[0m"
@@ -1255,7 +1255,7 @@ connect_random() {
     local profile_array=()
     while IFS= read -r profile; do
         profile_array+=("$profile")
-    done <<<"$profiles"
+    done <<< "$profiles"
 
     local random_index=$((RANDOM % ${#profile_array[@]}))
     local selected_profile="${profile_array[$random_index]}"
@@ -1266,7 +1266,7 @@ connect_random() {
 }
 
 load_performance_cache() {
-    if [[ ! -f "$PERFORMANCE_CACHE" ]]; then
+    if [[ ! -f $PERFORMANCE_CACHE ]]; then
         return 1
     fi
 
@@ -1274,7 +1274,7 @@ load_performance_cache() {
     # Issue #73: Use detected stat format (25% faster - no fallback overhead)
     local cache_age
     # shellcheck disable=SC2086  # STAT_MTIME_FLAG must expand into flags (-c %Y or -f %m)
-    cache_age=$(($(date +%s) - $(stat $STAT_MTIME_FLAG "$PERFORMANCE_CACHE" 2>/dev/null || echo 0)))
+    cache_age=$(($(date +%s) - $(stat $STAT_MTIME_FLAG "$PERFORMANCE_CACHE" 2> /dev/null || echo 0)))
 
     if [[ $cache_age -gt 7200 ]]; then
         echo -e "\033[1;33mPerformance cache expired (${cache_age}s old), will refresh\033[0m"
@@ -1288,7 +1288,7 @@ load_performance_cache() {
 save_performance_cache() {
     local cache_data="$1"
 
-    echo "$cache_data" >"$PERFORMANCE_CACHE"
+    echo "$cache_data" > "$PERFORMANCE_CACHE"
     log_message "Performance cache updated with $(echo "$cache_data" | wc -l) entries" "$CONNECTION_LOG"
 }
 
@@ -1300,12 +1300,12 @@ resolve_profile_path() {
     local country_filter="${2:-}"
 
     # Validate input: reject empty profile names (prevents matching all profiles)
-    [[ -z "$profile_name" ]] && return 1
+    [[ -z $profile_name ]] && return 1
 
     local profile_path
 
     # Primary resolution: match with extension
-    if [[ -n "$country_filter" ]]; then
+    if [[ -n $country_filter ]]; then
         # Flexible matching for country-filtered profiles (anywhere in path)
         profile_path=$(get_cached_profiles | grep -E "${profile_name}.*\.(ovpn|conf)$" | head -n1)
     else
@@ -1314,7 +1314,7 @@ resolve_profile_path() {
     fi
 
     # Fallback: Partial match if primary resolution failed
-    if [[ ! -f "$profile_path" ]]; then
+    if [[ ! -f $profile_path ]]; then
         profile_path=$(get_cached_profiles | grep "$profile_name" | head -n1)
     fi
 
@@ -1327,12 +1327,12 @@ get_cached_best_profile() {
 
     # Use our comprehensive performance cache system
     local best_profile_name
-    if best_profile_name=$("$VPN_DIR/best-vpn-profile" best "$country_filter" 2>/dev/null); then
+    if best_profile_name=$("$VPN_DIR/best-vpn-profile" best "$country_filter" 2> /dev/null); then
         # Use helper function to resolve profile path (Issue #141)
         local profile_path
         profile_path=$(resolve_profile_path "$best_profile_name" "$country_filter")
 
-        if [[ -f "$profile_path" ]]; then
+        if [[ -f $profile_path ]]; then
             echo -e "\033[1;32mCached best server: $best_profile_name\033[0m"
             echo "$profile_path"
             return 0
@@ -1360,12 +1360,12 @@ test_and_cache_performance() {
 
     # Use our comprehensive performance testing engine
     local best_profile_name
-    if best_profile_name=$("$VPN_DIR/best-vpn-profile" fresh "$country_filter" 2>/dev/null); then
+    if best_profile_name=$("$VPN_DIR/best-vpn-profile" fresh "$country_filter" 2> /dev/null); then
         # Use helper function to resolve profile path (Issue #141)
         local profile_path
         profile_path=$(resolve_profile_path "$best_profile_name" "$country_filter")
 
-        if [[ -f "$profile_path" ]]; then
+        if [[ -f $profile_path ]]; then
             echo
             echo -e "\033[1;32mBest server selected: $best_profile_name\033[0m"
             echo "$profile_path"
@@ -1385,15 +1385,15 @@ best_server_connect() {
     local profile_path
 
     # Fast mode: use cached profile if available
-    if [[ "$use_cache" == "fast" ]]; then
+    if [[ $use_cache == "fast" ]]; then
         local cached_profile
-        if cached_profile=$(get_cached_best_profile "$country_filter" 2>/dev/null); then
+        if cached_profile=$(get_cached_best_profile "$country_filter" 2> /dev/null); then
             echo -e "\033[1;36mUsing cached performance data for fast connection\033[0m"
 
             # Resolve profile path from cached profile name
             profile_path=$(resolve_profile_path "$cached_profile" "$country_filter")
 
-            if [[ -f "$profile_path" ]]; then
+            if [[ -f $profile_path ]]; then
                 echo -e "\033[1;32mCached best server: $cached_profile\033[0m"
                 connect_to_profile "$profile_path"
                 return $?
@@ -1405,11 +1405,11 @@ best_server_connect() {
 
     # Full mode: run performance testing to find best server
     local best_profile_name
-    if best_profile_name=$("$VPN_DIR/best-vpn-profile" best "$country_filter" 2>/dev/null); then
+    if best_profile_name=$("$VPN_DIR/best-vpn-profile" best "$country_filter" 2> /dev/null); then
         # Resolve profile path
         profile_path=$(resolve_profile_path "$best_profile_name" "$country_filter")
 
-        if [[ -f "$profile_path" ]]; then
+        if [[ -f $profile_path ]]; then
             echo
             echo -e "\033[1;32mBest server selected: $best_profile_name\033[0m"
             connect_to_profile "$profile_path"
@@ -1430,7 +1430,7 @@ secure_core_connect() {
     local secure_profiles
     secure_profiles=$(detect_secure_core_profiles)
 
-    if [[ -z "$secure_profiles" ]]; then
+    if [[ -z $secure_profiles ]]; then
         echo -e "\033[1;33mNo secure core profiles detected, using regular profiles\033[0m"
         connect_random
     else
@@ -1438,7 +1438,7 @@ secure_core_connect() {
         local profile_array=()
         while IFS= read -r profile; do
             profile_array+=("$profile")
-        done <<<"$secure_profiles"
+        done <<< "$secure_profiles"
 
         local random_index=$((RANDOM % ${#profile_array[@]}))
         local selected_profile="${profile_array[$random_index]}"
@@ -1451,14 +1451,14 @@ secure_core_connect() {
 connect_custom_profile() {
     local profile_path="$1"
 
-    if [[ -z "$profile_path" ]]; then
+    if [[ -z $profile_path ]]; then
         echo -e "\033[1;31mError: Custom profile path not provided\033[0m"
         echo "Usage: vpn custom <profile_path>"
         return 1
     fi
 
     # Validate file existence
-    if [[ ! -f "$profile_path" ]]; then
+    if [[ ! -f $profile_path ]]; then
         echo -e "\033[1;31mError: Custom profile not found: $profile_path\033[0m"
         return 1
     fi
@@ -1492,7 +1492,7 @@ connect_custom_profile() {
 }
 
 # Main execution guard - only run if executed directly, not sourced
-if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+if [[ ${BASH_SOURCE[0]} == "${0}" ]]; then
 
     case "${1:-}" in
         "connect" | "c")
@@ -1572,7 +1572,7 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
             done
             ;;
         "list" | "l")
-            if [[ "${2:-}" == "detailed" ]]; then
+            if [[ ${2:-} == "detailed" ]]; then
                 list_profiles "${3:-}" "detailed"
             else
                 list_profiles "${2:-}"
@@ -1581,7 +1581,7 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
         "cache")
             case "${2:-}" in
                 "clear")
-                    if [[ -f "$PERFORMANCE_CACHE" ]]; then
+                    if [[ -f $PERFORMANCE_CACHE ]]; then
                         rm -f "$PERFORMANCE_CACHE"
                         echo -e "\033[1;32mPerformance cache cleared\033[0m"
                     else
@@ -1589,11 +1589,11 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
                     fi
                     ;;
                 "info")
-                    if [[ -f "$PERFORMANCE_CACHE" ]]; then
+                    if [[ -f $PERFORMANCE_CACHE ]]; then
                         # shellcheck disable=SC2086  # STAT_MTIME_FLAG must expand into flags
-                        cache_age=$(($(date +%s) - $(stat $STAT_MTIME_FLAG "$PERFORMANCE_CACHE" 2>/dev/null || echo 0)))
-                        cache_size=$(du -h "$PERFORMANCE_CACHE" 2>/dev/null | cut -f1)
-                        cache_entries=$(wc -l <"$PERFORMANCE_CACHE" 2>/dev/null)
+                        cache_age=$(($(date +%s) - $(stat $STAT_MTIME_FLAG "$PERFORMANCE_CACHE" 2> /dev/null || echo 0)))
+                        cache_size=$(du -h "$PERFORMANCE_CACHE" 2> /dev/null | cut -f1)
+                        cache_entries=$(wc -l < "$PERFORMANCE_CACHE" 2> /dev/null)
 
                         echo -e "\033[1;36mPerformance Cache Information:\033[0m"
                         echo "  File: $PERFORMANCE_CACHE"
@@ -1626,12 +1626,12 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
                 exit 1
             fi
 
-            if [[ ! -f "$CREDENTIALS_FILE" ]]; then
+            if [[ ! -f $CREDENTIALS_FILE ]]; then
                 echo -e "\033[1;31mCredentials file missing: $CREDENTIALS_FILE\033[0m"
                 exit 1
             fi
 
-            if ! list_profiles >/dev/null; then
+            if ! list_profiles > /dev/null; then
                 echo -e "\033[1;31mNo VPN profiles available\033[0m"
                 exit 1
             fi
