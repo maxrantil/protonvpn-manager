@@ -456,7 +456,7 @@ stop_vpn() {
     # Disable kill switch on intentional disconnect
     local kill_switch_script="$VPN_DIR/vpn-kill-switch"
     if [[ -x "$kill_switch_script" ]]; then
-        if "$kill_switch_script" is-enabled 2>/dev/null; then
+        if "$kill_switch_script" is-enabled 2> /dev/null; then
             echo "Disabling kill switch (intentional disconnect)..."
             "$kill_switch_script" disable
         fi

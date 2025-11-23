@@ -18,8 +18,8 @@ source "$VPN_DIR/vpn-error-handler"
 # Configuration
 STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/vpn"
 STATE_FILE="$STATE_DIR/kill_switch.state"
+# shellcheck disable=SC2034  # CONFIG_DIR reserved for future config-based kill switch default
 CONFIG_DIR="${VPN_CONFIG_DIR:-$HOME/.config/vpn}"
-CONFIG_FILE="$CONFIG_DIR/config"
 
 # Chain names for iptables rules
 CHAIN_NAME="VPN_KILL_SWITCH"
@@ -29,14 +29,14 @@ CHAIN_NAME_V6="VPN_KILL_SWITCH_V6"
 VPN_INTERFACE="${VPN_INTERFACE:-tun0}"
 
 # Ensure state directory exists
-mkdir -p "$STATE_DIR" 2>/dev/null || true
+mkdir -p "$STATE_DIR" 2> /dev/null || true
 
 # Check if running as root or can use sudo
 check_privileges() {
     if [[ $EUID -eq 0 ]]; then
         return 0
     fi
-    if sudo -n true 2>/dev/null; then
+    if sudo -n true 2> /dev/null; then
         return 0
     fi
     echo -e "${RED}Error: Kill switch requires root privileges${NC}"
@@ -64,7 +64,7 @@ run_ip6tables() {
 
 # Check if iptables is available
 check_iptables() {
-    if ! command -v iptables &>/dev/null; then
+    if ! command -v iptables &> /dev/null; then
         echo -e "${RED}Error: iptables not found${NC}"
         echo "Please install iptables: sudo pacman -S iptables"
         return 1
@@ -74,12 +74,12 @@ check_iptables() {
 
 # Check if kill switch chain exists
 chain_exists() {
-    run_iptables -L "$CHAIN_NAME" -n &>/dev/null
+    run_iptables -L "$CHAIN_NAME" -n &> /dev/null
 }
 
 # Check if IPv6 chain exists
 chain_exists_v6() {
-    run_ip6tables -L "$CHAIN_NAME_V6" -n &>/dev/null
+    run_ip6tables -L "$CHAIN_NAME_V6" -n &> /dev/null
 }
 
 # Get the current VPN server IP from the active connection
@@ -88,18 +88,18 @@ get_vpn_server_ip() {
     local vpn_ip
 
     # Method 1: Check routing table for tun0 gateway
-    vpn_ip=$(ip route show dev "$VPN_INTERFACE" 2>/dev/null | grep -oP 'via \K[\d.]+' | head -1)
+    vpn_ip=$(ip route show dev "$VPN_INTERFACE" 2> /dev/null | grep -oP 'via \K[\d.]+' | head -1)
 
     if [[ -z "$vpn_ip" ]]; then
         # Method 2: Check OpenVPN process arguments via /proc
         # shellcheck disable=SC2009  # ps | grep needed for extracting --remote argument
-        vpn_ip=$(ps aux 2>/dev/null | grep -oP 'openvpn.*--remote \K[\d.]+' | head -1)
+        vpn_ip=$(ps aux 2> /dev/null | grep -oP 'openvpn.*--remote \K[\d.]+' | head -1)
     fi
 
     if [[ -z "$vpn_ip" ]]; then
         # Method 3: Check the saved state file for last known server
         if [[ -f "$STATE_FILE" ]]; then
-            vpn_ip=$(grep "^server_ip=" "$STATE_FILE" 2>/dev/null | cut -d= -f2)
+            vpn_ip=$(grep "^server_ip=" "$STATE_FILE" 2> /dev/null | cut -d= -f2)
         fi
     fi
 
@@ -108,12 +108,12 @@ get_vpn_server_ip() {
 
 # Get the default gateway interface (physical NIC)
 get_default_interface() {
-    ip route show default 2>/dev/null | grep -oP 'dev \K\S+' | head -1
+    ip route show default 2> /dev/null | grep -oP 'dev \K\S+' | head -1
 }
 
 # Get the default gateway IP
 get_default_gateway() {
-    ip route show default 2>/dev/null | grep -oP 'via \K[\d.]+' | head -1
+    ip route show default 2> /dev/null | grep -oP 'via \K[\d.]+' | head -1
 }
 
 # Enable the kill switch
@@ -135,12 +135,9 @@ enable_kill_switch() {
         vpn_server_ip=$(get_vpn_server_ip)
     fi
 
-    local default_iface
-    default_iface=$(get_default_interface)
-
     # Create the kill switch chain if it doesn't exist
     if ! chain_exists; then
-        run_iptables -N "$CHAIN_NAME" 2>/dev/null || true
+        run_iptables -N "$CHAIN_NAME" 2> /dev/null || true
     else
         # Flush existing rules
         run_iptables -F "$CHAIN_NAME"
@@ -182,7 +179,7 @@ enable_kill_switch() {
     run_iptables -A "$CHAIN_NAME" -j DROP
 
     # Insert the chain into OUTPUT if not already present
-    if ! run_iptables -C OUTPUT -j "$CHAIN_NAME" 2>/dev/null; then
+    if ! run_iptables -C OUTPUT -j "$CHAIN_NAME" 2> /dev/null; then
         run_iptables -I OUTPUT 1 -j "$CHAIN_NAME"
     fi
 
@@ -190,7 +187,7 @@ enable_kill_switch() {
     echo "  Setting up IPv6 rules..."
 
     if ! chain_exists_v6; then
-        run_ip6tables -N "$CHAIN_NAME_V6" 2>/dev/null || true
+        run_ip6tables -N "$CHAIN_NAME_V6" 2> /dev/null || true
     else
         run_ip6tables -F "$CHAIN_NAME_V6"
     fi
@@ -209,7 +206,7 @@ enable_kill_switch() {
     run_ip6tables -A "$CHAIN_NAME_V6" -j DROP
 
     # Insert the chain into OUTPUT if not already present
-    if ! run_ip6tables -C OUTPUT -j "$CHAIN_NAME_V6" 2>/dev/null; then
+    if ! run_ip6tables -C OUTPUT -j "$CHAIN_NAME_V6" 2> /dev/null; then
         run_ip6tables -I OUTPUT 1 -j "$CHAIN_NAME_V6"
     fi
 
@@ -233,7 +230,7 @@ disable_kill_switch() {
     fi
 
     # Remove IPv4 chain from OUTPUT
-    if run_iptables -C OUTPUT -j "$CHAIN_NAME" 2>/dev/null; then
+    if run_iptables -C OUTPUT -j "$CHAIN_NAME" 2> /dev/null; then
         run_iptables -D OUTPUT -j "$CHAIN_NAME"
     fi
 
@@ -244,7 +241,7 @@ disable_kill_switch() {
     fi
 
     # Remove IPv6 chain from OUTPUT
-    if run_ip6tables -C OUTPUT -j "$CHAIN_NAME_V6" 2>/dev/null; then
+    if run_ip6tables -C OUTPUT -j "$CHAIN_NAME_V6" 2> /dev/null; then
         run_ip6tables -D OUTPUT -j "$CHAIN_NAME_V6"
     fi
 
@@ -268,16 +265,16 @@ emergency_disable() {
     echo -e "${RED}Emergency kill switch disable...${NC}"
 
     # Try to disable without privilege check (best effort)
-    sudo iptables -D OUTPUT -j "$CHAIN_NAME" 2>/dev/null || true
-    sudo iptables -F "$CHAIN_NAME" 2>/dev/null || true
-    sudo iptables -X "$CHAIN_NAME" 2>/dev/null || true
+    sudo iptables -D OUTPUT -j "$CHAIN_NAME" 2> /dev/null || true
+    sudo iptables -F "$CHAIN_NAME" 2> /dev/null || true
+    sudo iptables -X "$CHAIN_NAME" 2> /dev/null || true
 
-    sudo ip6tables -D OUTPUT -j "$CHAIN_NAME_V6" 2>/dev/null || true
-    sudo ip6tables -F "$CHAIN_NAME_V6" 2>/dev/null || true
-    sudo ip6tables -X "$CHAIN_NAME_V6" 2>/dev/null || true
+    sudo ip6tables -D OUTPUT -j "$CHAIN_NAME_V6" 2> /dev/null || true
+    sudo ip6tables -F "$CHAIN_NAME_V6" 2> /dev/null || true
+    sudo ip6tables -X "$CHAIN_NAME_V6" 2> /dev/null || true
 
     # Clear state
-    rm -f "$STATE_FILE" 2>/dev/null || true
+    rm -f "$STATE_FILE" 2> /dev/null || true
 
     echo -e "${GREEN}✓ Emergency disable complete${NC}"
     return 0
@@ -285,10 +282,10 @@ emergency_disable() {
 
 # Check if kill switch is enabled
 is_enabled() {
-    if chain_exists && run_iptables -C OUTPUT -j "$CHAIN_NAME" 2>/dev/null; then
-        return 0  # Enabled
+    if chain_exists && run_iptables -C OUTPUT -j "$CHAIN_NAME" 2> /dev/null; then
+        return 0 # Enabled
     fi
-    return 1  # Disabled
+    return 1 # Disabled
 }
 
 # Save state to file
@@ -296,7 +293,7 @@ save_state() {
     local status="$1"
     local server_ip="${2:-}"
 
-    mkdir -p "$STATE_DIR" 2>/dev/null || true
+    mkdir -p "$STATE_DIR" 2> /dev/null || true
 
     cat > "$STATE_FILE" << EOF
 status=$status
@@ -304,7 +301,7 @@ server_ip=$server_ip
 timestamp=$(date +%s)
 interface=$VPN_INTERFACE
 EOF
-    chmod 600 "$STATE_FILE" 2>/dev/null || true
+    chmod 600 "$STATE_FILE" 2> /dev/null || true
 }
 
 # Show current status
@@ -315,7 +312,7 @@ show_status() {
     echo ""
 
     # Check iptables availability
-    if ! command -v iptables &>/dev/null; then
+    if ! command -v iptables &> /dev/null; then
         echo -e "iptables: ${RED}not installed${NC}"
         return 1
     fi
@@ -328,7 +325,7 @@ show_status() {
 
         # Show IPv4 rules
         echo "IPv4 Rules:"
-        if sudo -n iptables -L "$CHAIN_NAME" -n 2>/dev/null; then
+        if sudo -n iptables -L "$CHAIN_NAME" -n 2> /dev/null; then
             :
         else
             echo "  (requires sudo to view)"
@@ -336,7 +333,7 @@ show_status() {
 
         echo ""
         echo "IPv6 Rules:"
-        if sudo -n ip6tables -L "$CHAIN_NAME_V6" -n 2>/dev/null; then
+        if sudo -n ip6tables -L "$CHAIN_NAME_V6" -n 2> /dev/null; then
             :
         else
             echo "  (requires sudo to view)"
@@ -350,11 +347,11 @@ show_status() {
         echo ""
         echo "State file: $STATE_FILE"
         local saved_status
-        saved_status=$(grep "^status=" "$STATE_FILE" 2>/dev/null | cut -d= -f2)
+        saved_status=$(grep "^status=" "$STATE_FILE" 2> /dev/null | cut -d= -f2)
         echo "  Saved status: $saved_status"
 
         local saved_ip
-        saved_ip=$(grep "^server_ip=" "$STATE_FILE" 2>/dev/null | cut -d= -f2)
+        saved_ip=$(grep "^server_ip=" "$STATE_FILE" 2> /dev/null | cut -d= -f2)
         [[ -n "$saved_ip" ]] && echo "  Last VPN server: $saved_ip"
     fi
 

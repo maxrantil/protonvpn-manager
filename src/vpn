@@ -96,7 +96,7 @@ case "${1:-}" in
             enable_kill_switch=""
             for arg in "${@:2}"; do
                 case "$arg" in
-                    --kill-switch|--killswitch|-k)
+                    --kill-switch | --killswitch | -k)
                         enable_kill_switch="1"
                         ;;
                     *)
