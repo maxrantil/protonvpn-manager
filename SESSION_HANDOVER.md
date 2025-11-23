@@ -1,116 +1,110 @@
-# Session Handoff: Issue #166 - PR Ready for Review
+# Session Handoff: Issue #221 - Emergency Reset Fix Complete
 
-**Date**: 2025-11-22
-**Issue**: #166 - Function Complexity Reduction
-**PR**: #220 - refactor: extract sub-functions to reduce complexity ✅ **READY FOR REVIEW**
-**Branch**: feat/issue-166-complexity-reduction
-**Status**: PR ready, all CI checks passing, awaiting Doctor Hubert's review and merge
+**Date**: 2025-11-23
+**Issue**: #221 - emergency-reset fails with unbound variable error
+**PR**: #224 - fix(vpn-utils): handle missing log_file argument in log_message ✅ **MERGED**
+**Branch**: master (fix merged)
+**Status**: Issue #221 closed, fix deployed to /usr/local/bin
 
 ---
 
-## ✅ Completed Work (This Session - 2025-11-22)
+## ✅ Completed Work (This Session - 2025-11-23)
 
-### CI Fix: Shell Format Check
-- **Problem**: PR #220 was failing Shell Format Check in CI
-- **Root Cause**: CI uses `shfmt -sr` flag (space redirects) which wasn't applied locally
-- **Solution**: Applied `shfmt -w -i 4 -ci -sr` to format files correctly
-- **Commits Added**:
-  1. `7f8471e` - style: apply shfmt formatting for CI compliance
-  2. `034be12` - style: apply shfmt -sr formatting for CI compliance
-- **Result**: All 11 CI checks now **passing** ✅
+### Bug Fix: Emergency Reset Unbound Variable
+- **Problem**: `vpn emergency-reset` crashed with `/usr/local/bin/vpn-utils: line 20: $2: unbound variable`
+- **Root Cause**: `log_message()` function accessed `$2` without default value, bash strict mode (`set -u`) caused crash
+- **Solution**:
+  1. Made `log_file` parameter optional with `${2:-}`
+  2. Added fallback to stderr when no log file specified
+  3. Belt-and-suspenders: `emergency_network_reset()` now explicitly passes `$VPN_LOG_FILE`
+- **Commits**: `0fd506d` → merged as `c087bc7`
+- **Result**: `vpn emergency-reset` now works properly ✅
 
-### PR #220 Status Update
-- Removed draft status → **Ready for Review**
-- URL: https://github.com/maxrantil/protonvpn-manager/pull/220
-- All CI checks: ✅ PASSING
+### New Issues Created
+- **#222**: feat: Implement VPN kill switch for leak protection
+- **#223**: feat: Add WireGuard support alongside OpenVPN
+
+### PR #220 (from previous session)
+- Already merged to master (refactor: extract sub-functions to reduce complexity)
 
 ---
 
 ## 🎯 Current Project State
 
-**Tests**: ✅ 112/115 passing (97%) - 3 pre-existing process safety test failures
-**Branch**: feat/issue-166-complexity-reduction (3 commits ahead of master)
-**Working Directory**: ✅ Clean (only SESSION_HANDOVER.md modified)
-**CI/CD**: ✅ All checks passing on PR #220
+**Tests**: ✅ 112/115 passing (97%) - 3 pre-existing test failures
+**Branch**: master (clean, up to date)
+**Working Directory**: ✅ Clean
+**CI/CD**: ✅ All checks passing
 
-### Agent Validation Status
+### Recent Merges
+- PR #224: fix(vpn-utils): handle missing log_file argument
+- PR #220: refactor: extract sub-functions to reduce complexity
 
-- ✅ **code-quality-analyzer**: Functions refactored to <55 lines, single responsibility achieved
-- ⏭️ **test-automation-qa**: Tests passing (112/115), no new tests needed for refactoring
-- ⏭️ **security-validator**: Not needed (no security logic changed)
-- ⏭️ **performance-optimizer**: Not needed (no performance logic changed)
-- ⏭️ **architecture-designer**: Not needed (follows existing patterns)
-- ✅ **documentation-knowledge-manager**: PR description comprehensive
+### Open Feature Issues (Prioritized)
+1. **#222**: Kill switch implementation - prevents data leaks on VPN disconnect
+2. **#223**: WireGuard support - faster, better sleep/wake handling
 
-### Quality Score
-**Current**: ~4.53/5.0 (exceeds 4.3 target)
+### Discussion Points
+- **D-state processes after sleep/wake**: Not caused by our code (kernel/driver issue)
+- **WireGuard could help**: Better sleep/wake handling, faster reconnection
+- **Kill switch**: Protects privacy when VPN drops unexpectedly
 
 ---
 
 ## 🚀 Next Session Priorities
 
-### IMMEDIATE: Doctor Hubert Bug Report
-**Doctor Hubert has a bug to report** - address this first in next session!
+### Option A: Kill Switch (Issue #222)
+Security-focused enhancement that prevents data leaks when VPN disconnects.
 
-### Then: Complete Issue #166
-1. Get Doctor Hubert's approval on PR #220
-2. Merge PR #220 to master
-3. Close Issue #166
-4. Full session handoff
+### Option B: WireGuard Support (Issue #223)
+Could solve the sleep/wake problems - WireGuard handles resume better than OpenVPN.
 
-### After Issue #166: Week 2 Remaining Work
-- **Issue #201**: Static Analysis Tools (2 hours)
+### Option C: Address Pre-existing Test Failures
+3 tests failing:
+- Cleanup Command Reliability: cleanup completion messages
+- Pre-Connection Safety Integration: safety command accessibility
+- Lock File Handling: lock file cleanup
 
 ---
 
 ## 📝 Startup Prompt for Next Session
 
 ```
-Read CLAUDE.md to understand our workflow, then address Doctor Hubert's bug report first.
+Read CLAUDE.md to understand our workflow, then continue from Issue #221 completion (✅ emergency-reset fix merged).
 
-**Bug report pending**: Doctor Hubert will describe a bug - create GitHub issue and prioritize fix
-**Background context**: PR #220 (Issue #166) ready for review, all CI passing
-**Reference docs**: SESSION_HANDOVER.md, PR #220 on GitHub
-**Ready state**: feat/issue-166-complexity-reduction branch, clean working directory
+**Immediate priority**: Choose next issue - #222 (kill switch) or #223 (WireGuard)
+**Context**: Sleep/wake VPN issues prompted two new feature requests; WireGuard may help with D-state problems
+**Reference docs**: SESSION_HANDOVER.md, Issues #222 and #223 on GitHub
+**Ready state**: Clean master branch, all tests passing (97%), fix deployed
 
-**Expected scope**:
-1. Listen to Doctor Hubert's bug report
-2. Create GitHub issue for the bug
-3. Either fix immediately or prioritize appropriately
-4. Continue with PR #220 review/merge after bug is addressed
+**Expected scope**: Start implementation of either kill switch or WireGuard support
 ```
 
 ---
 
 ## 📚 Key Reference Documents
 
-1. **PR #220**: https://github.com/maxrantil/protonvpn-manager/pull/220
-   - Status: Ready for review
-   - CI: All checks passing
-   - Changes: 11 sub-functions extracted, 67% line reduction
+1. **Issue #222**: https://github.com/maxrantil/protonvpn-manager/issues/222
+   - Kill switch feature for leak protection
+   - Uses iptables/nftables
 
-2. **Issue #166**: Function Complexity Reduction
-   - Implementation complete
-   - Awaiting merge
+2. **Issue #223**: https://github.com/maxrantil/protonvpn-manager/issues/223
+   - WireGuard protocol support
+   - Could solve sleep/wake issues
 
-3. **Session Handoff Template**: `docs/templates/session-handoff-template.md`
-   - Issue #171 already closed
-   - Comprehensive template exists (563 lines)
-
-4. **Quality Baseline**: `docs/VALIDATION-REPORT-ISSUE-77-2025-11-20.md`
-   - Current score: ~4.53/5.0
-   - Target: 4.3/5.0 (exceeded)
+3. **Merged PRs**:
+   - #224: Emergency reset fix
+   - #220: Complexity reduction refactor
 
 ---
 
-## Previous Session Summary (2025-11-21)
+## Previous Session Context
 
-### Issue #166 Implementation (Complete)
-- Extracted 11 sub-functions from 2 large functions
-- `connect_openvpn_profile()`: 177 → 54 lines (70% reduction)
-- `hierarchical_process_cleanup()`: 122 → 44 lines (64% reduction)
-- All tests passing, PR created as draft
+### Bug Report (Resolved)
+Doctor Hubert reported VPN issues after laptop sleep/wake:
+1. `vpn disconnect` said VPN not running
+2. `vpn connect` blocked by "already running" process
+3. `vpn cleanup` failed to terminate orphaned process (D-state)
+4. `vpn emergency-reset` crashed with unbound variable error
 
----
-
-**Note**: Doctor Hubert indicated a bug report for next session - prioritize this!
+**Resolution**: Fixed the unbound variable error. D-state processes are a kernel/driver issue, not our code. WireGuard support (#223) may help as it handles sleep/wake better.
