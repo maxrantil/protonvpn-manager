@@ -78,9 +78,9 @@ test_no_hardcoded_paths() {
 	for file in "${files_to_check[@]}"; do
 		if [[ -f "$file" ]]; then
 			# Check for hardcoded development paths
-			if grep -q "/home/user/workspace/claude-code/vpn" "$file" 2>/dev/null; then
+			if grep -q "$HOME/workspace/claude-code/vpn" "$file" 2>/dev/null; then
 				# Allow detection but not usage
-				if grep -v "# Security check\|WARNING\|ERROR" "$file" | grep -q "/home/user/workspace/claude-code/vpn"; then
+				if grep -v "# Security check\|WARNING\|ERROR" "$file" | grep -q "$HOME/workspace/claude-code/vpn"; then
 					test_warn "Hardcoded path found in: $file"
 					hardcoded_found=true
 				fi

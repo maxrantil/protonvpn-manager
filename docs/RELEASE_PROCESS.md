@@ -438,7 +438,7 @@ If you encounter issues:
 1. Check workflow logs in GitHub Actions
 2. Run local test suite: `./scripts/test-release-workflow.sh`
 3. Review this documentation
-4. Check [CONTRIBUTING.md](/home/user/workspace/protonvpn-manager/CONTRIBUTING.md)
+4. Check [CONTRIBUTING.md](/path/to/protonvpn-manager/CONTRIBUTING.md)
 5. Open an issue with `[release]` prefix
 
 ---

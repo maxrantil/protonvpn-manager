@@ -51,7 +51,7 @@ This comprehensive testing suite validates the ProtonVPN production deployment s
 
 ### Run All Tests
 ```bash
-cd /home/user/workspace/claude-code/vpn/tests
+cd $HOME/workspace/claude-code/vpn/tests
 ./test_comprehensive_runner.sh
 ```
 

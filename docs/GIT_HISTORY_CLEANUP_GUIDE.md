@@ -12,7 +12,7 @@
 ## Prerequisites
 
 **Completed**:
-- ✅ Backup created: `/home/user/workspace/protonvpn-manager.backup.20251013_174741`
+- ✅ Backup created: `/path/to/protonvpn-manager.backup.20251013_174741`
 - ✅ Mirror repository prepared: `/tmp/protonvpn-mirror`
 - ✅ filter-branch partially run (needs completion)
 
@@ -101,7 +101,7 @@ echo "✅ History rewritten on remote"
 
 ```bash
 # Move old repo to backup
-cd /home/user/workspace
+cd $HOME/workspace
 mv protonvpn-manager protonvpn-manager.old
 
 # Fresh clone with clean history
@@ -219,7 +219,7 @@ Timeline: Complete by [DATE]
 ### 2. Update Session Handoff
 
 ```bash
-cd /home/user/workspace/protonvpn-manager
+cd /path/to/protonvpn-manager
 
 # Update SESSION_HANDOVER.md to note history cleanup
 echo "
@@ -236,7 +236,7 @@ echo "
 ### 3. Verify .gitignore
 
 ```bash
-cd /home/user/workspace/protonvpn-manager
+cd /path/to/protonvpn-manager
 
 # Ensure credentials.txt remains ignored
 grep -q "credentials.txt" .gitignore || echo "credentials.txt" >> .gitignore
@@ -328,8 +328,8 @@ If ALL checks pass: ✅ **History cleanup successful!**
 ## Recovery (If Something Goes Wrong)
 
 ### Before Force Push:
-- Original repository still intact at `/home/user/workspace/protonvpn-manager`
-- Backup at `/home/user/workspace/protonvpn-manager.backup.20251013_174741`
+- Original repository still intact at `/path/to/protonvpn-manager`
+- Backup at `/path/to/protonvpn-manager.backup.20251013_174741`
 - Nothing to recover - just delete `/tmp/protonvpn-mirror` and start over
 
 ### After Force Push (Urgent):
@@ -340,7 +340,7 @@ If you immediately realize there's a problem:
 # Contact GitHub support IMMEDIATELY for ref recovery
 
 # Or restore from backup and force push again
-cd /home/user/workspace/protonvpn-manager.backup.20251013_174741
+cd /path/to/protonvpn-manager.backup.20251013_174741
 git remote add origin git@github.com:maxrantil/protonvpn-manager.git
 git push --force --all
 git push --force --tags
