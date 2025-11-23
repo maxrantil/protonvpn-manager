@@ -1139,10 +1139,8 @@ connect_openvpn_profile() {
 
         # Monitor connection with exponential backoff
         local monitor_result
-        monitor_result=$(
-            monitor_connection_establishment_with_backoff "$profile_name"
-            echo $?
-        )
+        monitor_connection_establishment_with_backoff "$profile_name"
+        monitor_result=$?
 
         if [[ $monitor_result -eq 0 ]]; then
             # Connection established
