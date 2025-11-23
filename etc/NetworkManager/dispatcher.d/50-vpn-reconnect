@@ -1,0 +1,304 @@
+#!/bin/bash
+# ABOUTME: NetworkManager dispatcher hook for VPN auto-reconnect (Issue #227)
+# ABOUTME: Requires kill switch enabled for security (no data leak window)
+
+set -euo pipefail
+
+# === CONSTANTS ===
+INTERFACE="${1:-}"
+ACTION="${2:-}"
+
+# Paths
+STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/vpn"
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/vpn"
+CONFIG_FILE="$CONFIG_DIR/config"
+LOCK_FILE="$STATE_DIR/reconnect.lock"
+ATTEMPTS_FILE="$STATE_DIR/reconnect.attempts"
+LOG_FILE="$STATE_DIR/reconnect.log"
+LAST_PROFILE="$STATE_DIR/last_profile"
+LAST_PROFILE_HASH="$STATE_DIR/last_profile.sha256"
+
+# Binaries - detect installed vs development mode
+if [[ -f "/usr/local/bin/vpn-manager" ]]; then
+    VPN_DIR="/usr/local/bin"
+else
+    # Development mode - find relative to this script
+    VPN_DIR="$(dirname "$(dirname "$(dirname "$(dirname "$(realpath "$0")")")")")/src"
+fi
+
+KILL_SWITCH="$VPN_DIR/vpn-kill-switch"
+VPN_MANAGER="$VPN_DIR/vpn-manager"
+VPN_CONNECTOR="$VPN_DIR/vpn-connector"
+
+# Defaults
+DEFAULT_COOLDOWN=30
+DEFAULT_MAX_ATTEMPTS=3
+
+# === LOGGING ===
+log_event() {
+    local level="$1"
+    local message="$2"
+    local timestamp
+    timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+    # Ensure log directory and file exist
+    mkdir -p "$STATE_DIR" 2>/dev/null || true
+
+    echo "[$timestamp] [$level] $message" >> "$LOG_FILE" 2>/dev/null || true
+    logger -t vpn-reconnect "[$level] $message" 2>/dev/null || true
+}
+
+# === INPUT VALIDATION ===
+validate_inputs() {
+    # Validate interface name (alphanumeric + underscore/hyphen, max 15 chars)
+    if [[ ! "$INTERFACE" =~ ^[a-zA-Z0-9_-]{1,15}$ ]]; then
+        exit 0
+    fi
+
+    # Validate action (whitelist)
+    case "$ACTION" in
+        up|connectivity-change) ;;
+        *) exit 0 ;;
+    esac
+
+    # Only act on WiFi interfaces (wl*) or Ethernet (eth*, enp*)
+    case "$INTERFACE" in
+        wl*|eth*|enp*) ;;
+        *) exit 0 ;;
+    esac
+}
+
+# === CONFIGURATION ===
+load_config() {
+    AUTO_RECONNECT="false"
+    COOLDOWN="$DEFAULT_COOLDOWN"
+    MAX_ATTEMPTS="$DEFAULT_MAX_ATTEMPTS"
+
+    if [[ -f "$CONFIG_FILE" ]]; then
+        # Source safely (only known variables)
+        while IFS='=' read -r key value; do
+            # Remove leading/trailing whitespace and quotes
+            value="${value#\"}"
+            value="${value%\"}"
+            value="${value#\'}"
+            value="${value%\'}"
+
+            case "$key" in
+                AUTO_RECONNECT) AUTO_RECONNECT="$value" ;;
+                AUTO_RECONNECT_COOLDOWN) COOLDOWN="$value" ;;
+                AUTO_RECONNECT_MAX_ATTEMPTS) MAX_ATTEMPTS="$value" ;;
+            esac
+        done < <(grep -E '^(AUTO_RECONNECT|AUTO_RECONNECT_COOLDOWN|AUTO_RECONNECT_MAX_ATTEMPTS)=' "$CONFIG_FILE" 2>/dev/null || true)
+    fi
+}
+
+# === SECURITY CHECKS ===
+check_kill_switch() {
+    if [[ ! -x "$KILL_SWITCH" ]]; then
+        log_event "ERROR" "Kill switch binary not found: $KILL_SWITCH"
+        return 1
+    fi
+
+    if ! "$KILL_SWITCH" is-enabled 2>/dev/null; then
+        log_event "SECURITY" "Auto-reconnect blocked: kill switch not enabled"
+        return 1
+    fi
+    return 0
+}
+
+# === LOCKING ===
+acquire_lock() {
+    mkdir -p "$STATE_DIR" 2>/dev/null || return 1
+
+    # Use flock for exclusive locking
+    exec 200>"$LOCK_FILE"
+    if ! flock -n 200; then
+        log_event "INFO" "Auto-reconnect already in progress, skipping"
+        return 1
+    fi
+    return 0
+}
+
+# === RATE LIMITING ===
+check_cooldown() {
+    local now
+    now=$(date +%s)
+
+    if [[ -f "$ATTEMPTS_FILE" ]]; then
+        local last_attempt
+        last_attempt=$(tail -1 "$ATTEMPTS_FILE" 2>/dev/null | cut -d: -f1)
+
+        if [[ -n "$last_attempt" ]] && [[ "$last_attempt" =~ ^[0-9]+$ ]]; then
+            local elapsed=$((now - last_attempt))
+            if [[ $elapsed -lt $COOLDOWN ]]; then
+                log_event "INFO" "Cooldown active (${elapsed}s < ${COOLDOWN}s), skipping"
+                return 1
+            fi
+        fi
+
+        # Check max attempts in window (last 5 minutes)
+        local window_start=$((now - 300))
+        local recent_attempts
+        recent_attempts=$(awk -F: -v start="$window_start" '$1 >= start' "$ATTEMPTS_FILE" 2>/dev/null | wc -l)
+
+        if [[ $recent_attempts -ge $MAX_ATTEMPTS ]]; then
+            log_event "SECURITY" "Max attempts ($MAX_ATTEMPTS) in 5-minute window exceeded"
+            return 1
+        fi
+    fi
+
+    return 0
+}
+
+# === PROFILE VALIDATION ===
+validate_profile() {
+    if [[ ! -f "$LAST_PROFILE" ]]; then
+        log_event "WARN" "No last profile saved"
+        return 1
+    fi
+
+    local profile
+    profile=$(cat "$LAST_PROFILE" 2>/dev/null)
+
+    # Reject empty profile
+    if [[ -z "$profile" ]]; then
+        log_event "ERROR" "Empty profile path"
+        return 1
+    fi
+
+    # Check file exists
+    if [[ ! -f "$profile" ]]; then
+        log_event "ERROR" "Profile file does not exist: $profile"
+        return 1
+    fi
+
+    # Reject symlinks (security: prevent symlink attacks)
+    if [[ -L "$profile" ]]; then
+        log_event "SECURITY" "Profile is symlink (rejected): $profile"
+        return 1
+    fi
+
+    # Check path is within allowed directories
+    local config_locations="$CONFIG_DIR/locations"
+    case "$profile" in
+        "$config_locations"/*) ;;
+        /etc/openvpn/*) ;;
+        *)
+            log_event "SECURITY" "Profile outside allowed directories: $profile"
+            return 1
+            ;;
+    esac
+
+    # Check integrity hash if available
+    if [[ -f "$LAST_PROFILE_HASH" ]]; then
+        local saved_hash current_hash
+        saved_hash=$(cat "$LAST_PROFILE_HASH" 2>/dev/null)
+        current_hash=$(sha256sum "$profile" 2>/dev/null | cut -d' ' -f1)
+
+        if [[ "$saved_hash" != "$current_hash" ]]; then
+            log_event "SECURITY" "Profile integrity check failed: $profile"
+            return 1
+        fi
+    fi
+
+    echo "$profile"
+    return 0
+}
+
+# === VPN HEALTH CHECK ===
+vpn_is_healthy() {
+    # Check if OpenVPN process exists with --config argument
+    if pgrep -f "openvpn.*--config" >/dev/null 2>&1; then
+        # Check if tun0 interface exists and is up
+        if ip link show tun0 >/dev/null 2>&1; then
+            return 0
+        fi
+    fi
+
+    # Check for WireGuard interface
+    if command -v wg &>/dev/null && wg show 2>/dev/null | grep -q "interface:"; then
+        return 0
+    fi
+
+    return 1
+}
+
+# === RECONNECT ===
+attempt_reconnect() {
+    local profile="$1"
+    local now
+    now=$(date +%s)
+
+    log_event "INFO" "Attempting reconnect to: $profile"
+
+    # Ensure attempts file directory exists
+    mkdir -p "$STATE_DIR" 2>/dev/null || true
+
+    # Cleanup any dead state
+    if [[ -x "$VPN_MANAGER" ]]; then
+        "$VPN_MANAGER" cleanup >/dev/null 2>&1 || true
+    fi
+    sleep 2
+
+    # Attempt connection
+    if [[ -x "$VPN_CONNECTOR" ]]; then
+        if "$VPN_CONNECTOR" connect "$profile" >>"$LOG_FILE" 2>&1; then
+            echo "${now}:success" >> "$ATTEMPTS_FILE"
+            log_event "INFO" "Reconnect successful"
+            return 0
+        else
+            echo "${now}:failed" >> "$ATTEMPTS_FILE"
+            log_event "ERROR" "Reconnect failed"
+            return 1
+        fi
+    else
+        log_event "ERROR" "VPN connector not found: $VPN_CONNECTOR"
+        echo "${now}:failed:no_connector" >> "$ATTEMPTS_FILE"
+        return 1
+    fi
+}
+
+# === MAIN ===
+main() {
+    # Step 1: Validate inputs
+    validate_inputs
+
+    # Step 2: Load configuration
+    load_config
+
+    # Step 3: Check if enabled
+    if [[ "$AUTO_RECONNECT" != "true" ]]; then
+        exit 0
+    fi
+
+    # Step 4: Security - require kill switch
+    if ! check_kill_switch; then
+        exit 0
+    fi
+
+    # Step 5: Check if VPN already healthy
+    if vpn_is_healthy; then
+        exit 0
+    fi
+
+    # Step 6: Acquire exclusive lock
+    if ! acquire_lock; then
+        exit 0
+    fi
+
+    # Step 7: Check cooldown/rate limit
+    if ! check_cooldown; then
+        exit 0
+    fi
+
+    # Step 8: Validate profile
+    local profile
+    if ! profile=$(validate_profile); then
+        exit 0
+    fi
+
+    # Step 9: Attempt reconnect
+    attempt_reconnect "$profile"
+}
+
+main "$@"
