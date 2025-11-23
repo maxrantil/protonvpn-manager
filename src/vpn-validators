@@ -311,7 +311,8 @@ validate_openvpn_process() {
     fi
     local cmd_line
     cmd_line=$(ps -p "$pid" -o cmd= 2> /dev/null || true)
-    [[ "$cmd_line" =~ ^openvpn.*--config ]]
+    # Match openvpn with full path (/usr/bin/openvpn) or just binary name
+    [[ "$cmd_line" =~ (^|/)openvpn.*--config ]]
 }
 
 # Discover all VPN-related processes including zombies
