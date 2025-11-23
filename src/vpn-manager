@@ -453,6 +453,15 @@ stop_vpn() {
     cleanup_files
     cleanup_routes_light
 
+    # Disable kill switch on intentional disconnect
+    local kill_switch_script="$VPN_DIR/vpn-kill-switch"
+    if [[ -x "$kill_switch_script" ]]; then
+        if "$kill_switch_script" is-enabled 2>/dev/null; then
+            echo "Disabling kill switch (intentional disconnect)..."
+            "$kill_switch_script" disable
+        fi
+    fi
+
     notify_event "status_check" "DISCONNECTED"
 
     pkill -RTMIN+4 dwmblocks 2> /dev/null || true

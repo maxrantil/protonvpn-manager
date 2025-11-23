@@ -1,0 +1,412 @@
+#!/bin/bash
+# ABOUTME: VPN kill switch implementation using iptables for leak protection
+# ABOUTME: Blocks all non-VPN traffic when enabled to prevent data leaks on disconnect
+
+set -euo pipefail
+
+# Script locations - robust detection for installed vs development mode
+if [[ -f "/usr/local/bin/vpn-manager" ]] && [[ -f "/usr/local/bin/vpn-error-handler" ]]; then
+    VPN_DIR="/usr/local/bin"
+else
+    VPN_DIR="$(dirname "$(realpath "$0")")"
+fi
+
+# Source dependencies
+source "$VPN_DIR/vpn-colors"
+source "$VPN_DIR/vpn-error-handler"
+
+# Configuration
+STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/vpn"
+STATE_FILE="$STATE_DIR/kill_switch.state"
+CONFIG_DIR="${VPN_CONFIG_DIR:-$HOME/.config/vpn}"
+CONFIG_FILE="$CONFIG_DIR/config"
+
+# Chain names for iptables rules
+CHAIN_NAME="VPN_KILL_SWITCH"
+CHAIN_NAME_V6="VPN_KILL_SWITCH_V6"
+
+# VPN interface (OpenVPN typically uses tun0)
+VPN_INTERFACE="${VPN_INTERFACE:-tun0}"
+
+# Ensure state directory exists
+mkdir -p "$STATE_DIR" 2>/dev/null || true
+
+# Check if running as root or can use sudo
+check_privileges() {
+    if [[ $EUID -eq 0 ]]; then
+        return 0
+    fi
+    if sudo -n true 2>/dev/null; then
+        return 0
+    fi
+    echo -e "${RED}Error: Kill switch requires root privileges${NC}"
+    echo "Please run with sudo or ensure passwordless sudo is configured"
+    return 1
+}
+
+# Run iptables command with appropriate privileges
+run_iptables() {
+    if [[ $EUID -eq 0 ]]; then
+        iptables "$@"
+    else
+        sudo iptables "$@"
+    fi
+}
+
+# Run ip6tables command with appropriate privileges
+run_ip6tables() {
+    if [[ $EUID -eq 0 ]]; then
+        ip6tables "$@"
+    else
+        sudo ip6tables "$@"
+    fi
+}
+
+# Check if iptables is available
+check_iptables() {
+    if ! command -v iptables &>/dev/null; then
+        echo -e "${RED}Error: iptables not found${NC}"
+        echo "Please install iptables: sudo pacman -S iptables"
+        return 1
+    fi
+    return 0
+}
+
+# Check if kill switch chain exists
+chain_exists() {
+    run_iptables -L "$CHAIN_NAME" -n &>/dev/null
+}
+
+# Check if IPv6 chain exists
+chain_exists_v6() {
+    run_ip6tables -L "$CHAIN_NAME_V6" -n &>/dev/null
+}
+
+# Get the current VPN server IP from the active connection
+get_vpn_server_ip() {
+    # Try to get from OpenVPN's remote endpoint
+    local vpn_ip
+
+    # Method 1: Check routing table for tun0 gateway
+    vpn_ip=$(ip route show dev "$VPN_INTERFACE" 2>/dev/null | grep -oP 'via \K[\d.]+' | head -1)
+
+    if [[ -z "$vpn_ip" ]]; then
+        # Method 2: Check OpenVPN process arguments via /proc
+        # shellcheck disable=SC2009  # ps | grep needed for extracting --remote argument
+        vpn_ip=$(ps aux 2>/dev/null | grep -oP 'openvpn.*--remote \K[\d.]+' | head -1)
+    fi
+
+    if [[ -z "$vpn_ip" ]]; then
+        # Method 3: Check the saved state file for last known server
+        if [[ -f "$STATE_FILE" ]]; then
+            vpn_ip=$(grep "^server_ip=" "$STATE_FILE" 2>/dev/null | cut -d= -f2)
+        fi
+    fi
+
+    echo "$vpn_ip"
+}
+
+# Get the default gateway interface (physical NIC)
+get_default_interface() {
+    ip route show default 2>/dev/null | grep -oP 'dev \K\S+' | head -1
+}
+
+# Get the default gateway IP
+get_default_gateway() {
+    ip route show default 2>/dev/null | grep -oP 'via \K[\d.]+' | head -1
+}
+
+# Enable the kill switch
+enable_kill_switch() {
+    local vpn_server_ip="${1:-}"
+
+    echo -e "${YELLOW}Enabling VPN kill switch...${NC}"
+
+    if ! check_iptables; then
+        return 1
+    fi
+
+    if ! check_privileges; then
+        return 1
+    fi
+
+    # Get VPN server IP if not provided
+    if [[ -z "$vpn_server_ip" ]]; then
+        vpn_server_ip=$(get_vpn_server_ip)
+    fi
+
+    local default_iface
+    default_iface=$(get_default_interface)
+
+    # Create the kill switch chain if it doesn't exist
+    if ! chain_exists; then
+        run_iptables -N "$CHAIN_NAME" 2>/dev/null || true
+    else
+        # Flush existing rules
+        run_iptables -F "$CHAIN_NAME"
+    fi
+
+    # IPv4 Rules
+    echo "  Setting up IPv4 rules..."
+
+    # Allow loopback
+    run_iptables -A "$CHAIN_NAME" -o lo -j ACCEPT
+    run_iptables -A "$CHAIN_NAME" -i lo -j ACCEPT
+
+    # Allow established connections (important for ongoing sessions)
+    run_iptables -A "$CHAIN_NAME" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+
+    # Allow traffic to VPN server (so we can establish/maintain connection)
+    if [[ -n "$vpn_server_ip" ]]; then
+        run_iptables -A "$CHAIN_NAME" -d "$vpn_server_ip" -j ACCEPT
+        echo "  Allowing VPN server: $vpn_server_ip"
+    fi
+
+    # Allow all traffic through VPN interface
+    run_iptables -A "$CHAIN_NAME" -o "$VPN_INTERFACE" -j ACCEPT
+
+    # Allow local network (optional - for LAN access)
+    # Uncomment if you need local network access while VPN is down
+    # run_iptables -A "$CHAIN_NAME" -d 192.168.0.0/16 -j ACCEPT
+    # run_iptables -A "$CHAIN_NAME" -d 10.0.0.0/8 -j ACCEPT
+    # run_iptables -A "$CHAIN_NAME" -d 172.16.0.0/12 -j ACCEPT
+
+    # Allow DHCP (needed for network connectivity)
+    run_iptables -A "$CHAIN_NAME" -p udp --dport 67:68 -j ACCEPT
+
+    # Allow DNS through VPN only (block DNS leaks on physical interface)
+    run_iptables -A "$CHAIN_NAME" -o "$VPN_INTERFACE" -p udp --dport 53 -j ACCEPT
+    run_iptables -A "$CHAIN_NAME" -o "$VPN_INTERFACE" -p tcp --dport 53 -j ACCEPT
+
+    # Block everything else
+    run_iptables -A "$CHAIN_NAME" -j DROP
+
+    # Insert the chain into OUTPUT if not already present
+    if ! run_iptables -C OUTPUT -j "$CHAIN_NAME" 2>/dev/null; then
+        run_iptables -I OUTPUT 1 -j "$CHAIN_NAME"
+    fi
+
+    # IPv6 Rules - Block all IPv6 traffic to prevent leaks
+    echo "  Setting up IPv6 rules..."
+
+    if ! chain_exists_v6; then
+        run_ip6tables -N "$CHAIN_NAME_V6" 2>/dev/null || true
+    else
+        run_ip6tables -F "$CHAIN_NAME_V6"
+    fi
+
+    # Allow loopback
+    run_ip6tables -A "$CHAIN_NAME_V6" -o lo -j ACCEPT
+    run_ip6tables -A "$CHAIN_NAME_V6" -i lo -j ACCEPT
+
+    # Allow established connections
+    run_ip6tables -A "$CHAIN_NAME_V6" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+
+    # Allow VPN tunnel IPv6 traffic
+    run_ip6tables -A "$CHAIN_NAME_V6" -o "$VPN_INTERFACE" -j ACCEPT
+
+    # Block all other IPv6 traffic
+    run_ip6tables -A "$CHAIN_NAME_V6" -j DROP
+
+    # Insert the chain into OUTPUT if not already present
+    if ! run_ip6tables -C OUTPUT -j "$CHAIN_NAME_V6" 2>/dev/null; then
+        run_ip6tables -I OUTPUT 1 -j "$CHAIN_NAME_V6"
+    fi
+
+    # Save state
+    save_state "enabled" "$vpn_server_ip"
+
+    echo -e "${GREEN}✓ Kill switch enabled${NC}"
+    echo "  - All non-VPN traffic is now blocked"
+    echo "  - Traffic allowed through: $VPN_INTERFACE"
+    [[ -n "$vpn_server_ip" ]] && echo "  - VPN server: $vpn_server_ip"
+
+    return 0
+}
+
+# Disable the kill switch (intentional disconnect)
+disable_kill_switch() {
+    echo -e "${YELLOW}Disabling VPN kill switch...${NC}"
+
+    if ! check_privileges; then
+        return 1
+    fi
+
+    # Remove IPv4 chain from OUTPUT
+    if run_iptables -C OUTPUT -j "$CHAIN_NAME" 2>/dev/null; then
+        run_iptables -D OUTPUT -j "$CHAIN_NAME"
+    fi
+
+    # Flush and delete IPv4 chain
+    if chain_exists; then
+        run_iptables -F "$CHAIN_NAME"
+        run_iptables -X "$CHAIN_NAME"
+    fi
+
+    # Remove IPv6 chain from OUTPUT
+    if run_ip6tables -C OUTPUT -j "$CHAIN_NAME_V6" 2>/dev/null; then
+        run_ip6tables -D OUTPUT -j "$CHAIN_NAME_V6"
+    fi
+
+    # Flush and delete IPv6 chain
+    if chain_exists_v6; then
+        run_ip6tables -F "$CHAIN_NAME_V6"
+        run_ip6tables -X "$CHAIN_NAME_V6"
+    fi
+
+    # Update state
+    save_state "disabled" ""
+
+    echo -e "${GREEN}✓ Kill switch disabled${NC}"
+    echo "  - Normal network traffic restored"
+
+    return 0
+}
+
+# Emergency disable - removes all rules immediately
+emergency_disable() {
+    echo -e "${RED}Emergency kill switch disable...${NC}"
+
+    # Try to disable without privilege check (best effort)
+    sudo iptables -D OUTPUT -j "$CHAIN_NAME" 2>/dev/null || true
+    sudo iptables -F "$CHAIN_NAME" 2>/dev/null || true
+    sudo iptables -X "$CHAIN_NAME" 2>/dev/null || true
+
+    sudo ip6tables -D OUTPUT -j "$CHAIN_NAME_V6" 2>/dev/null || true
+    sudo ip6tables -F "$CHAIN_NAME_V6" 2>/dev/null || true
+    sudo ip6tables -X "$CHAIN_NAME_V6" 2>/dev/null || true
+
+    # Clear state
+    rm -f "$STATE_FILE" 2>/dev/null || true
+
+    echo -e "${GREEN}✓ Emergency disable complete${NC}"
+    return 0
+}
+
+# Check if kill switch is enabled
+is_enabled() {
+    if chain_exists && run_iptables -C OUTPUT -j "$CHAIN_NAME" 2>/dev/null; then
+        return 0  # Enabled
+    fi
+    return 1  # Disabled
+}
+
+# Save state to file
+save_state() {
+    local status="$1"
+    local server_ip="${2:-}"
+
+    mkdir -p "$STATE_DIR" 2>/dev/null || true
+
+    cat > "$STATE_FILE" << EOF
+status=$status
+server_ip=$server_ip
+timestamp=$(date +%s)
+interface=$VPN_INTERFACE
+EOF
+    chmod 600 "$STATE_FILE" 2>/dev/null || true
+}
+
+# Show current status
+show_status() {
+    echo -e "${CYAN}╔════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║         VPN Kill Switch Status         ║${NC}"
+    echo -e "${CYAN}╚════════════════════════════════════════╝${NC}"
+    echo ""
+
+    # Check iptables availability
+    if ! command -v iptables &>/dev/null; then
+        echo -e "iptables: ${RED}not installed${NC}"
+        return 1
+    fi
+    echo -e "iptables: ${GREEN}available${NC}"
+
+    # Check if enabled
+    if is_enabled; then
+        echo -e "Status: ${GREEN}ENABLED${NC}"
+        echo ""
+
+        # Show IPv4 rules
+        echo "IPv4 Rules:"
+        if sudo -n iptables -L "$CHAIN_NAME" -n 2>/dev/null; then
+            :
+        else
+            echo "  (requires sudo to view)"
+        fi
+
+        echo ""
+        echo "IPv6 Rules:"
+        if sudo -n ip6tables -L "$CHAIN_NAME_V6" -n 2>/dev/null; then
+            :
+        else
+            echo "  (requires sudo to view)"
+        fi
+    else
+        echo -e "Status: ${YELLOW}DISABLED${NC}"
+    fi
+
+    # Show state file info
+    if [[ -f "$STATE_FILE" ]]; then
+        echo ""
+        echo "State file: $STATE_FILE"
+        local saved_status
+        saved_status=$(grep "^status=" "$STATE_FILE" 2>/dev/null | cut -d= -f2)
+        echo "  Saved status: $saved_status"
+
+        local saved_ip
+        saved_ip=$(grep "^server_ip=" "$STATE_FILE" 2>/dev/null | cut -d= -f2)
+        [[ -n "$saved_ip" ]] && echo "  Last VPN server: $saved_ip"
+    fi
+
+    return 0
+}
+
+# Show help
+show_help() {
+    echo -e "${CYAN}VPN Kill Switch - Leak Protection${NC}"
+    echo ""
+    echo "Usage: vpn-kill-switch <command> [options]"
+    echo ""
+    echo "Commands:"
+    echo "  enable [server_ip]  - Enable kill switch (optionally specify VPN server)"
+    echo "  disable             - Disable kill switch (allows normal traffic)"
+    echo "  emergency           - Emergency disable (force remove all rules)"
+    echo "  status              - Show current kill switch status"
+    echo "  is-enabled          - Check if enabled (exit code: 0=yes, 1=no)"
+    echo "  help                - Show this help message"
+    echo ""
+    echo "The kill switch blocks all network traffic except:"
+    echo "  - Loopback (localhost)"
+    echo "  - Established connections"
+    echo "  - Traffic to VPN server"
+    echo "  - Traffic through VPN tunnel ($VPN_INTERFACE)"
+    echo ""
+    echo "This prevents data leaks when VPN disconnects unexpectedly."
+}
+
+# Main command handler
+case "${1:-}" in
+    "enable" | "on")
+        enable_kill_switch "${2:-}"
+        ;;
+    "disable" | "off")
+        disable_kill_switch
+        ;;
+    "emergency" | "emergency-off" | "force-off")
+        emergency_disable
+        ;;
+    "status" | "s")
+        show_status
+        ;;
+    "is-enabled" | "check")
+        is_enabled
+        exit $?
+        ;;
+    "help" | "h" | "-h" | "--help")
+        show_help
+        ;;
+    *)
+        show_help
+        exit 1
+        ;;
+esac
