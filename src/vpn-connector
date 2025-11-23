@@ -1053,6 +1053,15 @@ handle_connection_success() {
     log_message "Successfully connected to OpenVPN $profile_name on attempt $attempt" "$CONNECTION_LOG"
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] Connected successfully: $profile_name (attempt $attempt/$max_attempts)" >> "$CONNECTION_LOG" 2> /dev/null || true
 
+    # Enable kill switch if requested (via environment variable or config)
+    local kill_switch_script="$VPN_DIR/vpn-kill-switch"
+    if [[ -x "$kill_switch_script" ]]; then
+        if [[ "${VPN_KILL_SWITCH:-}" == "1" ]] || [[ "${VPN_KILL_SWITCH:-}" == "true" ]]; then
+            echo "Enabling kill switch..."
+            "$kill_switch_script" enable
+        fi
+    fi
+
     notify_event "connection_established" "$profile_name"
     pkill -RTMIN+4 dwmblocks 2> /dev/null || true
 
@@ -1139,10 +1148,8 @@ connect_openvpn_profile() {
 
         # Monitor connection with exponential backoff
         local monitor_result
-        monitor_result=$(
-            monitor_connection_establishment_with_backoff "$profile_name"
-            echo $?
-        )
+        monitor_connection_establishment_with_backoff "$profile_name"
+        monitor_result=$?
 
         if [[ $monitor_result -eq 0 ]]; then
             # Connection established

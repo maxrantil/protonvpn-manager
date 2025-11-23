@@ -10,8 +10,6 @@ Each user should download their own VPN profiles based on their ProtonVPN subscr
 
 ## How to Download Profiles
 
-### Option 1: Manual Download from ProtonVPN
-
 1. Log in to your ProtonVPN account: https://account.protonvpn.com
 2. Go to **Downloads** → **OpenVPN configuration files**
 3. Select your platform: **Linux**
@@ -19,28 +17,7 @@ Each user should download their own VPN profiles based on their ProtonVPN subscr
 5. Download individual server configs or use the download all option
 6. Place `.ovpn` files in this directory: `~/.config/vpn/locations/`
 
-### Option 2: Use the Built-in Download Tool (Recommended)
-
-The VPN manager includes an automated download tool:
-
-```bash
-# Download all available servers
-./src/vpn download
-
-# Download specific country servers
-./src/vpn download --country SE  # Sweden
-./src/vpn download --country US  # United States
-
-# Download specific city servers
-./src/vpn download --city Stockholm
-./src/vpn download --city "New York"
-```
-
-The download tool will:
-- Fetch the latest configs from ProtonVPN
-- Place them in the correct location
-- Handle authentication automatically
-- Update existing profiles if they've changed
+**Tip**: Download configs for multiple countries to have connection options available.
 
 ## File Structure
 
@@ -83,8 +60,7 @@ Your downloaded profiles will remain local to your system and won't be committed
 # Check if directory exists
 ls -la ~/.config/vpn/locations/
 
-# If empty, download profiles
-./src/vpn download
+# If empty, download profiles from ProtonVPN website
 ```
 
 ### Permission issues
@@ -97,12 +73,7 @@ chmod 644 ~/.config/vpn/locations/*.ovpn
 
 ### Outdated configs
 
-ProtonVPN updates server configurations regularly. Re-download if you experience connection issues:
-
-```bash
-# Re-download all profiles
-./src/vpn download --force
-```
+ProtonVPN updates server configurations periodically. Re-download from the ProtonVPN website if you experience connection issues.
 
 ## Security
 

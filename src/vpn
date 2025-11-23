@@ -57,6 +57,9 @@ show_help() {
     echo "  test                - Test VPN performance"
     echo "  logs [lines]        - View recent log entries (default: 50 lines)"
     echo
+    echo -e "\033[1;32mSecurity:\033[0m"
+    echo "  kill-switch <cmd>   - Manage kill switch (on/off/status)"
+    echo ""
     echo -e "\033[1;32mConfiguration:\033[0m"
     echo "  setup               - Initial VPN setup and configuration"
     echo "  update              - Update VPN profiles"
@@ -65,9 +68,10 @@ show_help() {
     echo "  help                - Show this help message"
     echo
     echo -e "\033[1;33mExamples:\033[0m"
-    echo "  vpn connect se      - Connect to Swedish server"
-    echo "  vpn best            - Connect to best server automatically"
-    echo "  vpn fast nl         - Quick connect to Netherlands"
+    echo "  vpn connect se             - Connect to Swedish server"
+    echo "  vpn connect se --kill-switch - Connect with kill switch enabled"
+    echo "  vpn best                   - Connect to best server automatically"
+    echo "  vpn fast nl                - Quick connect to Netherlands"
     echo
 }
 
@@ -87,7 +91,20 @@ case "${1:-}" in
                     echo -e "\033[1;32m✓ Cleanup completed. Proceeding with connection...\033[0m"
                 fi
             fi
-            "$VPN_CONNECTOR" connect "${2:-}"
+            # Parse arguments for --kill-switch flag
+            country=""
+            enable_kill_switch=""
+            for arg in "${@:2}"; do
+                case "$arg" in
+                    --kill-switch | --killswitch | -k)
+                        enable_kill_switch="1"
+                        ;;
+                    *)
+                        country="$arg"
+                        ;;
+                esac
+            done
+            VPN_KILL_SWITCH="$enable_kill_switch" "$VPN_CONNECTOR" connect "$country"
         else
             file_not_found_error "$COMP_VPN_MAIN" "$VPN_CONNECTOR" "Check installation and file permissions"
             exit 1
@@ -301,6 +318,35 @@ case "${1:-}" in
         else
             echo "Error: Service manager not found at $SERVICE_MANAGER"
             echo "Please ensure Phase 4 implementation is complete."
+            exit 1
+        fi
+        ;;
+    "kill-switch" | "killswitch" | "ks")
+        KILL_SWITCH_SCRIPT="$VPN_DIR/vpn-kill-switch"
+        if [[ -x "$KILL_SWITCH_SCRIPT" ]]; then
+            case "${2:-status}" in
+                "on" | "enable")
+                    "$KILL_SWITCH_SCRIPT" enable "${3:-}"
+                    ;;
+                "off" | "disable")
+                    "$KILL_SWITCH_SCRIPT" disable
+                    ;;
+                "emergency" | "force-off")
+                    "$KILL_SWITCH_SCRIPT" emergency
+                    ;;
+                "status" | "s")
+                    "$KILL_SWITCH_SCRIPT" status
+                    ;;
+                "help" | "h")
+                    "$KILL_SWITCH_SCRIPT" help
+                    ;;
+                *)
+                    echo "Usage: vpn kill-switch {on|off|status|emergency|help}"
+                    exit 1
+                    ;;
+            esac
+        else
+            file_not_found_error "$COMP_VPN_MAIN" "$KILL_SWITCH_SCRIPT" "Check installation and file permissions"
             exit 1
         fi
         ;;
