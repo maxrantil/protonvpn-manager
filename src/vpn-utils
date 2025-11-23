@@ -15,16 +15,26 @@ notify_event() {
 # Log message function with timestamp
 # Usage: log_message "message" "log_file_path"
 # Format: [YYYY-MM-DD HH:MM:SS] message
+# Note: If log_file is omitted, outputs to stderr only
 log_message() {
     local message="$1"
-    local log_file="$2"
+    local log_file="${2:-}"
+
+    local timestamp
+    timestamp="[$(date '+%Y-%m-%d %H:%M:%S')]"
+
+    # If no log file specified, output to stderr only
+    if [[ -z "$log_file" ]]; then
+        echo "$timestamp $message" >&2
+        return 0
+    fi
 
     # Try to write to log file
-    if echo "[$(date '+%Y-%m-%d %H:%M:%S')] $message" >> "$log_file" 2> /dev/null; then
+    if echo "$timestamp $message" >> "$log_file" 2> /dev/null; then
         return 0
     else
         # Fallback to stderr if log file not writable
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')] $message" >&2
+        echo "$timestamp $message" >&2
         return 0
     fi
 }
