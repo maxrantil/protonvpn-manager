@@ -10,6 +10,7 @@ source "$TEST_DIR/../test_framework.sh"
 DISPATCHER_HOOK="$PROJECT_DIR/etc/NetworkManager/dispatcher.d/50-vpn-reconnect"
 VPN_MANAGER="$PROJECT_DIR/src/vpn-manager"
 VPN_CONNECTOR="$PROJECT_DIR/src/vpn-connector"
+# shellcheck disable=SC2034  # KILL_SWITCH used by test functions for reference
 KILL_SWITCH="$PROJECT_DIR/src/vpn-kill-switch"
 
 # Test temp directory

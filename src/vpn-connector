@@ -1057,11 +1057,11 @@ save_reconnect_state() {
     fi
 
     # Create state directory with secure permissions
-    mkdir -p "$state_dir" 2>/dev/null || {
+    mkdir -p "$state_dir" 2> /dev/null || {
         log_message "save_reconnect_state: Cannot create state directory" "$CONNECTION_LOG"
         return 1
     }
-    chmod 700 "$state_dir" 2>/dev/null || true
+    chmod 700 "$state_dir" 2> /dev/null || true
 
     # Save profile path atomically
     local temp_profile

@@ -1090,7 +1090,7 @@ get_config_value() {
 
     if [[ -f "$CONFIG_FILE" ]]; then
         local value
-        value=$(grep "^${key}=" "$CONFIG_FILE" 2>/dev/null | cut -d= -f2- | sed 's/^["'\'']//' | sed 's/["'\'']$//')
+        value=$(grep "^${key}=" "$CONFIG_FILE" 2> /dev/null | cut -d= -f2- | sed 's/^["'\'']//' | sed 's/["'\'']$//')
         if [[ -n "$value" ]]; then
             echo "$value"
             return 0
@@ -1108,7 +1108,7 @@ set_config_value() {
     config_dir=$(dirname "$CONFIG_FILE")
 
     # Create config directory if needed
-    mkdir -p "$config_dir" 2>/dev/null || {
+    mkdir -p "$config_dir" 2> /dev/null || {
         echo "Error: Cannot create config directory: $config_dir" >&2
         return 1
     }
@@ -1116,7 +1116,7 @@ set_config_value() {
     # Create or update config file
     if [[ -f "$CONFIG_FILE" ]]; then
         # Check if key exists
-        if grep -q "^${key}=" "$CONFIG_FILE" 2>/dev/null; then
+        if grep -q "^${key}=" "$CONFIG_FILE" 2> /dev/null; then
             # Update existing key
             sed -i "s|^${key}=.*|${key}=${value}|" "$CONFIG_FILE"
         else
@@ -1135,17 +1135,17 @@ handle_config_auto_reconnect() {
     local action="${1:-status}"
 
     case "$action" in
-        on|true|enable)
+        on | true | enable)
             set_config_value "AUTO_RECONNECT" "true"
             echo -e "\033[1;32m✓ Auto-reconnect enabled\033[0m"
             echo -e "  \033[1;33mNote: Requires kill switch to be enabled for security\033[0m"
             echo "  Enable kill switch with: vpn kill-switch enable"
             ;;
-        off|false|disable)
+        off | false | disable)
             set_config_value "AUTO_RECONNECT" "false"
             echo -e "\033[1;32m✓ Auto-reconnect disabled\033[0m"
             ;;
-        status|"")
+        status | "")
             local current
             current=$(get_config_value "AUTO_RECONNECT" "false")
             if [[ "$current" == "true" ]]; then
@@ -1153,7 +1153,7 @@ handle_config_auto_reconnect() {
 
                 # Check if kill switch is enabled (required)
                 local kill_switch="$VPN_DIR/vpn-kill-switch"
-                if [[ -x "$kill_switch" ]] && "$kill_switch" is-enabled 2>/dev/null; then
+                if [[ -x "$kill_switch" ]] && "$kill_switch" is-enabled 2> /dev/null; then
                     echo -e "Kill switch: \033[1;32mENABLED\033[0m (required for auto-reconnect)"
                 else
                     echo -e "Kill switch: \033[1;31mDISABLED\033[0m"
@@ -1210,11 +1210,11 @@ handle_config() {
     local subcommand="${1:-}"
 
     case "$subcommand" in
-        auto-reconnect|autoreconnect|ar)
+        auto-reconnect | autoreconnect | ar)
             shift
             handle_config_auto_reconnect "$@"
             ;;
-        show|"")
+        show | "")
             echo -e "\033[1;36m╔════════════════════════════════════════╗\033[0m"
             echo -e "\033[1;36m║         VPN Configuration              ║\033[0m"
             echo -e "\033[1;36m╚════════════════════════════════════════╝\033[0m"
