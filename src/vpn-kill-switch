@@ -414,6 +414,7 @@ show_help() {
     echo "  enable [server_ip]  - Enable kill switch (requires active VPN connection)"
     echo "  enable --force      - Force enable without VPN check (DANGEROUS)"
     echo "  disable             - Disable kill switch (allows normal traffic)"
+    echo "  refresh             - Update rules for current network (after WiFi change)"
     echo "  emergency           - Emergency disable (force remove all rules)"
     echo "  status              - Show current kill switch status"
     echo "  is-enabled          - Check if enabled (exit code: 0=yes, 1=no)"
@@ -457,6 +458,18 @@ case "${1:-}" in
     "is-enabled" | "check")
         is_enabled
         exit $?
+        ;;
+    "refresh" | "update")
+        # Refresh kill switch rules with current network settings
+        # Useful after network changes (wake from sleep, new WiFi, etc.)
+        if is_enabled; then
+            echo -e "${YELLOW}Refreshing kill switch rules...${NC}"
+            # Re-enable with current network settings (will flush and re-add rules)
+            enable_kill_switch
+        else
+            echo -e "${YELLOW}Kill switch not enabled, nothing to refresh${NC}"
+            exit 0
+        fi
         ;;
     "help" | "h" | "-h" | "--help")
         show_help

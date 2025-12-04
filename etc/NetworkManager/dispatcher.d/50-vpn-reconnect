@@ -276,6 +276,14 @@ main() {
         exit 0
     fi
 
+    # Step 4.5: Refresh kill switch rules for new network
+    # This is critical - network may have changed (new gateway, new WiFi, etc.)
+    # Old kill switch rules with wrong IPs will block all traffic
+    log_event "INFO" "Refreshing kill switch rules for new network"
+    if ! "$KILL_SWITCH" refresh >>"$LOG_FILE" 2>&1; then
+        log_event "WARN" "Kill switch refresh failed, attempting reconnect anyway"
+    fi
+
     # Step 5: Check if VPN already healthy
     if vpn_is_healthy; then
         exit 0
