@@ -453,12 +453,22 @@ stop_vpn() {
     cleanup_files
     cleanup_routes_light
 
-    # Disable kill switch on intentional disconnect
+    # Disable kill switch on intentional disconnect (unless auto-reconnect is enabled)
     local kill_switch_script="$VPN_DIR/vpn-kill-switch"
     if [[ -x "$kill_switch_script" ]]; then
         if "$kill_switch_script" is-enabled 2> /dev/null; then
-            echo "Disabling kill switch (intentional disconnect)..."
-            "$kill_switch_script" disable
+            # Check if auto-reconnect is enabled - if so, preserve kill switch for security
+            local config_file="${XDG_CONFIG_HOME:-$HOME/.config}/vpn/config"
+            local auto_reconnect
+            auto_reconnect=$(grep "^AUTO_RECONNECT=" "$config_file" 2>/dev/null | cut -d= -f2)
+
+            if [[ "$auto_reconnect" == "true" ]]; then
+                echo "Kill switch preserved (auto-reconnect is enabled)"
+                echo "  Use 'vpn kill-switch off' to manually disable if needed"
+            else
+                echo "Disabling kill switch (intentional disconnect)..."
+                "$kill_switch_script" disable
+            fi
         fi
     fi
 
