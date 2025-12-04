@@ -116,9 +116,15 @@ get_default_gateway() {
     ip route show default 2> /dev/null | grep -oP 'via \K[\d.]+' | head -1
 }
 
+# Check if VPN tunnel interface exists
+check_vpn_interface() {
+    ip link show "$VPN_INTERFACE" &> /dev/null
+}
+
 # Enable the kill switch
 enable_kill_switch() {
     local vpn_server_ip="${1:-}"
+    local force="${2:-}"
 
     echo -e "${YELLOW}Enabling VPN kill switch...${NC}"
 
@@ -133,6 +139,28 @@ enable_kill_switch() {
     # Get VPN server IP if not provided
     if [[ -z "$vpn_server_ip" ]]; then
         vpn_server_ip=$(get_vpn_server_ip)
+    fi
+
+    # Safety check: Ensure VPN is actually connected before enabling
+    if ! check_vpn_interface; then
+        echo -e "${RED}Error: VPN interface ($VPN_INTERFACE) not found${NC}"
+        echo ""
+        echo "The kill switch requires an active VPN connection to function properly."
+        echo "Without a VPN tunnel, enabling the kill switch will block ALL internet traffic."
+        echo ""
+        echo "Please connect to VPN first:"
+        echo "  vpn connect"
+        echo ""
+        echo "Or if you want to force enable (advanced users only):"
+        echo "  vpn kill-switch enable --force"
+        return 1
+    fi
+
+    # Verify we have a VPN server IP
+    if [[ -z "$vpn_server_ip" ]]; then
+        echo -e "${YELLOW}Warning: Could not determine VPN server IP${NC}"
+        echo "Kill switch may not allow VPN reconnection if the tunnel drops."
+        echo ""
     fi
 
     # Create the kill switch chain if it doesn't exist
@@ -365,7 +393,8 @@ show_help() {
     echo "Usage: vpn-kill-switch <command> [options]"
     echo ""
     echo "Commands:"
-    echo "  enable [server_ip]  - Enable kill switch (optionally specify VPN server)"
+    echo "  enable [server_ip]  - Enable kill switch (requires active VPN connection)"
+    echo "  enable --force      - Force enable without VPN check (DANGEROUS)"
     echo "  disable             - Disable kill switch (allows normal traffic)"
     echo "  emergency           - Emergency disable (force remove all rules)"
     echo "  status              - Show current kill switch status"
@@ -378,13 +407,25 @@ show_help() {
     echo "  - Traffic to VPN server"
     echo "  - Traffic through VPN tunnel ($VPN_INTERFACE)"
     echo ""
+    echo -e "${YELLOW}IMPORTANT:${NC} Only enable the kill switch when VPN is connected."
+    echo "Enabling without VPN will block ALL internet traffic!"
+    echo ""
     echo "This prevents data leaks when VPN disconnects unexpectedly."
 }
 
 # Main command handler
 case "${1:-}" in
     "enable" | "on")
-        enable_kill_switch "${2:-}"
+        # Check for --force flag
+        if [[ "${2:-}" == "--force" ]] || [[ "${3:-}" == "--force" ]]; then
+            # Force mode: skip VPN interface check
+            VPN_INTERFACE="${VPN_INTERFACE:-tun0}"
+            # Create a dummy check function that always succeeds
+            check_vpn_interface() { return 0; }
+            enable_kill_switch "${2:-}"
+        else
+            enable_kill_switch "${2:-}"
+        fi
         ;;
     "disable" | "off")
         disable_kill_switch
