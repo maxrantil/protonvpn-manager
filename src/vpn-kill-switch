@@ -83,12 +83,20 @@ chain_exists_v6() {
 }
 
 # Get the current VPN server IP from the active connection
+# Returns the ACTUAL VPN server IP (the one traffic goes to before entering the tunnel)
 get_vpn_server_ip() {
-    # Try to get from OpenVPN's remote endpoint
     local vpn_ip
 
-    # Method 1: Check routing table for tun0 gateway
-    vpn_ip=$(ip route show dev "$VPN_INTERFACE" 2> /dev/null | grep -oP 'via \K[\d.]+' | head -1)
+    # Method 1: Find the VPN server from routing table - it's the IP routed via physical interface
+    # When VPN is connected, there's a specific route for the VPN server via wlan0/eth0
+    # This is the actual server IP we need to allow through the firewall
+    local default_iface
+    default_iface=$(ip route show default 2> /dev/null | grep -oP 'dev \K\S+' | head -1)
+    if [[ -n "$default_iface" ]]; then
+        # Find IPs that are routed via the physical interface (not tun0)
+        # These are typically VPN server IPs that need to bypass the tunnel
+        vpn_ip=$(ip route show 2> /dev/null | grep "via.*dev $default_iface" | grep -v "default" | grep -oP '^\d+\.\d+\.\d+\.\d+' | head -1)
+    fi
 
     if [[ -z "$vpn_ip" ]]; then
         # Method 2: Check OpenVPN process arguments via /proc
@@ -199,9 +207,19 @@ enable_kill_switch() {
     # Allow DHCP (needed for network connectivity)
     run_iptables -A "$CHAIN_NAME" -p udp --dport 67:68 -j ACCEPT
 
-    # Allow DNS through VPN only (block DNS leaks on physical interface)
+    # Allow DNS through VPN tunnel
     run_iptables -A "$CHAIN_NAME" -o "$VPN_INTERFACE" -p udp --dport 53 -j ACCEPT
     run_iptables -A "$CHAIN_NAME" -o "$VPN_INTERFACE" -p tcp --dport 53 -j ACCEPT
+
+    # Allow DNS to local gateway (for systems configured to use router DNS)
+    # This is needed because some systems use the router as DNS resolver
+    local default_gw
+    default_gw=$(get_default_gateway)
+    if [[ -n "$default_gw" ]]; then
+        run_iptables -A "$CHAIN_NAME" -d "$default_gw" -p udp --dport 53 -j ACCEPT
+        run_iptables -A "$CHAIN_NAME" -d "$default_gw" -p tcp --dport 53 -j ACCEPT
+        echo "  Allowing DNS to gateway: $default_gw"
+    fi
 
     # Block everything else
     run_iptables -A "$CHAIN_NAME" -j DROP
