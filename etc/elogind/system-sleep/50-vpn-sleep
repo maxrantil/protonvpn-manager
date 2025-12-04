@@ -47,9 +47,17 @@ case "${1-}" in
             exit 0
         fi
 
-        # Check if kill switch is enabled (security requirement)
-        if ! /usr/local/bin/vpn-kill-switch is-enabled 2>/dev/null; then
-            log_msg "POST-WAKE: Kill switch not enabled, skipping auto-reconnect"
+        # Check kill switch state file (iptables rules may be lost on suspend)
+        KILL_SWITCH_STATE="$STATE_DIR/kill_switch.state"
+        KILL_SWITCH_WAS_ENABLED="false"
+        if [ -f "$KILL_SWITCH_STATE" ]; then
+            if grep -q "^status=enabled" "$KILL_SWITCH_STATE" 2>/dev/null; then
+                KILL_SWITCH_WAS_ENABLED="true"
+            fi
+        fi
+
+        if [ "$KILL_SWITCH_WAS_ENABLED" != "true" ]; then
+            log_msg "POST-WAKE: Kill switch was not enabled before sleep, skipping auto-reconnect"
             exit 0
         fi
 
@@ -70,9 +78,13 @@ case "${1-}" in
             exit 1
         fi
 
-        # Refresh kill switch rules for new network
-        log_msg "POST-WAKE: Refreshing kill switch rules"
-        /usr/local/bin/vpn-kill-switch refresh >> "$LOG_FILE" 2>&1 || true
+        # Re-enable kill switch (iptables rules may be lost on suspend)
+        # This also detects new gateway IP for the new network
+        log_msg "POST-WAKE: Re-enabling kill switch for new network"
+        /usr/local/bin/vpn-kill-switch enable --force >> "$LOG_FILE" 2>&1 || {
+            log_msg "POST-WAKE: Failed to re-enable kill switch"
+            exit 1
+        }
 
         # Get saved profile
         if [ ! -f "$LAST_PROFILE_FILE" ]; then
