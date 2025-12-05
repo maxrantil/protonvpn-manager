@@ -15,6 +15,19 @@ fi
 source "$VPN_DIR/vpn-colors"
 source "$VPN_DIR/vpn-error-handler"
 
+# Detect real user's home directory (needed when running as root via elogind/hooks)
+# HOME may be unset when called from sleep hooks or system services
+if [[ -z "${HOME:-}" ]]; then
+    # Get the logged-in user (not root)
+    REAL_USER=$(who 2>/dev/null | awk 'NR==1{print $1}')
+    if [[ -n "$REAL_USER" ]]; then
+        HOME=$(getent passwd "$REAL_USER" | cut -d: -f6)
+    else
+        # Fallback to root's home
+        HOME="/root"
+    fi
+fi
+
 # Configuration
 STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/vpn"
 STATE_FILE="$STATE_DIR/kill_switch.state"
@@ -85,12 +98,12 @@ chain_exists_v6() {
 # Get the current VPN server IP from the active connection
 # Returns the ACTUAL VPN server IP (the one traffic goes to before entering the tunnel)
 get_vpn_server_ip() {
-    local vpn_ip
+    local vpn_ip=""
 
     # Method 1: Find the VPN server from routing table - it's the IP routed via physical interface
     # When VPN is connected, there's a specific route for the VPN server via wlan0/eth0
     # This is the actual server IP we need to allow through the firewall
-    local default_iface
+    local default_iface=""
     default_iface=$(ip route show default 2> /dev/null | grep -oP 'dev \K\S+' | head -1)
     if [[ -n "$default_iface" ]]; then
         # Find IPs that are routed via the physical interface (not tun0)
@@ -204,6 +217,9 @@ enable_kill_switch() {
     # run_iptables -A "$CHAIN_NAME" -d 10.0.0.0/8 -j ACCEPT
     # run_iptables -A "$CHAIN_NAME" -d 172.16.0.0/12 -j ACCEPT
 
+    # Allow libvirt/QEMU VM network (default virbr0 network)
+    run_iptables -A "$CHAIN_NAME" -d 192.168.122.0/24 -j ACCEPT
+
     # Allow DHCP (needed for network connectivity)
     run_iptables -A "$CHAIN_NAME" -p udp --dport 67:68 -j ACCEPT
 
@@ -213,7 +229,7 @@ enable_kill_switch() {
 
     # Allow DNS to local gateway (for systems configured to use router DNS)
     # This is needed because some systems use the router as DNS resolver
-    local default_gw
+    local default_gw=""
     default_gw=$(get_default_gateway)
     if [[ -n "$default_gw" ]]; then
         run_iptables -A "$CHAIN_NAME" -d "$default_gw" -p udp --dport 53 -j ACCEPT
@@ -435,16 +451,24 @@ show_help() {
 # Main command handler
 case "${1:-}" in
     "enable" | "on")
-        # Check for --force flag
-        if [[ "${2:-}" == "--force" ]] || [[ "${3:-}" == "--force" ]]; then
+        # Check for --force flag anywhere in arguments
+        FORCE_MODE=""
+        SERVER_IP=""
+        for arg in "${@:2}"; do
+            if [[ "$arg" == "--force" ]]; then
+                FORCE_MODE="true"
+            elif [[ "$arg" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+                SERVER_IP="$arg"
+            fi
+        done
+
+        if [[ -n "$FORCE_MODE" ]]; then
             # Force mode: skip VPN interface check
             VPN_INTERFACE="${VPN_INTERFACE:-tun0}"
             # Create a dummy check function that always succeeds
             check_vpn_interface() { return 0; }
-            enable_kill_switch "${2:-}"
-        else
-            enable_kill_switch "${2:-}"
         fi
+        enable_kill_switch "$SERVER_IP"
         ;;
     "disable" | "off")
         disable_kill_switch
