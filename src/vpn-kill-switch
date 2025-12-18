@@ -16,15 +16,13 @@ source "$VPN_DIR/vpn-colors"
 source "$VPN_DIR/vpn-error-handler"
 
 # Detect real user's home directory (needed when running as root via elogind/hooks)
-# HOME may be unset when called from sleep hooks or system services
-if [[ -z "${HOME:-}" ]]; then
+# HOME may be unset or set to /root when called from sleep hooks or system services
+if [[ -z "${HOME:-}" ]] || [[ "${HOME:-}" == "/root" && $EUID -eq 0 ]]; then
     # Get the logged-in user (not root)
     REAL_USER=$(who 2>/dev/null | awk 'NR==1{print $1}')
-    if [[ -n "$REAL_USER" ]]; then
+    if [[ -n "$REAL_USER" && "$REAL_USER" != "root" ]]; then
         HOME=$(getent passwd "$REAL_USER" | cut -d: -f6)
-    else
-        # Fallback to root's home
-        HOME="/root"
+        export HOME
     fi
 fi
 
@@ -104,17 +102,17 @@ get_vpn_server_ip() {
     # When VPN is connected, there's a specific route for the VPN server via wlan0/eth0
     # This is the actual server IP we need to allow through the firewall
     local default_iface=""
-    default_iface=$(ip route show default 2> /dev/null | grep -oP 'dev \K\S+' | head -1)
+    default_iface=$(ip route show default 2> /dev/null | awk '/default/ {for(i=1;i<=NF;i++) if($i=="dev") print $(i+1)}' | head -1)
     if [[ -n "$default_iface" ]]; then
         # Find IPs that are routed via the physical interface (not tun0)
         # These are typically VPN server IPs that need to bypass the tunnel
-        vpn_ip=$(ip route show 2> /dev/null | grep "via.*dev $default_iface" | grep -v "default" | grep -oP '^\d+\.\d+\.\d+\.\d+' | head -1)
+        vpn_ip=$(ip route show 2> /dev/null | grep "via.*dev $default_iface" | grep -v "default" | awk '{print $1}' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -1)
     fi
 
     if [[ -z "$vpn_ip" ]]; then
         # Method 2: Check OpenVPN process arguments via /proc
         # shellcheck disable=SC2009  # ps | grep needed for extracting --remote argument
-        vpn_ip=$(ps aux 2> /dev/null | grep -oP 'openvpn.*--remote \K[\d.]+' | head -1)
+        vpn_ip=$(ps aux 2> /dev/null | grep 'openvpn.*--remote' | sed -n 's/.*--remote \([0-9.]*\).*/\1/p' | head -1)
     fi
 
     if [[ -z "$vpn_ip" ]]; then
@@ -129,12 +127,12 @@ get_vpn_server_ip() {
 
 # Get the default gateway interface (physical NIC)
 get_default_interface() {
-    ip route show default 2> /dev/null | grep -oP 'dev \K\S+' | head -1
+    ip route show default 2> /dev/null | awk '/default/ {for(i=1;i<=NF;i++) if($i=="dev") print $(i+1)}' | head -1
 }
 
 # Get the default gateway IP
 get_default_gateway() {
-    ip route show default 2> /dev/null | grep -oP 'via \K[\d.]+' | head -1
+    ip route show default 2> /dev/null | awk '/default/ {for(i=1;i<=NF;i++) if($i=="via") print $(i+1)}' | head -1
 }
 
 # Check if VPN tunnel interface exists
@@ -408,11 +406,11 @@ show_status() {
     if [[ -f "$STATE_FILE" ]]; then
         echo ""
         echo "State file: $STATE_FILE"
-        local saved_status
+        local saved_status=""
         saved_status=$(grep "^status=" "$STATE_FILE" 2> /dev/null | cut -d= -f2)
         echo "  Saved status: $saved_status"
 
-        local saved_ip
+        local saved_ip=""
         saved_ip=$(grep "^server_ip=" "$STATE_FILE" 2> /dev/null | cut -d= -f2)
         [[ -n "$saved_ip" ]] && echo "  Last VPN server: $saved_ip"
     fi

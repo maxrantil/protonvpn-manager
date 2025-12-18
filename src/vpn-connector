@@ -3,6 +3,17 @@ set -euo pipefail
 # ABOUTME: VPN connection establishment and profile management for Artix/Arch Linux
 # ABOUTME: Handles server selection, connection attempts, and performance testing
 
+# Detect real user's home directory (needed when running as root via elogind/hooks)
+# HOME may be unset or set to /root when called from sleep hooks or system services
+if [[ -z "${HOME:-}" ]] || [[ "${HOME:-}" == "/root" && $EUID -eq 0 ]]; then
+    # Get the logged-in user (not root)
+    REAL_USER=$(who 2>/dev/null | awk 'NR==1{print $1}')
+    if [[ -n "$REAL_USER" && "$REAL_USER" != "root" ]]; then
+        HOME=$(getent passwd "$REAL_USER" | cut -d: -f6)
+        export HOME
+    fi
+fi
+
 # Configuration paths
 CONFIG_DIR="${VPN_CONFIG_DIR:-$HOME/.config/vpn}"
 LOCATIONS_DIR="${LOCATIONS_DIR:-$CONFIG_DIR/locations}"
@@ -867,7 +878,9 @@ check_vpn_processes() {
     local openvpn_processes
     local wireguard_interfaces
 
-    openvpn_processes=$(pgrep -f "openvpn.*config" 2> /dev/null | wc -l)
+    # Use pgrep -x for exact process name match to avoid false positives
+    # The old pattern "openvpn.*config" matched shell wrappers that contained both strings
+    openvpn_processes=$(pgrep -x openvpn 2> /dev/null | wc -l)
     wireguard_interfaces=$(wg show 2> /dev/null | grep -c "^interface:" 2> /dev/null || echo 0)
 
     # Ensure we have clean numeric values
@@ -1000,20 +1013,34 @@ check_authentication_failure() {
 
 # Checks connection progress and updates stage
 # Args: connection_stage_var, interval_count_var (variable names passed by reference)
-# Returns: "connected" if established, "in_progress" if still connecting, "" if neither
+# Returns: "connected" if established, "configuring" if TLS done, "verifying" if waiting, "in_progress" otherwise
+# NOTE: This function ONLY returns status strings to stdout - do NOT call announce_connection_status here
+#       as that would mix display output with return values. The caller handles display.
 check_connection_progress() {
     local connection_stage_var="$1"
     local interval_count_var="$2"
     local connection_stage="${!connection_stage_var}"
     local interval_count="${!interval_count_var}"
 
+    # Check if fully connected via OpenVPN log (authoritative source) - CHECK THIS FIRST
+    # Using log-based detection instead of vpn-manager status because:
+    # 1. vpn-manager status requires external IP verification (curl to ipinfo.io)
+    # 2. When kill switch is enabled during reconnect, external curl is blocked
+    # 3. "Initialization Sequence Completed" is OpenVPN's definitive success signal
+    for log_location in "$LOG_DIR/openvpn.log" "/tmp/openvpn.log"; do
+        if [[ -f $log_location ]] && sudo grep -q "Initialization Sequence Completed" "$log_location" 2> /dev/null; then
+            echo "connected"
+            return 0
+        fi
+    done
+
     # Check for TLS handshake completion (Peer Connection Initiated)
     for log_location in "$LOG_DIR/openvpn.log" "/tmp/openvpn.log"; do
         if [[ -f $log_location ]] && sudo grep -q "Peer Connection Initiated" "$log_location" 2> /dev/null; then
             if [[ $connection_stage != "configuring" ]]; then
-                announce_connection_status "configuring" "Configuring tunnel"
                 eval "$connection_stage_var='configuring'"
                 eval "$interval_count_var=0"
+                echo "configuring"
                 return 0
             fi
         fi
@@ -1021,20 +1048,9 @@ check_connection_progress() {
 
     # Update to verifying stage if we've been configuring for a while
     if [[ $connection_stage == "configuring" && $interval_count -ge 2 ]]; then
-        announce_connection_status "verifying" "Verifying connection"
         eval "$connection_stage_var='verifying'"
         eval "$interval_count_var=0"
-    fi
-
-    # Check if fully connected
-    local status_check
-    status_check=$(timeout 5 "$VPN_DIR/vpn-manager" status 2> /dev/null | grep "VPN Status:" | grep -q "CONNECTED" && echo "connected" || echo "not_connected")
-    if [[ $status_check == "connected" ]]; then
-        announce_connection_status "connected" "Connected"
-        if ! detect_accessibility_mode; then
-            echo ""
-        fi
-        echo "connected"
+        echo "verifying"
         return 0
     fi
 
@@ -1104,7 +1120,7 @@ handle_connection_success() {
         save_reconnect_state "$profile_path"
     fi
 
-    # Enable kill switch if requested (via environment variable or config)
+    # Enable kill switch if explicitly requested (via environment variable or config)
     local kill_switch_script="$VPN_DIR/vpn-kill-switch"
     if [[ -x "$kill_switch_script" ]]; then
         if [[ "${VPN_KILL_SWITCH:-}" == "1" ]] || [[ "${VPN_KILL_SWITCH:-}" == "true" ]]; then
@@ -1141,7 +1157,9 @@ cleanup_failed_connection_processes() {
 # Issue #62: Exponential backoff for 40% faster establishment
 monitor_connection_establishment_with_backoff() {
     local profile_name="$1"
-    local -a BACKOFF_INTERVALS=(1 1 2 2 3 4 5 6)
+    # Extended intervals to handle post-wake network instability (OpenVPN may restart)
+    # Total: 1+1+2+2+3+3+4+5+6+8 = 35 seconds, enough for network stabilization + restart
+    local -a BACKOFF_INTERVALS=(1 1 2 2 3 3 4 5 6 8)
     local connection_stage="initializing"
     local interval_count=0
 
@@ -1151,7 +1169,7 @@ monitor_connection_establishment_with_backoff() {
 
     for interval in "${BACKOFF_INTERVALS[@]}"; do
         sleep "$interval"
-        ((interval_count++))
+        ((interval_count++)) || true  # Prevent set -e from triggering on arithmetic
 
         # Check for authentication failures
         if ! check_authentication_failure "$profile_name"; then
@@ -1162,18 +1180,43 @@ monitor_connection_establishment_with_backoff() {
         local progress_status
         progress_status=$(check_connection_progress connection_stage interval_count)
 
-        if [[ $progress_status == "connected" ]]; then
-            return 0 # Connection established
-        fi
-
-        # Show progress dots (visual mode only, Issue #147: accessibility)
-        if ! detect_accessibility_mode; then
-            local dot_count=$((interval_count % 4))
-            if [[ $dot_count -le 3 ]]; then
-                echo -n "."
-            fi
-        fi
+        # Handle status transitions and display
+        case "$progress_status" in
+            connected)
+                announce_connection_status "connected" "Connected"
+                if ! detect_accessibility_mode; then
+                    echo ""  # New line after spinner
+                fi
+                return 0 # Connection established
+                ;;
+            configuring)
+                announce_connection_status "configuring" "Configuring tunnel"
+                ;;
+            verifying)
+                announce_connection_status "verifying" "Verifying connection"
+                ;;
+            *)
+                # in_progress - show progress dots (visual mode only, Issue #147: accessibility)
+                if ! detect_accessibility_mode; then
+                    local dot_count=$((interval_count % 4))
+                    if [[ $dot_count -le 3 ]]; then
+                        echo -n "."
+                    fi
+                fi
+                ;;
+        esac
     done
+
+    # Final check after all intervals - connection may have completed during last sleep
+    local final_status
+    final_status=$(check_connection_progress connection_stage interval_count)
+    if [[ "$final_status" == "connected" ]]; then
+        announce_connection_status "connected" "Connected"
+        if ! detect_accessibility_mode; then
+            echo ""
+        fi
+        return 0
+    fi
 
     return 2 # Timeout (all intervals exhausted)
 }

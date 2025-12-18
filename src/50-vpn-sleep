@@ -1,0 +1,136 @@
+#!/bin/sh
+# ABOUTME: Elogind sleep/wake handler for VPN reconnection on Artix Linux
+# ABOUTME: Handles pre-sleep disconnect and post-wake reconnection
+
+# Get the actual user (not root)
+REAL_USER=$(who | awk 'NR==1{print $1}')
+REAL_HOME=$(getent passwd "$REAL_USER" | cut -d: -f6)
+STATE_DIR="$REAL_HOME/.local/state/vpn"
+CONFIG_DIR="$REAL_HOME/.config/vpn"
+LAST_PROFILE_FILE="$STATE_DIR/last_profile"
+CONFIG_FILE="$CONFIG_DIR/config"
+LOG_FILE="$STATE_DIR/sleep-hook.log"
+
+log_msg() {
+    echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) $1" >> "$LOG_FILE" 2>/dev/null || true
+}
+
+# Extract VPN server IP from an OpenVPN profile
+# Args: profile_path
+# Returns: IP address or empty string
+get_server_ip_from_profile() {
+    profile="$1"
+    if [ -f "$profile" ]; then
+        # Extract the 'remote' line and get the IP/hostname (handles "remote IP PORT" format)
+        grep "^remote " "$profile" 2>/dev/null | head -1 | awk '{print $2}'
+    fi
+}
+
+case "${1-}" in
+    'pre')
+        log_msg "PRE-SLEEP: Starting"
+
+        # Save current profile before disconnect (for auto-reconnect)
+        CURRENT=$(pgrep -a openvpn 2>/dev/null | grep -o '/[^ ]*\.ovpn' | head -1)
+        if [ -n "$CURRENT" ]; then
+            mkdir -p "$STATE_DIR"
+            echo "$CURRENT" > "$LAST_PROFILE_FILE"
+            chown "$REAL_USER:$REAL_USER" "$LAST_PROFILE_FILE" 2>/dev/null || true
+            log_msg "PRE-SLEEP: Saved profile $CURRENT"
+        fi
+
+        # Clean disconnect before sleep (but keep kill switch enabled!)
+        /usr/local/bin/vpn disconnect 2>/dev/null || true
+        log_msg "PRE-SLEEP: VPN disconnected"
+        ;;
+
+    'post')
+        log_msg "POST-WAKE: Starting"
+
+        # Check if auto-reconnect is enabled
+        AUTO_RECONNECT="false"
+        if [ -f "$CONFIG_FILE" ]; then
+            AUTO_RECONNECT=$(grep '^AUTO_RECONNECT=' "$CONFIG_FILE" 2>/dev/null | cut -d= -f2 | tr -d '"' | tr -d "'")
+        fi
+
+        if [ "$AUTO_RECONNECT" != "true" ]; then
+            log_msg "POST-WAKE: Auto-reconnect disabled, skipping"
+            exit 0
+        fi
+
+        # Check kill switch state file (iptables rules may be lost on suspend)
+        KILL_SWITCH_STATE="$STATE_DIR/kill_switch.state"
+        KILL_SWITCH_WAS_ENABLED="false"
+        if [ -f "$KILL_SWITCH_STATE" ]; then
+            if grep -q "^status=enabled" "$KILL_SWITCH_STATE" 2>/dev/null; then
+                KILL_SWITCH_WAS_ENABLED="true"
+            fi
+        fi
+
+        if [ "$KILL_SWITCH_WAS_ENABLED" != "true" ]; then
+            log_msg "POST-WAKE: Kill switch was not enabled before sleep, skipping auto-reconnect"
+            exit 0
+        fi
+
+        # Get saved profile FIRST (we need the server IP for kill switch)
+        if [ ! -f "$LAST_PROFILE_FILE" ]; then
+            log_msg "POST-WAKE: No saved profile, skipping"
+            exit 0
+        fi
+
+        PROFILE=$(cat "$LAST_PROFILE_FILE" 2>/dev/null)
+        if [ -z "$PROFILE" ] || [ ! -f "$PROFILE" ]; then
+            log_msg "POST-WAKE: Invalid profile: $PROFILE"
+            exit 1
+        fi
+
+        # Extract VPN server IP from the profile for kill switch
+        VPN_SERVER_IP=$(get_server_ip_from_profile "$PROFILE")
+        log_msg "POST-WAKE: VPN server from profile: $VPN_SERVER_IP"
+
+        # Wait for network to come up (max 30 seconds)
+        log_msg "POST-WAKE: Waiting for network..."
+        WAIT_COUNT=0
+        while [ $WAIT_COUNT -lt 30 ]; do
+            if nmcli networking connectivity check 2>/dev/null | grep -qE "full|limited|portal"; then
+                log_msg "POST-WAKE: Network available after ${WAIT_COUNT}s"
+                break
+            fi
+            sleep 1
+            WAIT_COUNT=$((WAIT_COUNT + 1))
+        done
+
+        if [ $WAIT_COUNT -ge 30 ]; then
+            log_msg "POST-WAKE: Network timeout, aborting"
+            exit 1
+        fi
+
+        # Re-enable kill switch WITH the VPN server IP
+        # This is critical - without the server IP, kill switch blocks VPN connection!
+        log_msg "POST-WAKE: Re-enabling kill switch for server $VPN_SERVER_IP"
+        if [ -n "$VPN_SERVER_IP" ]; then
+            /usr/local/bin/vpn-kill-switch enable "$VPN_SERVER_IP" --force >> "$LOG_FILE" 2>&1 || {
+                log_msg "POST-WAKE: Failed to re-enable kill switch"
+                exit 1
+            }
+        else
+            log_msg "POST-WAKE: Warning - no VPN server IP, kill switch may block connection"
+            /usr/local/bin/vpn-kill-switch enable --force >> "$LOG_FILE" 2>&1 || {
+                log_msg "POST-WAKE: Failed to re-enable kill switch"
+                exit 1
+            }
+        fi
+
+        # Cleanup any stale OpenVPN processes before reconnecting
+        log_msg "POST-WAKE: Cleaning up stale VPN processes"
+        /usr/local/bin/vpn cleanup >> "$LOG_FILE" 2>&1 || true
+
+        # Attempt reconnection
+        log_msg "POST-WAKE: Reconnecting to $PROFILE"
+        if /usr/local/bin/vpn-connector custom "$PROFILE" >> "$LOG_FILE" 2>&1; then
+            log_msg "POST-WAKE: Reconnection successful"
+        else
+            log_msg "POST-WAKE: Reconnection failed"
+        fi
+        ;;
+esac

@@ -3,6 +3,17 @@ set -euo pipefail
 # ABOUTME: Main VPN management CLI interface script for Artix/Arch Linux
 # ABOUTME: Routes commands to appropriate VPN management sub-scripts
 
+# Detect real user's home directory (needed when running as root via elogind/hooks)
+# HOME may be unset or set to /root when called from sleep hooks or system services
+if [[ -z "${HOME:-}" ]] || [[ "${HOME:-}" == "/root" && $EUID -eq 0 ]]; then
+    # Get the logged-in user (not root)
+    REAL_USER=$(who 2>/dev/null | awk 'NR==1{print $1}')
+    if [[ -n "$REAL_USER" && "$REAL_USER" != "root" ]]; then
+        HOME=$(getent passwd "$REAL_USER" | cut -d: -f6)
+        export HOME
+    fi
+fi
+
 # Configuration paths
 CONFIG_DIR="${VPN_CONFIG_DIR:-$HOME/.config/vpn}"
 LOCATIONS_DIR="${LOCATIONS_DIR:-$CONFIG_DIR/locations}"

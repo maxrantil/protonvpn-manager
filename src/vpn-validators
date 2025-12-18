@@ -60,10 +60,11 @@ validate_profile_path() {
         return 1
     fi
 
-    # Validate file ownership (must be owned by current user or root)
+    # Validate file ownership (must be owned by current user or root, root can access any file)
     local file_owner
     file_owner=$(stat -c "%U" "$canonical" 2> /dev/null)
-    if [[ "$file_owner" != "$(whoami)" ]] && [[ "$file_owner" != "root" ]]; then
+    # Root can access any user's files (for system services like sleep hooks)
+    if [[ "$(whoami)" != "root" ]] && [[ "$file_owner" != "$(whoami)" ]] && [[ "$file_owner" != "root" ]]; then
         echo "ERROR: Profile file has suspicious ownership: $file_owner" >&2
         return 1
     fi
@@ -94,10 +95,10 @@ validate_credentials_file() {
         return 1
     fi
 
-    # Must be owned by current user
+    # Must be owned by current user (root can access any user's credentials for system services)
     local owner
     owner=$(stat -c "%U" "$cred_file" 2> /dev/null)
-    if [[ "$owner" != "$(whoami)" ]]; then
+    if [[ "$owner" != "$(whoami)" ]] && [[ "$(whoami)" != "root" ]]; then
         echo "ERROR: Credentials file must be owned by current user" >&2
         return 1
     fi
@@ -130,10 +131,10 @@ validate_and_secure_credentials() {
         return 1
     fi
 
-    # Check ownership
+    # Check ownership (root can access any user's credentials for system services like sleep hooks)
     local owner
     owner=$(stat -c "%U" "$cred_file" 2> /dev/null)
-    if [[ "$owner" != "$(whoami)" ]]; then
+    if [[ "$owner" != "$(whoami)" ]] && [[ "$(whoami)" != "root" ]]; then
         echo "ERROR: Credentials file must be owned by current user (owner: $owner)" >&2
         return 1
     fi
