@@ -975,6 +975,11 @@ start_openvpn_daemon() {
     sudo rm -f "$LOG_DIR/openvpn.log" 2> /dev/null || true
     sudo rm -f "/tmp/openvpn.log" 2> /dev/null || true # Fallback location cleanup
 
+    # Pre-create log file with correct ownership (prevents root ownership when sudo openvpn runs)
+    # This ensures user can read the log even when OpenVPN runs as root
+    touch "$LOG_DIR/openvpn.log" 2>/dev/null || true
+    chmod 600 "$LOG_DIR/openvpn.log" 2>/dev/null || true
+
     # Start OpenVPN daemon without aggressive timeout
     # Security: Use hardcoded trusted path (Issue #165)
     sudo "$OPENVPN_BINARY" \

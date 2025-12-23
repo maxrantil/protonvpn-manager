@@ -3,6 +3,18 @@ set -euo pipefail
 # ABOUTME: VPN process and connection management script for Artix/Arch Linux
 # ABOUTME: Handles OpenVPN process lifecycle, status checking, and cleanup operations
 
+# Detect real user when running as root (e.g., from sleep hooks)
+REAL_USER=""
+REAL_GROUP=""
+if [[ $EUID -eq 0 ]]; then
+    # Get the logged-in user (not root)
+    REAL_USER=$(who 2>/dev/null | awk 'NR==1{print $1}')
+    if [[ -n "$REAL_USER" && "$REAL_USER" != "root" ]]; then
+        # Get user's primary group
+        REAL_GROUP=$(id -gn "$REAL_USER" 2>/dev/null)
+    fi
+fi
+
 # Script locations - robust detection for installed vs development mode
 if [[ -f "/usr/local/bin/vpn-manager" ]] && [[ -f "/usr/local/bin/vpn-error-handler" ]]; then
     # Installed mode - all components in /usr/local/bin
@@ -15,6 +27,11 @@ fi
 # Create secure log directory
 LOG_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/vpn"
 mkdir -p "$LOG_DIR" 2> /dev/null
+
+# Fix ownership when running as root
+if [[ $EUID -eq 0 && -n "$REAL_USER" && -n "$REAL_GROUP" ]]; then
+    chown "$REAL_USER:$REAL_GROUP" "$LOG_DIR" 2>/dev/null || true
+fi
 
 # Security: Use XDG cache directory for temporary files (prevents symlink attacks)
 CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/vpn"
@@ -51,8 +68,16 @@ fi
 if [[ ! -f $VPN_LOG_FILE ]]; then
     touch "$VPN_LOG_FILE"
     chmod 600 "$VPN_LOG_FILE"
+    # Fix ownership when running as root
+    if [[ $EUID -eq 0 && -n "$REAL_USER" && -n "$REAL_GROUP" ]]; then
+        chown "$REAL_USER:$REAL_GROUP" "$VPN_LOG_FILE" 2>/dev/null || true
+    fi
 elif [[ "$(stat -c '%a' "$VPN_LOG_FILE" 2> /dev/null)" != "600" ]]; then
-    chmod 600 "$VPN_LOG_FILE"
+    chmod 600 "$VPN_LOG_FILE" 2>/dev/null || true
+    # Fix ownership when running as root
+    if [[ $EUID -eq 0 && -n "$REAL_USER" && -n "$REAL_GROUP" ]]; then
+        chown "$REAL_USER:$REAL_GROUP" "$VPN_LOG_FILE" 2>/dev/null || true
+    fi
 fi
 
 # Source centralized utilities and color management

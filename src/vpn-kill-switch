@@ -17,12 +17,21 @@ source "$VPN_DIR/vpn-error-handler"
 
 # Detect real user's home directory (needed when running as root via elogind/hooks)
 # HOME may be unset or set to /root when called from sleep hooks or system services
+REAL_USER=""
+REAL_GROUP=""
 if [[ -z "${HOME:-}" ]] || [[ "${HOME:-}" == "/root" && $EUID -eq 0 ]]; then
     # Get the logged-in user (not root)
     REAL_USER=$(who 2>/dev/null | awk 'NR==1{print $1}')
     if [[ -n "$REAL_USER" && "$REAL_USER" != "root" ]]; then
         HOME=$(getent passwd "$REAL_USER" | cut -d: -f6)
         export HOME
+        REAL_GROUP=$(id -gn "$REAL_USER" 2>/dev/null)
+    fi
+elif [[ $EUID -eq 0 ]]; then
+    # Running as root but HOME is set - still need to detect real user for file ownership
+    REAL_USER=$(who 2>/dev/null | awk 'NR==1{print $1}')
+    if [[ -n "$REAL_USER" && "$REAL_USER" != "root" ]]; then
+        REAL_GROUP=$(id -gn "$REAL_USER" 2>/dev/null)
     fi
 fi
 
@@ -41,6 +50,11 @@ VPN_INTERFACE="${VPN_INTERFACE:-tun0}"
 
 # Ensure state directory exists
 mkdir -p "$STATE_DIR" 2> /dev/null || true
+
+# Fix ownership when running as root
+if [[ $EUID -eq 0 && -n "${REAL_USER:-}" && -n "${REAL_GROUP:-}" ]]; then
+    chown "$REAL_USER:$REAL_GROUP" "$STATE_DIR" 2>/dev/null || true
+fi
 
 # Check if running as root or can use sudo
 check_privileges() {
@@ -209,6 +223,12 @@ enable_kill_switch() {
     # Allow all traffic through VPN interface
     run_iptables -A "$CHAIN_NAME" -o "$VPN_INTERFACE" -j ACCEPT
 
+    # Allow Tailscale traffic (if interface exists)
+    if ip link show tailscale0 &> /dev/null; then
+        run_iptables -A "$CHAIN_NAME" -o tailscale0 -j ACCEPT
+        echo "  Allowing Tailscale traffic: tailscale0"
+    fi
+
     # Allow local network (optional - for LAN access)
     # Uncomment if you need local network access while VPN is down
     # run_iptables -A "$CHAIN_NAME" -d 192.168.0.0/16 -j ACCEPT
@@ -261,6 +281,11 @@ enable_kill_switch() {
 
     # Allow VPN tunnel IPv6 traffic
     run_ip6tables -A "$CHAIN_NAME_V6" -o "$VPN_INTERFACE" -j ACCEPT
+
+    # Allow Tailscale IPv6 traffic (if interface exists)
+    if ip link show tailscale0 &> /dev/null; then
+        run_ip6tables -A "$CHAIN_NAME_V6" -o tailscale0 -j ACCEPT
+    fi
 
     # Block all other IPv6 traffic
     run_ip6tables -A "$CHAIN_NAME_V6" -j DROP
@@ -362,6 +387,11 @@ timestamp=$(date +%s)
 interface=$VPN_INTERFACE
 EOF
     chmod 600 "$STATE_FILE" 2> /dev/null || true
+
+    # Fix ownership when running as root
+    if [[ $EUID -eq 0 && -n "${REAL_USER:-}" && -n "${REAL_GROUP:-}" ]]; then
+        chown "$REAL_USER:$REAL_GROUP" "$STATE_FILE" 2>/dev/null || true
+    fi
 }
 
 # Show current status
