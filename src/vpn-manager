@@ -442,7 +442,7 @@ stop_vpn() {
             # Wait for process to terminate, using ps check for root processes
             while [[ $count -lt 10 ]]; do
                 if ps -p "$pid" > /dev/null 2>&1; then
-                    sleep 1
+                    sleep 0.5
                     count=$((count + 1))
                 else
                     break
@@ -456,7 +456,7 @@ stop_vpn() {
                 if ! kill -KILL "$pid" 2> /dev/null; then
                     sudo kill -KILL "$pid" 2> /dev/null || true
                 fi
-                sleep 2
+                sleep 1
             fi
         else
             process_error "$COMP_VPN_MANAGER" "terminate VPN process" "Unable to send termination signal to process $pid" "Check if process still exists or requires elevated permissions"
@@ -543,7 +543,15 @@ attempt_forceful_termination() {
         fi
     done <<< "$pids"
 
-    sleep 2
+    # Verify processes terminated (faster than fixed sleep)
+    local wait_count=0
+    while [[ $wait_count -lt 5 ]]; do
+        if ! pgrep -f "openvpn.*--config" > /dev/null 2>&1; then
+            break
+        fi
+        sleep 0.1
+        wait_count=$((wait_count + 1))
+    done
 }
 
 # Attempt termination using sudo KILL signal
@@ -564,7 +572,15 @@ attempt_sudo_termination() {
         fi
     done <<< "$pids"
 
-    sleep 2
+    # Verify processes terminated (faster than fixed sleep)
+    local wait_count=0
+    while [[ $wait_count -lt 5 ]]; do
+        if ! pgrep -f "openvpn.*--config" > /dev/null 2>&1; then
+            break
+        fi
+        sleep 0.1
+        wait_count=$((wait_count + 1))
+    done
 }
 
 # Verify that all VPN processes have been cleaned up

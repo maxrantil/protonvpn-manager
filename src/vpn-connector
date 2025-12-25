@@ -960,7 +960,7 @@ initialize_connection_attempt() {
 
     # Clean state before connecting
     "$VPN_DIR/vpn-manager" cleanup > /dev/null 2>&1
-    sleep 2
+    sleep 1
 
     echo "$profile_name"
 }
@@ -1269,7 +1269,7 @@ connect_openvpn_profile() {
 
         if [[ $attempt -lt $max_attempts ]]; then
             echo "  Waiting before retry..."
-            sleep 5
+            sleep 2
         fi
     done
 
@@ -1335,7 +1335,7 @@ connect_wireguard_profile() {
 
         if [[ $attempt -lt $max_attempts ]]; then
             echo "  Waiting before retry..."
-            sleep 5
+            sleep 2
         fi
     done
 
