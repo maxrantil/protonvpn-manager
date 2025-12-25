@@ -1312,8 +1312,8 @@ connect_wireguard_profile() {
         if sudo wg-quick up "$profile_path" > /dev/null 2>&1; then
             sleep 3
 
-            # Verify connection is up
-            if wg show "$interface_name" | grep -q "peer\|endpoint"; then
+            # Verify connection is up (requires sudo to access WireGuard interface)
+            if sudo wg show "$interface_name" | grep -q "peer\|endpoint"; then
                 echo -e "\033[1;32m✓ Successfully connected to WireGuard $interface_name\033[0m"
                 log_message "Successfully connected to WireGuard $interface_name on attempt $attempt" "$CONNECTION_LOG"
 
