@@ -228,6 +228,15 @@ run_unit_tests() {
         return 1
     fi
 
+    # Run security/robustness hardening regression tests
+    log_test "INFO" "Running hardening regression tests"
+    if bash "$TEST_DIR/unit/test_hardening.sh"; then
+        log_test "PASS" "Hardening regression tests: All tests passed"
+    else
+        log_test "FAIL" "Hardening regression tests: Some tests failed"
+        return 1
+    fi
+
     return 0
 }
 

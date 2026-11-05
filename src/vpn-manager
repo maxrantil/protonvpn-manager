@@ -788,14 +788,22 @@ cleanup_files() {
         fi
     fi
 
-    # Clean up lock files (these should be user-writable in secure LOCK_DIR)
-    if [[ -f $LOCK_FILE ]]; then
-        rm -f "$LOCK_FILE" 2> /dev/null || true
+    # Clean up stale lock files only. Deleting a lock that is currently held
+    # (e.g. vpn-connector calls cleanup mid-connect) would let a second
+    # connect create a fresh file and run concurrently.
+    remove_lock_if_free "$LOCK_FILE"
+    remove_lock_if_free "$LOCK_DIR/vpn_connect.lock"
+}
+
+# Remove a flock-based lock file only if nobody holds it
+# Args: $1 = lock file path
+remove_lock_if_free() {
+    local lock="$1"
+    [[ -f $lock && ! -L $lock ]] || return 0
+    if (flock -n 9) 9< "$lock" 2> /dev/null; then
+        rm -f "$lock" 2> /dev/null || true
     fi
-    # Also clean vpn-connector's lock file from same secure directory
-    if [[ -f "$LOCK_DIR/vpn_connect.lock" ]]; then
-        rm -f "$LOCK_DIR/vpn_connect.lock" 2> /dev/null || true
-    fi
+    return 0
 }
 
 cleanup_routes_light() {

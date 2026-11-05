@@ -73,6 +73,63 @@ validate_profile_path() {
     return 0
 }
 
+# Validate profile CONTENT before handing it to a root process
+# OpenVPN and wg-quick both run as root. Profile directives that execute
+# programs, load code, or write files would run with root privileges, so they
+# are rejected unless the user explicitly opts in (ALLOW_PROFILE_SCRIPTS=true
+# in ~/.config/vpn/config). Stock ProtonVPN profiles use none of them.
+# Args: $1 = profile path
+# Returns: 0 if safe, 1 if a dangerous directive was found
+validate_profile_content() {
+    local path="$1"
+
+    if [[ -z "$path" || ! -f "$path" || -L "$path" ]]; then
+        echo "ERROR: Profile must be an existing regular file: $path" >&2
+        return 1
+    fi
+
+    local found=""
+    case "$path" in
+        *.ovpn)
+            # Directives that run programs, load plugins, include other files,
+            # write files as root, or expose a control socket.
+            local dangerous='up|down|route-up|route-pre-down|ipchange|tls-verify|auth-user-pass-verify|client-connect|client-disconnect|learn-address|plugin|iproute|config|script-security|log|log-append|writepid|status|management|cd|chroot|tmp-dir|tls-export-cert|dns-updown'
+            # Ignore comments and the contents of inline <blocks> (certs/keys)
+            found=$(awk -v re="^[[:space:]]*-?-?(${dangerous})([[:space:]]|$)" '
+                /^[[:space:]]*<\/[a-z-]+>/ { inblock = 0; next }
+                /^[[:space:]]*<[a-z-]+>/    { inblock = 1; next }
+                inblock { next }
+                /^[[:space:]]*[#;]/ { next }
+                $0 ~ re { print NR": "$1; }
+            ' "$path" 2> /dev/null | head -5)
+            ;;
+        *.conf)
+            # wg-quick executes these hook values with bash as root
+            found=$(grep -inE '^[[:space:]]*(PreUp|PostUp|PreDown|PostDown)[[:space:]]*=' "$path" 2> /dev/null | head -5)
+            ;;
+        *)
+            echo "ERROR: Unknown profile type: $path" >&2
+            return 1
+            ;;
+    esac
+
+    if [[ -z "$found" ]]; then
+        return 0
+    fi
+
+    local config_file="${XDG_CONFIG_HOME:-$HOME/.config}/vpn/config"
+    if [[ -f "$config_file" ]] && grep -qE '^ALLOW_PROFILE_SCRIPTS=["'\'']?true["'\'']?$' "$config_file" 2> /dev/null; then
+        echo "WARNING: Profile contains privileged directives (allowed by ALLOW_PROFILE_SCRIPTS):" >&2
+        echo "$found" | sed 's/^/  line /' >&2
+        return 0
+    fi
+
+    echo "ERROR: Profile contains directives that would run commands or write files as root:" >&2
+    echo "$found" | sed 's/^/  line /' >&2
+    echo "  Remove them, or set ALLOW_PROFILE_SCRIPTS=true in $config_file if you trust this profile." >&2
+    return 1
+}
+
 # Validate credentials file (stricter than regular profiles)
 # Args: $1 = credentials file path
 # Returns: 0 on success, 1 on failure
@@ -335,6 +392,7 @@ validate_and_discover_processes() {
 
 # Export functions for use in other scripts
 export -f validate_profile_path
+export -f validate_profile_content
 export -f validate_credentials_file
 export -f validate_and_secure_credentials
 export -f validate_country_code

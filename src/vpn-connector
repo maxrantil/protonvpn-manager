@@ -48,19 +48,28 @@ source "$VPN_DIR/temp-file-manager" 2> /dev/null || {
 
 # Create secure log directory
 LOG_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/vpn"
-mkdir -p "$LOG_DIR" 2> /dev/null
+(umask 077 && mkdir -p "$LOG_DIR") 2> /dev/null
+if [[ -L $LOG_DIR ]]; then
+    echo "ERROR: Log directory must not be a symlink: $LOG_DIR" >&2
+    exit 1
+fi
+chmod 700 "$LOG_DIR" 2> /dev/null || true
 
 # Security: Use XDG runtime directory for lock files (prevents symlink attacks)
 LOCK_DIR="${XDG_RUNTIME_DIR:-/run/user/$UID}/vpn"
 if [[ ! -d $LOCK_DIR ]]; then
-    mkdir -p "$LOCK_DIR" 2> /dev/null || LOCK_DIR="/tmp/vpn_$$"
-    chmod 700 "$LOCK_DIR" 2> /dev/null || {
+    # Fallback uses an unpredictable private directory (never a guessable /tmp name)
+    (umask 077 && mkdir -p "$LOCK_DIR") 2> /dev/null || LOCK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/vpn.XXXXXXXXXX") || {
         echo "ERROR: Cannot create secure lock directory" >&2
         exit 1
     }
 fi
 
-# Verify directory permissions after creation
+# Verify the lock directory is ours, not a symlink, and private
+if [[ -L $LOCK_DIR ]] || [[ "$(stat -c '%u' "$LOCK_DIR" 2> /dev/null)" != "$EUID" ]]; then
+    echo "ERROR: Lock directory is not owned by current user: $LOCK_DIR" >&2
+    exit 1
+fi
 actual_perms=$(stat -c '%a' "$LOCK_DIR" 2> /dev/null)
 if [[ $actual_perms != "700" ]]; then
     echo "ERROR: Lock directory has insecure permissions: $actual_perms" >&2
@@ -886,7 +895,8 @@ check_vpn_processes() {
     # Use pgrep -x for exact process name match to avoid false positives
     # The old pattern "openvpn.*config" matched shell wrappers that contained both strings
     openvpn_processes=$(pgrep -x openvpn 2> /dev/null | wc -l)
-    wireguard_interfaces=$(wg show 2> /dev/null | grep -c "^interface:" 2> /dev/null || echo 0)
+    # `wg show` needs root and silently prints nothing otherwise; ip(8) does not
+    wireguard_interfaces=$(ip -o link show type wireguard 2> /dev/null | wc -l)
 
     # Ensure we have clean numeric values
     openvpn_processes=${openvpn_processes//[^0-9]/}
@@ -933,6 +943,12 @@ validate_connection_prerequisites() {
         return 1
     fi
 
+    # Security: Reject directives that would run commands/write files as root
+    if ! validate_profile_content "$profile_path"; then
+        log_message "SECURITY: Profile content validation failed: $profile_path" "$CONNECTION_LOG"
+        return 1
+    fi
+
     # Security: Verify OpenVPN binary exists at trusted path (Issue #165, HIGH-severity)
     # Prevents privilege escalation via PATH manipulation
     if [[ ! -x $OPENVPN_BINARY ]]; then
@@ -975,24 +991,37 @@ initialize_connection_attempt() {
 # Returns: 0 on daemon start (note: start != connected)
 start_openvpn_daemon() {
     local profile_path="$1"
+    local log_file="$LOG_DIR/openvpn.log"
 
-    # Clear previous log to avoid false positives
-    sudo rm -f "$LOG_DIR/openvpn.log" 2> /dev/null || true
-    sudo rm -f "/tmp/openvpn.log" 2> /dev/null || true # Fallback location cleanup
+    # Clear previous log to avoid false positives. A root-owned leftover from an
+    # older version can only be removed with sudo; never touch shared /tmp paths.
+    if [[ -e $log_file || -L $log_file ]]; then
+        rm -f "$log_file" 2> /dev/null || sudo rm -f "$log_file" 2> /dev/null || true
+    fi
 
-    # Pre-create log file with correct ownership (prevents root ownership when sudo openvpn runs)
-    # This ensures user can read the log even when OpenVPN runs as root
-    touch "$LOG_DIR/openvpn.log" 2>/dev/null || true
-    chmod 600 "$LOG_DIR/openvpn.log" 2>/dev/null || true
+    # Pre-create the log owned by us with 600 perms, refusing to follow symlinks.
+    # OpenVPN (as root) truncates and writes into it, so we can read it unprivileged.
+    if ! (set -o noclobber; umask 077; : > "$log_file") 2> /dev/null || [[ -L $log_file ]]; then
+        echo "ERROR: Cannot create private OpenVPN log: $log_file" >&2
+        return 1
+    fi
 
-    # Start OpenVPN daemon without aggressive timeout
+    # Script hooks are only allowed when the user explicitly opted in
+    # (validate_profile_content already rejected them otherwise). Placing
+    # --script-security after --config makes it override the profile.
+    local script_security=1
+    if [[ -f "$CONFIG_DIR/config" ]] && grep -qE '^ALLOW_PROFILE_SCRIPTS=["'\'']?true["'\'']?$' "$CONFIG_DIR/config" 2> /dev/null; then
+        script_security=2
+    fi
+
     # Security: Use hardcoded trusted path (Issue #165)
     sudo "$OPENVPN_BINARY" \
         --config "$profile_path" \
         --auth-user-pass "$CREDENTIALS_FILE" \
+        --script-security "$script_security" \
         --daemon \
         --writepid /var/run/openvpn.pid \
-        --log "$LOG_DIR/openvpn.log" \
+        --log "$log_file" \
         --verb 3
 
     return 0
@@ -1242,7 +1271,10 @@ connect_openvpn_profile() {
         echo "  Attempt $attempt of $max_attempts"
 
         # Start OpenVPN daemon
-        start_openvpn_daemon "$profile_path"
+        if ! start_openvpn_daemon "$profile_path"; then
+            notify_event "connection_failed" "$profile_name"
+            return 1
+        fi
 
         # Monitor connection with exponential backoff
         # Capture exit code without tripping set -e (1 = auth failure, 2 = timeout)
@@ -1283,6 +1315,16 @@ connect_openvpn_profile() {
 connect_wireguard_profile() {
     local profile_path="$1"
     local max_attempts="$2"
+
+    # Security: same path/content validation as OpenVPN before running wg-quick as root
+    if ! validate_profile_path "$profile_path" "$LOCATIONS_DIR"; then
+        log_message "SECURITY: Profile path validation failed: $profile_path" "$CONNECTION_LOG"
+        return 1
+    fi
+    if ! validate_profile_content "$profile_path"; then
+        log_message "SECURITY: Profile content validation failed: $profile_path" "$CONNECTION_LOG"
+        return 1
+    fi
 
     # Validate WireGuard config
     if ! validate_wireguard_config "$profile_path"; then
