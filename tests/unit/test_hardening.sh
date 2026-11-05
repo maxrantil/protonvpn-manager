@@ -290,6 +290,126 @@ test_cleanup_keeps_held_lock() {
 	fi
 }
 
+# ---------------------------------------------------------------------------
+# 8. Process matching: only real openvpn command lines, never lookalikes.
+# ---------------------------------------------------------------------------
+test_process_matching() {
+	bash -c 'exec -a "openvpn --config /x/se-1.ovpn --daemon" sleep 30' &
+	local fake=$!
+	bash -c 'exec -a "grep openvpn --config" sleep 30' &
+	local grep_like=$!
+	bash -c 'exec -a "less /var/log/openvpn --config" sleep 30' &
+	local less_like=$!
+	sleep 0.3
+
+	(
+		# shellcheck disable=SC1091
+		source "$SRC_DIR/vpn-validators"
+		validate_openvpn_process "$fake"
+	) && test_pass "openvpn command line is recognised" || test_fail "openvpn command line is recognised"
+
+	local p
+	for p in "$grep_like" "$less_like"; do
+		if (
+			# shellcheck disable=SC1091
+			source "$SRC_DIR/vpn-validators"
+			validate_openvpn_process "$p"
+		); then
+			test_fail "lookalike process not matched: $(ps -p "$p" -o args=)"
+		else
+			test_pass "lookalike process not matched: $(ps -p "$p" -o args=)"
+		fi
+	done
+
+	if (
+		# shellcheck disable=SC1091
+		source "$SRC_DIR/vpn-validators"
+		is_real_openvpn_process "$fake"
+	); then
+		test_fail "forged argv does not qualify for sudo escalation"
+	else
+		test_pass "forged argv does not qualify for sudo escalation"
+	fi
+
+	local found
+	found=$(
+		# shellcheck disable=SC1091
+		source "$SRC_DIR/vpn-validators"
+		find_openvpn_pids
+	)
+	if [[ $found == "$fake" ]]; then
+		test_pass "find_openvpn_pids returns only the daemon"
+	else
+		test_fail "find_openvpn_pids returns only the daemon" "got: $(tr '\n' ' ' <<< "$found")"
+	fi
+
+	kill "$fake" "$grep_like" "$less_like" 2> /dev/null
+	wait 2> /dev/null
+}
+
+# ---------------------------------------------------------------------------
+# 9. A stale PID file pointing at an unrelated process is ignored.
+# ---------------------------------------------------------------------------
+test_stale_pid_file_ignored() {
+	sleep 30 &
+	local victim=$!
+	echo "$victim" > "$WORK_DIR/openvpn.pid"
+	local got
+	got=$(
+		# shellcheck disable=SC1091
+		source "$SRC_DIR/vpn-manager" > /dev/null 2>&1
+		set +e
+		# shellcheck disable=SC2034  # read by get_vpn_pid
+		VPN_PID_FILE="$WORK_DIR/openvpn.pid"
+		pgrep() { return 1; }
+		get_vpn_pid
+	)
+	if [[ -z $got ]]; then
+		test_pass "stale PID file (reused PID) is not treated as the VPN"
+	else
+		test_fail "stale PID file (reused PID) is not treated as the VPN" "got pid $got"
+	fi
+	kill "$victim" 2> /dev/null
+	wait "$victim" 2> /dev/null
+}
+
+# ---------------------------------------------------------------------------
+# 10. Cleanup terminates with TERM promptly (no fixed multi-second sleeps).
+# ---------------------------------------------------------------------------
+test_cleanup_fast_and_graceful() {
+	local marker="$WORK_DIR/term_received"
+	rm -f "$marker"
+	# Fake daemon: records TERM, then exits
+	bash -c "exec -a 'openvpn --config /x/se-2.ovpn' bash -c 'trap \"touch $marker; exit 0\" TERM; while :; do sleep 0.1; done'" &
+	local fake=$!
+	sleep 0.3
+
+	local start end
+	start=$(date +%s%N)
+	(
+		# shellcheck disable=SC1091
+		source "$SRC_DIR/vpn-manager" > /dev/null 2>&1
+		set +e
+		sudo() { :; }
+		hierarchical_process_cleanup false > /dev/null 2>&1
+	)
+	end=$(date +%s%N)
+	local ms=$(((end - start) / 1000000))
+
+	if [[ -f $marker ]] && ! kill -0 "$fake" 2> /dev/null; then
+		test_pass "cleanup stops the daemon with TERM"
+	else
+		test_fail "cleanup stops the daemon with TERM"
+		kill -9 "$fake" 2> /dev/null
+	fi
+	if [[ $ms -lt 2000 ]]; then
+		test_pass "cleanup completes quickly (${ms}ms)"
+	else
+		test_fail "cleanup completes quickly" "took ${ms}ms"
+	fi
+	wait "$fake" 2> /dev/null
+}
+
 test_connect_runs_cleanup_on_unhealthy
 test_connect_retries_after_timeout
 test_tmp_log_cannot_spoof_success
@@ -297,6 +417,9 @@ test_progress_stage_transitions
 test_profile_content_validation
 test_openvpn_invocation
 test_cleanup_keeps_held_lock
+test_process_matching
+test_stale_pid_file_ignored
+test_cleanup_fast_and_graceful
 
 echo ""
 echo -e "${T_BLUE}Results: $TESTS_PASSED/$TESTS_RUN passed${T_NC}"

@@ -174,17 +174,23 @@ is_cache_valid() {
     # Check 3: Cache must be owned by current user (prevent substitution attacks)
     [[ "$(stat -c %U "$cache_file" 2> /dev/null)" == "$(whoami)" ]] || return 1
 
-    # Check 4: Extract cached directory mtime
+    # Check 4: Cache must have been built for the current locations directory
+    # (mtime alone collides when LOCATIONS_DIR changes within the same second)
+    local cached_dir
+    cached_dir=$(grep -m1 "^# CACHE_DIR=" "$cache_file" 2> /dev/null | cut -d= -f2-)
+    [[ $cached_dir == "$LOCATIONS_DIR" ]] || return 1
+
+    # Check 5: Extract cached directory mtime
     local cached_mtime
     cached_mtime=$(grep "^# CACHE_MTIME=" "$cache_file" 2> /dev/null | cut -d= -f2)
     [[ -n $cached_mtime ]] || return 1
 
-    # Check 5: Get current directory mtime
+    # Check 6: Get current directory mtime
     local current_mtime
     current_mtime=$(stat -c %Y "$LOCATIONS_DIR" 2> /dev/null)
     [[ -n $current_mtime ]] || return 1
 
-    # Check 6: Compare timestamps (cache is valid if mtime matches)
+    # Check 7: Compare timestamps (cache is valid if mtime matches)
     [[ $cached_mtime == "$current_mtime" ]]
 }
 
@@ -979,9 +985,10 @@ initialize_connection_attempt() {
     # Log to secure log file
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] Connection attempt started: $profile_name" >> "$CONNECTION_LOG" 2> /dev/null || true
 
-    # Clean state before connecting
-    "$VPN_DIR/vpn-manager" cleanup > /dev/null 2>&1
-    sleep 1
+    # Clean stale state (PID file, leftover tunnels) before connecting.
+    # check_vpn_processes already guaranteed no OpenVPN is running, so no
+    # settle delay is needed. Failure here must not abort the connect.
+    "$VPN_DIR/vpn-manager" cleanup > /dev/null 2>&1 || true
 
     echo "$profile_name"
 }
@@ -1162,16 +1169,27 @@ handle_connection_success() {
     return 0
 }
 
-# Cleans up failed OpenVPN processes after connection attempt fails
+# Terminates the OpenVPN daemon(s) left behind by a failed attempt
+# A timed-out daemon keeps retrying in the background; leaving it running and
+# starting another one accumulates processes (and may connect "later" silently).
 # Returns: 0
 cleanup_failed_connection_processes() {
-    local failed_processes
-    failed_processes=$(pgrep -f "openvpn.*--config" 2> /dev/null | wc -l)
-    if [[ $failed_processes -gt 1 ]]; then
-        echo -e "\033[1;33m  Cleaning up $((failed_processes - 1)) failed process(es)\033[0m"
-        # Kill all but the most recent process (keep the one that might succeed)
-        pgrep -f "openvpn.*--config" 2> /dev/null | head -n -1 | xargs -r sudo kill 2> /dev/null || true
+    local pids
+    pids=$(find_openvpn_pids)
+    [[ -z $pids ]] && return 0
+
+    echo -e "\033[1;33m  Stopping $(wc -l <<< "$pids") unfinished OpenVPN process(es)\033[0m"
+    local pid
+    for pid in $pids; do
+        signal_openvpn_process TERM "$pid" || true
+    done
+    if ! wait_for_pids_exit "$pids" 30; then
+        for pid in $pids; do
+            signal_openvpn_process KILL "$pid" || true
+        done
+        wait_for_pids_exit "$pids" 10 || true
     fi
+    sudo rm -f /var/run/openvpn.pid 2> /dev/null || true
 
     return 0
 }
@@ -1295,14 +1313,16 @@ connect_openvpn_profile() {
         echo -e "\033[1;33m  Connection attempt $attempt failed\033[0m"
         log_message "Connection attempt $attempt failed for OpenVPN $profile_name" "$CONNECTION_LOG"
 
-        # Clean up failed processes after each attempt
-        cleanup_failed_connection_processes
-
         if [[ $attempt -lt $max_attempts ]]; then
+            # Stop the failed attempt's daemon before starting a new one
+            cleanup_failed_connection_processes
             echo "  Waiting before retry..."
             sleep 2
         fi
     done
+
+    # Don't leave the last attempt's daemon retrying in the background
+    cleanup_failed_connection_processes
 
     echo -e "\033[1;31m✗ Failed to connect to OpenVPN $profile_name after $max_attempts attempts\033[0m"
     log_message "Failed to connect to OpenVPN $profile_name after $max_attempts attempts" "$CONNECTION_LOG"
