@@ -54,7 +54,7 @@ echo -e "${T_BLUE}========================================${T_NC}"
 test_connect_runs_cleanup_on_unhealthy() {
 	local stub_dir="$WORK_DIR/stub_bin"
 	mkdir -p "$stub_dir"
-	cp "$SRC_DIR/vpn" "$SRC_DIR/vpn-error-handler" "$SRC_DIR/vpn-colors" "$stub_dir/"
+	cp "$SRC_DIR/vpn" "$SRC_DIR/vpn-error-handler" "$SRC_DIR/vpn-colors" "$SRC_DIR/vpn-utils" "$stub_dir/"
 	cat > "$stub_dir/vpn-manager" << 'EOF'
 #!/bin/bash
 echo "manager:$1" >> "$(dirname "$0")/calls.log"
@@ -410,6 +410,155 @@ test_cleanup_fast_and_graceful() {
 	wait "$fake" 2> /dev/null
 }
 
+# ---------------------------------------------------------------------------
+# 11. Shared libs: no guessable /tmp paths, symlinked dirs refused.
+# ---------------------------------------------------------------------------
+test_shared_lib_paths() {
+	local reg
+	reg=$(
+		unset TEMP_FILE_REGISTRY TEMP_FILE_LOCK
+		# shellcheck disable=SC1091
+		source "$SRC_DIR/temp-file-manager"
+		echo "$TEMP_FILE_REGISTRY"
+	)
+	if [[ $reg == /tmp/vpn-temp-registry-[0-9]* ]]; then
+		test_fail "temp registry is not a guessable /tmp path" "got $reg"
+	else
+		test_pass "temp registry is not a guessable /tmp path"
+	fi
+
+	local elog
+	elog=$(
+		unset VPN_LOG_DIR
+		# shellcheck disable=SC1091
+		source "$SRC_DIR/vpn-colors"
+		# shellcheck disable=SC1091
+		source "$SRC_DIR/vpn-error-handler" 2> /dev/null
+		echo "$ERROR_LOG"
+	)
+	if [[ $elog != "$XDG_STATE_HOME/vpn/vpn_errors.log" ]]; then
+		test_fail "error log is not in shared /tmp" "got $elog"
+	else
+		test_pass "error log is not in shared /tmp"
+	fi
+
+	local target="$WORK_DIR/elsewhere" link="$WORK_DIR/linked_dir"
+	mkdir -p "$target"
+	ln -sfn "$target" "$link"
+	if (
+		# shellcheck disable=SC1091
+		source "$SRC_DIR/vpn-utils"
+		secure_user_dir "$link" 2> /dev/null
+	); then
+		test_fail "secure_user_dir refuses a symlinked directory"
+	else
+		test_pass "secure_user_dir refuses a symlinked directory"
+	fi
+}
+
+# ---------------------------------------------------------------------------
+# 12. Root must not guess between several logged-in users.
+# ---------------------------------------------------------------------------
+test_detect_real_user() {
+	local r1 r2 r3
+	r1=$(
+		# shellcheck disable=SC1091
+		source "$SRC_DIR/vpn-utils"
+		SUDO_USER=nobody VPN_SYSTEM_CONF=/nonexistent detect_real_user
+	)
+	r2=$(
+		# shellcheck disable=SC1091
+		source "$SRC_DIR/vpn-utils"
+		who() { printf 'alice tty1\nbob pts/0\n'; }
+		getent() { return 0; }
+		SUDO_USER="" VPN_SYSTEM_CONF=/nonexistent detect_real_user
+	)
+	r3=$(
+		# shellcheck disable=SC1091
+		source "$SRC_DIR/vpn-utils"
+		who() { printf 'alice tty1\nalice pts/0\nroot pts/1\n'; }
+		getent() { return 0; }
+		SUDO_USER="" VPN_SYSTEM_CONF=/nonexistent detect_real_user
+	)
+	[[ $r1 == nobody ]] && test_pass "SUDO_USER is preferred" || test_fail "SUDO_USER is preferred" "got '$r1'"
+	[[ -z $r2 ]] && test_pass "ambiguous logins yield no user" || test_fail "ambiguous logins yield no user" "got '$r2'"
+	[[ $r3 == alice ]] && test_pass "single logged-in user is detected" || test_fail "single logged-in user is detected" "got '$r3'"
+}
+
+# ---------------------------------------------------------------------------
+# 13. Kill switch applies atomically in an isolated network namespace.
+# ---------------------------------------------------------------------------
+test_kill_switch_netns() {
+	if ! command -v unshare > /dev/null || ! command -v iptables-restore > /dev/null || ! command -v ip > /dev/null ||
+		! unshare -n true 2> /dev/null; then
+		test_pass "kill switch netns test (skipped: needs unshare/iptables/ip and privileges)"
+		return
+	fi
+	mkdir -p "$XDG_STATE_HOME/vpn"
+	echo "UDP link remote: [AF_INET]203.0.113.7:1194" > "$XDG_STATE_HOME/vpn/openvpn.log"
+	local out
+	out=$(unshare -n bash -c '
+		ip link set lo up
+		ip tuntap add dev tun0 mode tun 2>/dev/null && ip link set tun0 up
+		bash "$1/vpn-kill-switch" enable > /dev/null 2>&1 || echo "ENABLE_FAILED"
+		bash "$1/vpn-kill-switch" refresh > /dev/null 2>&1 || echo "REFRESH_FAILED"
+		echo "jumps=$(iptables -S OUTPUT | grep -c VPN_KILL_SWITCH)"
+		iptables -S VPN_KILL_SWITCH
+		bash "$1/vpn-kill-switch" disable > /dev/null 2>&1
+		echo "left=$(iptables -S | grep -c VPN_KILL)$(ip6tables -S | grep -c VPN_KILL)"
+	' _ "$SRC_DIR" 2>&1)
+	if grep -q "FAILED" <<< "$out"; then
+		test_fail "kill switch enable/refresh" "$out"
+		return
+	fi
+	grep -q "jumps=1" <<< "$out" && test_pass "refresh keeps a single OUTPUT jump" || test_fail "refresh keeps a single OUTPUT jump" "$out"
+	grep -q -- "-d 203.0.113.7/32 -j ACCEPT" <<< "$out" && test_pass "VPN server IP taken from OpenVPN log" || test_fail "VPN server IP taken from OpenVPN log" "$out"
+	grep -q -- "--sport 68 --dport 67" <<< "$out" && test_pass "DHCP rule limited to client->server" || test_fail "DHCP rule limited to client->server" "$out"
+	grep -q -- "-A VPN_KILL_SWITCH -j DROP" <<< "$out" && test_pass "chain ends in DROP" || test_fail "chain ends in DROP" "$out"
+	grep -q "left=00" <<< "$out" && test_pass "disable removes all rules" || test_fail "disable removes all rules" "$out"
+}
+
+# ---------------------------------------------------------------------------
+# 14. Dispatcher (root): config values cannot inject code via arithmetic.
+# ---------------------------------------------------------------------------
+test_dispatcher_config_injection() {
+	local hook="$PROJECT_ROOT/etc/NetworkManager/dispatcher.d/50-vpn-reconnect"
+	local marker="$WORK_DIR/injected"
+	rm -f "$marker"
+	local result
+	result=$(
+		# shellcheck disable=SC2034  # read by the extracted load_config
+		DEFAULT_COOLDOWN=30
+		# shellcheck disable=SC2034
+		DEFAULT_MAX_ATTEMPTS=3
+		CONFIG_FILE="$WORK_DIR/evil.conf"
+		printf 'AUTO_RECONNECT=true\nAUTO_RECONNECT_COOLDOWN=a[$(touch %s)]\nAUTO_RECONNECT_MAX_ATTEMPTS=x\n' "$marker" > "$CONFIG_FILE"
+		user_cat() { cat "$1"; }
+		eval "$(sed -n '/^load_config() {/,/^}/p' "$hook")"
+		load_config
+		elapsed=5
+		[[ $elapsed -lt $COOLDOWN ]] || true
+		echo "$COOLDOWN/$MAX_ATTEMPTS"
+	)
+	if [[ ! -e $marker && $result == "30/3" ]]; then
+		test_pass "dispatcher rejects non-numeric cooldown/max-attempts"
+	else
+		test_fail "dispatcher rejects non-numeric cooldown/max-attempts" "result=$result injected=$([[ -e $marker ]] && echo yes || echo no)"
+	fi
+}
+
+# ---------------------------------------------------------------------------
+# 15. Hooks never run `connect <path>` (connect takes a country code).
+# ---------------------------------------------------------------------------
+test_hooks_use_custom_for_paths() {
+	local f bad=""
+	for f in "$PROJECT_ROOT/etc/NetworkManager/dispatcher.d/50-vpn-reconnect" "$PROJECT_ROOT/etc/elogind/system-sleep/50-vpn-sleep"; do
+		grep -qE 'vpn-connector"? connect "\$(profile|PROFILE)"' "$f" && bad+=" $(basename "$f")"
+		grep -qE 'VPN_CONNECTOR"? connect "\$profile"' "$f" && bad+=" $(basename "$f")"
+	done
+	[[ -z $bad ]] && test_pass "hooks reconnect via 'custom <profile>'" || test_fail "hooks reconnect via 'custom <profile>'" "$bad"
+}
+
 test_connect_runs_cleanup_on_unhealthy
 test_connect_retries_after_timeout
 test_tmp_log_cannot_spoof_success
@@ -420,6 +569,11 @@ test_cleanup_keeps_held_lock
 test_process_matching
 test_stale_pid_file_ignored
 test_cleanup_fast_and_graceful
+test_shared_lib_paths
+test_detect_real_user
+test_kill_switch_netns
+test_dispatcher_config_injection
+test_hooks_use_custom_for_paths
 
 echo ""
 echo -e "${T_BLUE}Results: $TESTS_PASSED/$TESTS_RUN passed${T_NC}"
