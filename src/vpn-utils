@@ -39,6 +39,72 @@ log_message() {
     fi
 }
 
+# Determine the unprivileged user root is acting for (sleep/network hooks, sudo)
+# Order: SUDO_USER -> VPN_USER in root-owned /etc/protonvpn-manager.conf ->
+# the single non-root user logged in. With several users logged in and no
+# configuration the result is empty: root must never guess whose home to use.
+# Output: username (may be empty). Returns 0 if a user was found.
+detect_real_user() {
+    local user="" conf="${VPN_SYSTEM_CONF:-/etc/protonvpn-manager.conf}"
+
+    if [[ -n "${SUDO_USER:-}" && "${SUDO_USER}" != "root" ]]; then
+        user="$SUDO_USER"
+    elif [[ -f "$conf" && ! -L "$conf" ]] && [[ "$(stat -c %u "$conf" 2> /dev/null)" == "0" ]]; then
+        user=$(sed -n 's/^VPN_USER=["'\'']\{0,1\}\([a-z_][a-z0-9_-]*\)["'\'']\{0,1\}$/\1/p' "$conf" 2> /dev/null | head -1)
+    fi
+
+    if [[ -z "$user" ]]; then
+        local users
+        users=$(who 2> /dev/null | awk '$1 != "root" {print $1}' | sort -u)
+        if [[ -n "$users" && $(wc -l <<< "$users") -eq 1 ]]; then
+            user="$users"
+        fi
+    fi
+
+    # Must be a sane, existing, non-root account
+    if [[ ! "$user" =~ ^[a-z_][a-z0-9_-]*$ ]] || [[ "$user" == "root" ]] || ! getent passwd "$user" > /dev/null 2>&1; then
+        return 1
+    fi
+    echo "$user"
+}
+
+# Create/verify a private per-user directory (700, not a symlink, owned by the
+# current user or by REAL_USER when running as root). chown -h never follows
+# symlinks, so root cannot be tricked into chowning another path.
+# Args: $1 = directory
+# Returns: 0 if the directory is safe to use
+secure_user_dir() {
+    local dir="$1"
+    if [[ -L "$dir" ]]; then
+        echo "ERROR: Refusing to use symlinked directory: $dir" >&2
+        return 1
+    fi
+    (umask 077 && mkdir -p "$dir") 2> /dev/null || return 1
+    if [[ -L "$dir" || ! -d "$dir" ]]; then
+        echo "ERROR: Refusing to use directory: $dir" >&2
+        return 1
+    fi
+
+    local owner expected
+    owner=$(stat -c %U "$dir" 2> /dev/null)
+    expected=$(id -un)
+    if [[ $EUID -eq 0 && -n "${REAL_USER:-}" && "${REAL_USER}" != "root" ]]; then
+        expected="$REAL_USER"
+        if [[ "$owner" == "root" ]]; then
+            chown -h "$REAL_USER:" "$dir" 2> /dev/null || true
+            owner=$(stat -c %U "$dir" 2> /dev/null)
+        fi
+    fi
+    if [[ "$owner" != "$expected" ]]; then
+        echo "ERROR: Directory $dir is owned by '$owner', expected '$expected'" >&2
+        return 1
+    fi
+    chmod 700 "$dir" 2> /dev/null || true
+    return 0
+}
+
 # Export functions for use in other scripts
 export -f notify_event
 export -f log_message
+export -f detect_real_user
+export -f secure_user_dir

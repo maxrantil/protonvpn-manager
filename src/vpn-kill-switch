@@ -15,25 +15,26 @@ fi
 source "$VPN_DIR/vpn-colors"
 source "$VPN_DIR/vpn-error-handler"
 
-# Detect real user's home directory (needed when running as root via elogind/hooks)
-# HOME may be unset or set to /root when called from sleep hooks or system services
+# Detect the real user when running as root (sleep/network hooks, sudo).
+# HOME may be unset or /root there; never guess between several logged-in users.
+# shellcheck source=src/vpn-utils
+source "$VPN_DIR/vpn-utils"
 REAL_USER=""
 REAL_GROUP=""
-if [[ -z "${HOME:-}" ]] || [[ "${HOME:-}" == "/root" && $EUID -eq 0 ]]; then
-    # Get the logged-in user (not root)
-    REAL_USER=$(who 2>/dev/null | awk 'NR==1{print $1}')
-    if [[ -n "$REAL_USER" && "$REAL_USER" != "root" ]]; then
-        HOME=$(getent passwd "$REAL_USER" | cut -d: -f6)
-        export HOME
-        REAL_GROUP=$(id -gn "$REAL_USER" 2>/dev/null)
+if [[ $EUID -eq 0 ]]; then
+    REAL_USER=$(detect_real_user) || REAL_USER=""
+    if [[ -n $REAL_USER ]]; then
+        REAL_GROUP=$(id -gn "$REAL_USER" 2> /dev/null || true)
+        if [[ -z ${HOME:-} || ${HOME:-} == "/root" ]]; then
+            HOME=$(getent passwd "$REAL_USER" | cut -d: -f6)
+            export HOME
+        fi
     fi
-elif [[ $EUID -eq 0 ]]; then
-    # Running as root but HOME is set - still need to detect real user for file ownership
-    REAL_USER=$(who 2>/dev/null | awk 'NR==1{print $1}')
-    if [[ -n "$REAL_USER" && "$REAL_USER" != "root" ]]; then
-        REAL_GROUP=$(id -gn "$REAL_USER" 2>/dev/null)
-    fi
+elif [[ -z ${HOME:-} ]]; then
+    HOME=$(getent passwd "$EUID" | cut -d: -f6)
+    export HOME
 fi
+export REAL_USER REAL_GROUP
 
 # Configuration
 STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/vpn"
@@ -47,14 +48,14 @@ CHAIN_NAME_V6="VPN_KILL_SWITCH_V6"
 
 # VPN interface (OpenVPN typically uses tun0)
 VPN_INTERFACE="${VPN_INTERFACE:-tun0}"
-
-# Ensure state directory exists
-mkdir -p "$STATE_DIR" 2> /dev/null || true
-
-# Fix ownership when running as root
-if [[ $EUID -eq 0 && -n "${REAL_USER:-}" && -n "${REAL_GROUP:-}" ]]; then
-    chown "$REAL_USER:$REAL_GROUP" "$STATE_DIR" 2>/dev/null || true
+# Security: the name ends up in firewall rules; accept only valid ifnames
+if [[ ! $VPN_INTERFACE =~ ^[a-zA-Z0-9_.-]{1,15}$ ]]; then
+    echo -e "${RED}Error: Invalid VPN interface name: $VPN_INTERFACE${NC}" >&2
+    exit 1
 fi
+
+# Ensure state directory exists (private, not a symlink, owned by the real user)
+secure_user_dir "$STATE_DIR" 2> /dev/null || true
 
 # Check if running as root or can use sudo
 check_privileges() {
@@ -87,6 +88,23 @@ run_ip6tables() {
     fi
 }
 
+# Apply a ruleset atomically (stdin) without flushing unrelated chains
+run_iptables_restore() {
+    if [[ $EUID -eq 0 ]]; then
+        iptables-restore --noflush
+    else
+        sudo iptables-restore --noflush
+    fi
+}
+
+run_ip6tables_restore() {
+    if [[ $EUID -eq 0 ]]; then
+        ip6tables-restore --noflush
+    else
+        sudo ip6tables-restore --noflush
+    fi
+}
+
 # Check if iptables is available
 check_iptables() {
     if ! command -v iptables &> /dev/null; then
@@ -112,15 +130,23 @@ chain_exists_v6() {
 get_vpn_server_ip() {
     local vpn_ip=""
 
+    # Method 0: OpenVPN's own log of the current session (most reliable)
+    local ovpn_log="$STATE_DIR/openvpn.log"
+    if [[ -f "$ovpn_log" && ! -L "$ovpn_log" ]]; then
+        vpn_ip=$(grep -oE '(link remote|Peer Connection Initiated with|connection established with): \[AF_INET\][0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' "$ovpn_log" 2> /dev/null |
+            tail -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' || true)
+    fi
+
     # Method 1: Find the VPN server from routing table - it's the IP routed via physical interface
     # When VPN is connected, there's a specific route for the VPN server via wlan0/eth0
     # This is the actual server IP we need to allow through the firewall
     local default_iface=""
     default_iface=$(ip route show default 2> /dev/null | awk '/default/ {for(i=1;i<=NF;i++) if($i=="dev") print $(i+1)}' | head -1)
-    if [[ -n "$default_iface" ]]; then
+    if [[ -z "$vpn_ip" && -n "$default_iface" ]]; then
         # Find IPs that are routed via the physical interface (not tun0)
         # These are typically VPN server IPs that need to bypass the tunnel
-        vpn_ip=$(ip route show 2> /dev/null | grep "via.*dev $default_iface" | grep -v "default" | awk '{print $1}' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+        # Prefer host routes (no /prefix) - that's what OpenVPN adds for the server
+        vpn_ip=$(ip route show 2> /dev/null | grep "via.*dev $default_iface" | grep -v "default" | awk '{print $1}' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
     fi
 
     if [[ -z "$vpn_ip" ]]; then
@@ -136,7 +162,10 @@ get_vpn_server_ip() {
         fi
     fi
 
-    echo "$vpn_ip"
+    # Only ever return a well-formed IPv4 address (it ends up in firewall rules)
+    if [[ "$vpn_ip" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
+        echo "$vpn_ip"
+    fi
 }
 
 # Get the default gateway interface (physical NIC)
@@ -157,7 +186,6 @@ check_vpn_interface() {
 # Enable the kill switch
 enable_kill_switch() {
     local vpn_server_ip="${1:-}"
-    local force="${2:-}"
 
     echo -e "${YELLOW}Enabling VPN kill switch...${NC}"
 
@@ -196,103 +224,76 @@ enable_kill_switch() {
         echo ""
     fi
 
-    # Create the kill switch chain if it doesn't exist
-    if ! chain_exists; then
-        run_iptables -N "$CHAIN_NAME" 2> /dev/null || true
-    else
-        # Flush existing rules
-        run_iptables -F "$CHAIN_NAME"
-    fi
-
-    # IPv4 Rules
-    echo "  Setting up IPv4 rules..."
-
-    # Allow loopback
-    run_iptables -A "$CHAIN_NAME" -o lo -j ACCEPT
-    run_iptables -A "$CHAIN_NAME" -i lo -j ACCEPT
-
-    # Allow established connections (important for ongoing sessions)
-    run_iptables -A "$CHAIN_NAME" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
-
-    # Allow traffic to VPN server (so we can establish/maintain connection)
-    if [[ -n "$vpn_server_ip" ]]; then
-        run_iptables -A "$CHAIN_NAME" -d "$vpn_server_ip" -j ACCEPT
-        echo "  Allowing VPN server: $vpn_server_ip"
-    fi
-
-    # Allow all traffic through VPN interface
-    run_iptables -A "$CHAIN_NAME" -o "$VPN_INTERFACE" -j ACCEPT
-
-    # Allow Tailscale traffic (if interface exists)
-    if ip link show tailscale0 &> /dev/null; then
-        run_iptables -A "$CHAIN_NAME" -o tailscale0 -j ACCEPT
-        echo "  Allowing Tailscale traffic: tailscale0"
-    fi
-
-    # Allow local network (optional - for LAN access)
-    # Uncomment if you need local network access while VPN is down
-    # run_iptables -A "$CHAIN_NAME" -d 192.168.0.0/16 -j ACCEPT
-    # run_iptables -A "$CHAIN_NAME" -d 10.0.0.0/8 -j ACCEPT
-    # run_iptables -A "$CHAIN_NAME" -d 172.16.0.0/12 -j ACCEPT
-
-    # Allow libvirt/QEMU VM network (default virbr0 network)
-    run_iptables -A "$CHAIN_NAME" -d 192.168.122.0/24 -j ACCEPT
-
-    # Allow DHCP (needed for network connectivity)
-    run_iptables -A "$CHAIN_NAME" -p udp --dport 67:68 -j ACCEPT
-
-    # Allow DNS through VPN tunnel
-    run_iptables -A "$CHAIN_NAME" -o "$VPN_INTERFACE" -p udp --dport 53 -j ACCEPT
-    run_iptables -A "$CHAIN_NAME" -o "$VPN_INTERFACE" -p tcp --dport 53 -j ACCEPT
-
-    # Allow DNS to local gateway (for systems configured to use router DNS)
-    # This is needed because some systems use the router as DNS resolver
     local default_gw=""
     default_gw=$(get_default_gateway)
-    if [[ -n "$default_gw" ]]; then
-        run_iptables -A "$CHAIN_NAME" -d "$default_gw" -p udp --dport 53 -j ACCEPT
-        run_iptables -A "$CHAIN_NAME" -d "$default_gw" -p tcp --dport 53 -j ACCEPT
-        echo "  Allowing DNS to gateway: $default_gw"
-    fi
+    [[ "$default_gw" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || default_gw=""
+    local have_tailscale=""
+    ip link show tailscale0 &> /dev/null && have_tailscale=1
 
-    # Block everything else
-    run_iptables -A "$CHAIN_NAME" -j DROP
-
-    # Insert the chain into OUTPUT if not already present
+    # Build both rulesets and apply each with ONE iptables-restore transaction.
+    # Declaring the chain in --noflush mode flushes and refills it atomically,
+    # so a refresh never leaves a window where the chain is empty (fail-open),
+    # and it needs 2 privileged calls instead of ~20.
+    local v4 v6
+    v4="*filter
+:$CHAIN_NAME - [0:0]
+-A $CHAIN_NAME -o lo -j ACCEPT
+-A $CHAIN_NAME -i lo -j ACCEPT
+-A $CHAIN_NAME -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT"
+    [[ -n "$vpn_server_ip" ]] && v4+="
+-A $CHAIN_NAME -d $vpn_server_ip -j ACCEPT"
+    v4+="
+-A $CHAIN_NAME -o $VPN_INTERFACE -j ACCEPT"
+    [[ -n "$have_tailscale" ]] && v4+="
+-A $CHAIN_NAME -o tailscale0 -j ACCEPT"
+    # libvirt/QEMU default VM network; DHCP client->server only
+    v4+="
+-A $CHAIN_NAME -d 192.168.122.0/24 -j ACCEPT
+-A $CHAIN_NAME -p udp --sport 68 --dport 67 -j ACCEPT"
+    # DNS to the local gateway (systems that resolve via the router).
+    # NOTE: these queries bypass the tunnel (kept for compatibility).
+    [[ -n "$default_gw" ]] && v4+="
+-A $CHAIN_NAME -d $default_gw -p udp --dport 53 -j ACCEPT
+-A $CHAIN_NAME -d $default_gw -p tcp --dport 53 -j ACCEPT"
+    v4+="
+-A $CHAIN_NAME -j DROP"
     if ! run_iptables -C OUTPUT -j "$CHAIN_NAME" 2> /dev/null; then
-        run_iptables -I OUTPUT 1 -j "$CHAIN_NAME"
+        v4+="
+-I OUTPUT 1 -j $CHAIN_NAME"
     fi
+    v4+="
+COMMIT"
 
-    # IPv6 Rules - Block all IPv6 traffic to prevent leaks
-    echo "  Setting up IPv6 rules..."
-
-    if ! chain_exists_v6; then
-        run_ip6tables -N "$CHAIN_NAME_V6" 2> /dev/null || true
-    else
-        run_ip6tables -F "$CHAIN_NAME_V6"
-    fi
-
-    # Allow loopback
-    run_ip6tables -A "$CHAIN_NAME_V6" -o lo -j ACCEPT
-    run_ip6tables -A "$CHAIN_NAME_V6" -i lo -j ACCEPT
-
-    # Allow established connections
-    run_ip6tables -A "$CHAIN_NAME_V6" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
-
-    # Allow VPN tunnel IPv6 traffic
-    run_ip6tables -A "$CHAIN_NAME_V6" -o "$VPN_INTERFACE" -j ACCEPT
-
-    # Allow Tailscale IPv6 traffic (if interface exists)
-    if ip link show tailscale0 &> /dev/null; then
-        run_ip6tables -A "$CHAIN_NAME_V6" -o tailscale0 -j ACCEPT
-    fi
-
-    # Block all other IPv6 traffic
-    run_ip6tables -A "$CHAIN_NAME_V6" -j DROP
-
-    # Insert the chain into OUTPUT if not already present
+    v6="*filter
+:$CHAIN_NAME_V6 - [0:0]
+-A $CHAIN_NAME_V6 -o lo -j ACCEPT
+-A $CHAIN_NAME_V6 -i lo -j ACCEPT
+-A $CHAIN_NAME_V6 -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+-A $CHAIN_NAME_V6 -o $VPN_INTERFACE -j ACCEPT"
+    [[ -n "$have_tailscale" ]] && v6+="
+-A $CHAIN_NAME_V6 -o tailscale0 -j ACCEPT"
+    v6+="
+-A $CHAIN_NAME_V6 -j DROP"
     if ! run_ip6tables -C OUTPUT -j "$CHAIN_NAME_V6" 2> /dev/null; then
-        run_ip6tables -I OUTPUT 1 -j "$CHAIN_NAME_V6"
+        v6+="
+-I OUTPUT 1 -j $CHAIN_NAME_V6"
+    fi
+    v6+="
+COMMIT"
+
+    echo "  Setting up IPv4 rules..."
+    [[ -n "$vpn_server_ip" ]] && echo "  Allowing VPN server: $vpn_server_ip"
+    [[ -n "$have_tailscale" ]] && echo "  Allowing Tailscale traffic: tailscale0"
+    [[ -n "$default_gw" ]] && echo "  Allowing DNS to gateway: $default_gw"
+    if ! run_iptables_restore <<< "$v4"; then
+        echo -e "${RED}Error: Failed to apply IPv4 kill switch rules${NC}" >&2
+        return 1
+    fi
+
+    echo "  Setting up IPv6 rules..."
+    if ! run_ip6tables_restore <<< "$v6"; then
+        echo -e "${RED}Error: Failed to apply IPv6 kill switch rules${NC}" >&2
+        return 1
     fi
 
     # Save state
@@ -378,20 +379,21 @@ save_state() {
     local status="$1"
     local server_ip="${2:-}"
 
-    mkdir -p "$STATE_DIR" 2> /dev/null || true
+    secure_user_dir "$STATE_DIR" || return 0
 
-    cat > "$STATE_FILE" << EOF
-status=$status
-server_ip=$server_ip
-timestamp=$(date +%s)
-interface=$VPN_INTERFACE
-EOF
-    chmod 600 "$STATE_FILE" 2> /dev/null || true
+    # Write to a unique temp file and rename over the target: rename never
+    # follows a symlink planted at STATE_FILE (matters when running as root).
+    local tmp
+    tmp=$(mktemp "$STATE_DIR/.kill_switch.state.XXXXXX") || return 0
+    printf 'status=%s\nserver_ip=%s\ntimestamp=%s\ninterface=%s\n' \
+        "$status" "$server_ip" "$(date +%s)" "$VPN_INTERFACE" > "$tmp"
+    chmod 600 "$tmp" 2> /dev/null || true
 
     # Fix ownership when running as root
     if [[ $EUID -eq 0 && -n "${REAL_USER:-}" && -n "${REAL_GROUP:-}" ]]; then
-        chown "$REAL_USER:$REAL_GROUP" "$STATE_FILE" 2>/dev/null || true
+        chown -h "$REAL_USER:$REAL_GROUP" "$tmp" 2> /dev/null || true
     fi
+    mv -f "$tmp" "$STATE_FILE" 2> /dev/null || rm -f "$tmp"
 }
 
 # Show current status

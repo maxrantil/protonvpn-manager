@@ -3,7 +3,19 @@
 # ABOUTME: Provides registry, crash recovery, and thread-safe temp file tracking
 
 # Default registry location (can be overridden by tests)
-: "${TEMP_FILE_REGISTRY:=/tmp/vpn-temp-registry-$$}"
+# Security: cleanup_temp_files deletes every path listed in the registry, so it
+# must never live at a guessable shared path (e.g. /tmp/vpn-temp-registry-PID):
+# another local user could pre-create it and have arbitrary files deleted.
+# Use the private runtime dir, or an unpredictable mktemp file.
+if [[ -z "${TEMP_FILE_REGISTRY:-}" ]]; then
+    _tfm_dir="${XDG_RUNTIME_DIR:-/run/user/$UID}/vpn"
+    if [[ -d "$_tfm_dir" && ! -L "$_tfm_dir" && -O "$_tfm_dir" ]]; then
+        TEMP_FILE_REGISTRY="$_tfm_dir/temp-registry-$$"
+    else
+        TEMP_FILE_REGISTRY=$(mktemp "${TMPDIR:-/tmp}/vpn-temp-registry.XXXXXXXXXX" 2> /dev/null) || TEMP_FILE_REGISTRY=""
+    fi
+    unset _tfm_dir
+fi
 : "${TEMP_FILE_LOCK:=${TEMP_FILE_REGISTRY}.lock}"
 
 # Initialize temp file manager
@@ -15,11 +27,19 @@ init_temp_file_manager() {
     registry_dir=$(dirname "$TEMP_FILE_REGISTRY")
     mkdir -p "$registry_dir" 2>/dev/null || true
 
-    # Create registry file if it doesn't exist
-    touch "$TEMP_FILE_REGISTRY" 2>/dev/null || {
+    # Create registry file if it doesn't exist (private, never via a symlink)
+    if [[ -z "$TEMP_FILE_REGISTRY" || -L "$TEMP_FILE_REGISTRY" ]]; then
+        echo "Warning: Unsafe temp file registry path: ${TEMP_FILE_REGISTRY:-<empty>}" >&2
+        return 1
+    fi
+    (umask 077 && : >> "$TEMP_FILE_REGISTRY") 2>/dev/null || {
         echo "Warning: Could not create temp file registry at $TEMP_FILE_REGISTRY" >&2
         return 1
     }
+    if [[ ! -O "$TEMP_FILE_REGISTRY" ]]; then
+        echo "Warning: Temp file registry is not owned by current user: $TEMP_FILE_REGISTRY" >&2
+        return 1
+    fi
 
     # Set restrictive permissions
     chmod 600 "$TEMP_FILE_REGISTRY" 2>/dev/null
@@ -93,8 +113,8 @@ unregister_temp_file() {
 # Cleanup all registered temp files
 # Safe to call multiple times - handles missing files gracefully
 cleanup_temp_files() {
-    # Skip if registry doesn't exist (already cleaned up)
-    [[ -f "$TEMP_FILE_REGISTRY" ]] || return 0
+    # Skip if registry doesn't exist (already cleaned up) or isn't ours
+    [[ -f "$TEMP_FILE_REGISTRY" && ! -L "$TEMP_FILE_REGISTRY" && -O "$TEMP_FILE_REGISTRY" ]] || return 0
 
     # Use flock for thread-safe access
     # Create lock file parent directory if needed

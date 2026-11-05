@@ -3,16 +3,35 @@ set -euo pipefail
 # ABOUTME: VPN connection establishment and profile management for Artix/Arch Linux
 # ABOUTME: Handles server selection, connection attempts, and performance testing
 
-# Detect real user's home directory (needed when running as root via elogind/hooks)
-# HOME may be unset or set to /root when called from sleep hooks or system services
-if [[ -z "${HOME:-}" ]] || [[ "${HOME:-}" == "/root" && $EUID -eq 0 ]]; then
-    # Get the logged-in user (not root)
-    REAL_USER=$(who 2>/dev/null | awk 'NR==1{print $1}')
-    if [[ -n "$REAL_USER" && "$REAL_USER" != "root" ]]; then
-        HOME=$(getent passwd "$REAL_USER" | cut -d: -f6)
-        export HOME
-    fi
+# Script locations - robust detection for installed vs development mode
+if [[ -f "/usr/local/bin/vpn-manager" ]] && [[ -f "/usr/local/bin/vpn-error-handler" ]]; then
+    # Installed mode - all components in /usr/local/bin
+    VPN_DIR="/usr/local/bin"
+else
+    # Development mode - use local paths relative to script location
+    VPN_DIR="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
 fi
+
+# Detect the real user when running as root (sleep/network hooks, sudo).
+# HOME may be unset or /root there; never guess between several logged-in users.
+# shellcheck source=src/vpn-utils
+source "$VPN_DIR/vpn-utils"
+REAL_USER=""
+REAL_GROUP=""
+if [[ $EUID -eq 0 ]]; then
+    REAL_USER=$(detect_real_user) || REAL_USER=""
+    if [[ -n $REAL_USER ]]; then
+        REAL_GROUP=$(id -gn "$REAL_USER" 2> /dev/null || true)
+        if [[ -z ${HOME:-} || ${HOME:-} == "/root" ]]; then
+            HOME=$(getent passwd "$REAL_USER" | cut -d: -f6)
+            export HOME
+        fi
+    fi
+elif [[ -z ${HOME:-} ]]; then
+    HOME=$(getent passwd "$EUID" | cut -d: -f6)
+    export HOME
+fi
+export REAL_USER REAL_GROUP
 
 # Configuration paths
 CONFIG_DIR="${VPN_CONFIG_DIR:-$HOME/.config/vpn}"
@@ -31,14 +50,6 @@ if [[ ! -f $CREDENTIALS_FILE ]] && [[ -f "$CONFIG_DIR/credentials.txt" ]]; then
     echo "" >&2
 fi
 
-# Script locations - robust detection for installed vs development mode
-if [[ -f "/usr/local/bin/vpn-manager" ]] && [[ -f "/usr/local/bin/vpn-error-handler" ]]; then
-    # Installed mode - all components in /usr/local/bin
-    VPN_DIR="/usr/local/bin"
-else
-    # Development mode - use local paths relative to script location
-    VPN_DIR="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
-fi
 
 # Source temp file manager for coordinated cleanup
 # shellcheck source=src/temp-file-manager
@@ -48,12 +59,7 @@ source "$VPN_DIR/temp-file-manager" 2> /dev/null || {
 
 # Create secure log directory
 LOG_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/vpn"
-(umask 077 && mkdir -p "$LOG_DIR") 2> /dev/null
-if [[ -L $LOG_DIR ]]; then
-    echo "ERROR: Log directory must not be a symlink: $LOG_DIR" >&2
-    exit 1
-fi
-chmod 700 "$LOG_DIR" 2> /dev/null || true
+secure_user_dir "$LOG_DIR" || exit 1
 
 # Security: Use XDG runtime directory for lock files (prevents symlink attacks)
 LOCK_DIR="${XDG_RUNTIME_DIR:-/run/user/$UID}/vpn"
@@ -84,8 +90,10 @@ PROFILE_CACHE="$LOG_DIR/vpn_profiles.cache"
 # Security: Ensure log files have secure permissions (600 - only owner can read/write)
 # Protection against TOCTOU race conditions and symlink attacks
 for logfile in "$CONNECTION_LOG" "$PERFORMANCE_CACHE" "$PROFILE_CACHE"; do
-    # Remove if symlink or non-regular file
-    if [[ -L $logfile ]] || [[ -e $logfile && ! -f $logfile ]]; then
+    # Remove if symlink, non-regular file, or owned by someone else (e.g. left
+    # root-owned by a hook run); LOG_DIR is ours, so we may delete it.
+    if [[ -L $logfile ]] || [[ -e $logfile && ! -f $logfile ]] ||
+        [[ $EUID -ne 0 && -e $logfile && ! -O $logfile ]]; then
         rm -f "$logfile"
     fi
 
@@ -119,6 +127,11 @@ for logfile in "$CONNECTION_LOG" "$PERFORMANCE_CACHE" "$PROFILE_CACHE"; do
     if [[ -L $logfile ]] || [[ "$(stat -c %a "$logfile" 2> /dev/null)" != "600" ]]; then
         echo "ERROR: Log file security verification failed: $logfile" >&2
         exit 1
+    fi
+
+    # Running as root for a user (hooks): keep the user's files user-owned
+    if [[ $EUID -eq 0 && -n $REAL_USER && -n $REAL_GROUP ]]; then
+        chown -h "$REAL_USER:$REAL_GROUP" "$logfile" 2> /dev/null || true
     fi
 done
 
@@ -494,9 +507,11 @@ release_lock() {
 
 cleanup_on_exit() {
     release_lock
-    # Cleanup temp files if temp-file-manager is loaded
+    # Cleanup temp files if temp-file-manager is loaded (this trap replaces the
+    # manager's own EXIT trap, so remove its registry files here as well)
     if type cleanup_temp_files &> /dev/null; then
         cleanup_temp_files 2> /dev/null || true
+        rm -f "${TEMP_FILE_REGISTRY:-}" "${TEMP_FILE_LOCK:-}" 2> /dev/null || true
     fi
 }
 

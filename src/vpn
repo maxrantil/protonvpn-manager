@@ -3,21 +3,6 @@ set -euo pipefail
 # ABOUTME: Main VPN management CLI interface script for Artix/Arch Linux
 # ABOUTME: Routes commands to appropriate VPN management sub-scripts
 
-# Detect real user's home directory (needed when running as root via elogind/hooks)
-# HOME may be unset or set to /root when called from sleep hooks or system services
-if [[ -z "${HOME:-}" ]] || [[ "${HOME:-}" == "/root" && $EUID -eq 0 ]]; then
-    # Get the logged-in user (not root)
-    REAL_USER=$(who 2>/dev/null | awk 'NR==1{print $1}')
-    if [[ -n "$REAL_USER" && "$REAL_USER" != "root" ]]; then
-        HOME=$(getent passwd "$REAL_USER" | cut -d: -f6)
-        export HOME
-    fi
-fi
-
-# Configuration paths
-CONFIG_DIR="${VPN_CONFIG_DIR:-$HOME/.config/vpn}"
-LOCATIONS_DIR="${LOCATIONS_DIR:-$CONFIG_DIR/locations}"
-
 # Script locations - robust detection for installed vs development mode
 if [[ -f "/usr/local/bin/vpn-manager" ]] && [[ -f "/usr/local/bin/vpn-error-handler" ]]; then
     # Installed mode - all components in /usr/local/bin
@@ -30,6 +15,32 @@ else
     VPN_MANAGER="$VPN_DIR/vpn-manager"
     VPN_CONNECTOR="$VPN_DIR/vpn-connector"
 fi
+
+# Detect the real user when running as root (sleep/network hooks, sudo).
+# HOME may be unset or /root there; never guess between several logged-in users.
+# shellcheck source=src/vpn-utils
+source "$VPN_DIR/vpn-utils"
+REAL_USER=""
+REAL_GROUP=""
+if [[ $EUID -eq 0 ]]; then
+    REAL_USER=$(detect_real_user) || REAL_USER=""
+    if [[ -n $REAL_USER ]]; then
+        REAL_GROUP=$(id -gn "$REAL_USER" 2> /dev/null || true)
+        if [[ -z ${HOME:-} || ${HOME:-} == "/root" ]]; then
+            HOME=$(getent passwd "$REAL_USER" | cut -d: -f6)
+            export HOME
+        fi
+    fi
+elif [[ -z ${HOME:-} ]]; then
+    HOME=$(getent passwd "$EUID" | cut -d: -f6)
+    export HOME
+fi
+export REAL_USER REAL_GROUP
+
+# Configuration paths
+CONFIG_DIR="${VPN_CONFIG_DIR:-$HOME/.config/vpn}"
+LOCATIONS_DIR="${LOCATIONS_DIR:-$CONFIG_DIR/locations}"
+
 
 # Source centralized error handling
 source "$VPN_DIR/vpn-error-handler"

@@ -3,18 +3,6 @@ set -euo pipefail
 # ABOUTME: VPN process and connection management script for Artix/Arch Linux
 # ABOUTME: Handles OpenVPN process lifecycle, status checking, and cleanup operations
 
-# Detect real user when running as root (e.g., from sleep hooks)
-REAL_USER=""
-REAL_GROUP=""
-if [[ $EUID -eq 0 ]]; then
-    # Get the logged-in user (not root)
-    REAL_USER=$(who 2>/dev/null | awk 'NR==1{print $1}')
-    if [[ -n "$REAL_USER" && "$REAL_USER" != "root" ]]; then
-        # Get user's primary group
-        REAL_GROUP=$(id -gn "$REAL_USER" 2>/dev/null)
-    fi
-fi
-
 # Script locations - robust detection for installed vs development mode
 if [[ -f "/usr/local/bin/vpn-manager" ]] && [[ -f "/usr/local/bin/vpn-error-handler" ]]; then
     # Installed mode - all components in /usr/local/bin
@@ -24,31 +12,50 @@ else
     VPN_DIR="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
 fi
 
-# Create secure log directory
-LOG_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/vpn"
-mkdir -p "$LOG_DIR" 2> /dev/null
-
-# Fix ownership when running as root
-if [[ $EUID -eq 0 && -n "$REAL_USER" && -n "$REAL_GROUP" ]]; then
-    chown "$REAL_USER:$REAL_GROUP" "$LOG_DIR" 2>/dev/null || true
+# Detect the real user when running as root (sleep/network hooks, sudo).
+# HOME may be unset or /root there; never guess between several logged-in users.
+# shellcheck source=src/vpn-utils
+source "$VPN_DIR/vpn-utils"
+REAL_USER=""
+REAL_GROUP=""
+if [[ $EUID -eq 0 ]]; then
+    REAL_USER=$(detect_real_user) || REAL_USER=""
+    if [[ -n $REAL_USER ]]; then
+        REAL_GROUP=$(id -gn "$REAL_USER" 2> /dev/null || true)
+        if [[ -z ${HOME:-} || ${HOME:-} == "/root" ]]; then
+            HOME=$(getent passwd "$REAL_USER" | cut -d: -f6)
+            export HOME
+        fi
+    fi
+elif [[ -z ${HOME:-} ]]; then
+    HOME=$(getent passwd "$EUID" | cut -d: -f6)
+    export HOME
 fi
+export REAL_USER REAL_GROUP
+
+# Create secure log directory (private, never a symlink; see secure_user_dir)
+LOG_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/vpn"
+secure_user_dir "$LOG_DIR" || exit 1
 
 # Security: Use XDG cache directory for temporary files (prevents symlink attacks)
 CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/vpn"
-mkdir -p "$CACHE_DIR" 2> /dev/null
-chmod 700 "$CACHE_DIR" 2> /dev/null
+secure_user_dir "$CACHE_DIR" || exit 1
 
 # Security: Use XDG runtime directory for lock files (prevents symlink attacks)
 LOCK_DIR="${XDG_RUNTIME_DIR:-/run/user/$UID}/vpn"
 if [[ ! -d $LOCK_DIR ]]; then
-    mkdir -p "$LOCK_DIR" 2> /dev/null || LOCK_DIR="/tmp/vpn_$$"
-    chmod 700 "$LOCK_DIR" 2> /dev/null || {
+    # Fallback uses an unpredictable private directory (never a guessable /tmp name)
+    (umask 077 && mkdir -p "$LOCK_DIR") 2> /dev/null || LOCK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/vpn.XXXXXXXXXX") || {
         echo "ERROR: Cannot create secure lock directory" >&2
         exit 1
     }
 fi
 
-# Verify directory permissions after creation
+# Verify the lock directory is ours, not a symlink, and private
+if [[ -L $LOCK_DIR ]] || [[ "$(stat -c '%u' "$LOCK_DIR" 2> /dev/null)" != "$EUID" ]]; then
+    echo "ERROR: Lock directory is not owned by current user: $LOCK_DIR" >&2
+    exit 1
+fi
 actual_perms=$(stat -c '%a' "$LOCK_DIR" 2> /dev/null)
 if [[ $actual_perms != "700" ]]; then
     echo "ERROR: Lock directory has insecure permissions: $actual_perms" >&2
@@ -65,18 +72,14 @@ if [[ -L $VPN_LOG_FILE ]]; then
 fi
 
 # Security: Ensure log file has secure permissions (600 - only owner can read/write)
+# noclobber creation + symlink check; chown -h never follows a symlink.
 if [[ ! -f $VPN_LOG_FILE ]]; then
-    touch "$VPN_LOG_FILE"
-    chmod 600 "$VPN_LOG_FILE"
-    # Fix ownership when running as root
+    (set -o noclobber; umask 077; : > "$VPN_LOG_FILE") 2> /dev/null || true
+fi
+if [[ -f $VPN_LOG_FILE && ! -L $VPN_LOG_FILE ]]; then
+    chmod 600 "$VPN_LOG_FILE" 2> /dev/null || true
     if [[ $EUID -eq 0 && -n "$REAL_USER" && -n "$REAL_GROUP" ]]; then
-        chown "$REAL_USER:$REAL_GROUP" "$VPN_LOG_FILE" 2>/dev/null || true
-    fi
-elif [[ "$(stat -c '%a' "$VPN_LOG_FILE" 2> /dev/null)" != "600" ]]; then
-    chmod 600 "$VPN_LOG_FILE" 2>/dev/null || true
-    # Fix ownership when running as root
-    if [[ $EUID -eq 0 && -n "$REAL_USER" && -n "$REAL_GROUP" ]]; then
-        chown "$REAL_USER:$REAL_GROUP" "$VPN_LOG_FILE" 2>/dev/null || true
+        chown -h "$REAL_USER:$REAL_GROUP" "$VPN_LOG_FILE" 2> /dev/null || true
     fi
 fi
 
@@ -110,8 +113,12 @@ log_vpn_event() {
 
         if [[ $line_count -gt $max_lines ]]; then
             # Keep last max_lines entries
-            if tail -n "$max_lines" "$log_file" > "${log_file}.tmp" 2> /dev/null; then
-                mv "${log_file}.tmp" "$log_file" 2> /dev/null || true
+            local rotated
+            rotated=$(mktemp "${log_file}.XXXXXX" 2> /dev/null) || return 0
+            if tail -n "$max_lines" "$log_file" > "$rotated" 2> /dev/null; then
+                mv "$rotated" "$log_file" 2> /dev/null || rm -f "$rotated"
+            else
+                rm -f "$rotated"
             fi
         fi
     fi
@@ -172,13 +179,12 @@ get_cached_external_ip() {
     local external_ip
     external_ip=$(curl -s --max-time 5 https://ipinfo.io/ip 2> /dev/null || echo "Unable to determine")
 
-    # Atomic write: write to .tmp then mv (prevents race conditions)
-    echo "$external_ip" > "${cache_file}.tmp" 2> /dev/null || {
-        echo "$external_ip"
-        return
-    }
-    chmod 600 "${cache_file}.tmp" 2> /dev/null
-    mv "${cache_file}.tmp" "$cache_file" 2> /dev/null || true
+    # Atomic write: unique temp file then mv (prevents races and symlink games)
+    local tmp_cache
+    if tmp_cache=$(mktemp "${cache_file}.XXXXXX" 2> /dev/null); then
+        echo "$external_ip" > "$tmp_cache"
+        mv "$tmp_cache" "$cache_file" 2> /dev/null || rm -f "$tmp_cache"
+    fi
 
     echo "$external_ip"
 }
