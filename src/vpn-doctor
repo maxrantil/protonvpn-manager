@@ -326,7 +326,8 @@ check_process_health() {
     local process_count=0
 
     # Count OpenVPN processes
-    process_count=$(pgrep -f "openvpn.*--config" 2>/dev/null | wc -l || echo 0)
+    # Program must be openvpn itself (grep/editors mentioning it don't count)
+    process_count=$(pgrep -f '(^|/)openvpn .*--config' 2>/dev/null | wc -l || echo 0)
 
     case $process_count in
         0)
