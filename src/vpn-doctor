@@ -14,7 +14,7 @@ if [[ -f "/usr/local/bin/vpn-colors" ]]; then
     VPN_DIR="/usr/local/bin"
 else
     # Development mode
-    VPN_DIR="$(dirname "$(realpath "$0")")"
+    VPN_DIR="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
 fi
 
 # Source required components

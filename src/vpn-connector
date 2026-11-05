@@ -37,7 +37,7 @@ if [[ -f "/usr/local/bin/vpn-manager" ]] && [[ -f "/usr/local/bin/vpn-error-hand
     VPN_DIR="/usr/local/bin"
 else
     # Development mode - use local paths relative to script location
-    VPN_DIR="$(dirname "$(realpath "$0")")"
+    VPN_DIR="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
 fi
 
 # Source temp file manager for coordinated cleanup
@@ -187,8 +187,9 @@ rebuild_cache() {
 
     # Security: Acquire exclusive lock to prevent concurrent rebuild corruption (Issue #155)
     # File descriptor 201 is used for lock file
+    # Bounded wait: never hang forever on a stale or inherited lock
     exec 201> "$lock_file" || return 1
-    if ! flock -x 201 2> /dev/null; then
+    if ! flock -x -w 5 201 2> /dev/null; then
         exec 201>&- # Close file descriptor on failure
         return 1
     fi
@@ -307,7 +308,9 @@ rebuild_cache() {
         fi
     fi
 
-    # Success - lock will be released automatically on function exit
+    # Success - release the lock explicitly. `exec`-opened descriptors outlive the
+    # function, and a held lock inherited by later subshells would deadlock them.
+    exec 201>&-
     return 0
 }
 
@@ -352,7 +355,9 @@ get_cached_profiles() {
     if [[ -n $cache_validated ]]; then
         # Trusted cache mode: All entries were validated during rebuild
         # Skip expensive per-entry validation (95% performance improvement)
-        echo -n "$cached_entries"
+        # Trailing newline matters: `get_cached_profiles | while read` drops an unterminated last line
+        [[ -n $cached_entries ]] && printf '%s\n' "$cached_entries"
+        return 0
     else
         # Legacy cache mode: Validate each entry for backwards compatibility
         # Defense-in-depth: Validate each cached entry before returning
@@ -379,8 +384,8 @@ get_cached_profiles() {
             echo "WARNING: Filtered $invalid_count invalid entries from cache" >&2
         fi
 
-        # Return validated profiles (remove trailing newline)
-        echo -n "$validated_profiles"
+        # Return validated profiles (newline-terminated)
+        printf '%s' "$validated_profiles"
     fi
 }
 
@@ -999,62 +1004,50 @@ start_openvpn_daemon() {
 check_authentication_failure() {
     local profile_name="$1"
 
-    # Check for authentication failures (both log locations)
-    # openvpn may write to /tmp/openvpn.log as fallback if it can't write to LOG_DIR
-    for log_location in "$LOG_DIR/openvpn.log" "/tmp/openvpn.log"; do
-        if [[ -f $log_location ]] && sudo grep -q "AUTH_FAILED" "$log_location" 2> /dev/null; then
-            # Issue #147: Use semantic announcement for accessibility
-            announce_connection_status "failed" "Authentication failed - check credentials in $CREDENTIALS_FILE"
-            log_message "Authentication failed for $profile_name - invalid credentials" "$CONNECTION_LOG"
-            echo "[$(date '+%Y-%m-%d %H:%M:%S')] [ERROR] AUTH_FAILED: $profile_name" >> "$CONNECTION_LOG" 2> /dev/null || true
-            notify_event "auth_failed" "$profile_name"
-            sudo "$VPN_DIR/vpn-manager" cleanup > /dev/null 2>&1
-            return 1
-        fi
-    done
+    # Security: only our own private log is consulted (never a shared /tmp path)
+    local log_location="$LOG_DIR/openvpn.log"
+    if [[ -f $log_location && ! -L $log_location ]] && grep -q "AUTH_FAILED" "$log_location" 2> /dev/null; then
+        # Issue #147: Use semantic announcement for accessibility
+        announce_connection_status "failed" "Authentication failed - check credentials in $CREDENTIALS_FILE"
+        log_message "Authentication failed for $profile_name - invalid credentials" "$CONNECTION_LOG"
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] [ERROR] AUTH_FAILED: $profile_name" >> "$CONNECTION_LOG" 2> /dev/null || true
+        notify_event "auth_failed" "$profile_name"
+        # vpn-manager escalates with sudo itself; never run the whole script as root
+        "$VPN_DIR/vpn-manager" cleanup > /dev/null 2>&1 || true
+        return 1
+    fi
 
     return 0
 }
 
-# Checks connection progress and updates stage
-# Args: connection_stage_var, interval_count_var (variable names passed by reference)
-# Returns: "connected" if established, "configuring" if TLS done, "verifying" if waiting, "in_progress" otherwise
+# Checks connection progress from the OpenVPN log
+# Args: current connection_stage, interval_count (values, not names)
+# Returns (stdout): "connected" | "configuring" | "verifying" | "in_progress"
+# The caller owns the stage variables and updates them from the returned value.
 # NOTE: This function ONLY returns status strings to stdout - do NOT call announce_connection_status here
 #       as that would mix display output with return values. The caller handles display.
 check_connection_progress() {
-    local connection_stage_var="$1"
-    local interval_count_var="$2"
-    local connection_stage="${!connection_stage_var}"
-    local interval_count="${!interval_count_var}"
+    local connection_stage="$1"
+    local interval_count="$2"
+    local log_file="$LOG_DIR/openvpn.log"
 
-    # Check if fully connected via OpenVPN log (authoritative source) - CHECK THIS FIRST
-    # Using log-based detection instead of vpn-manager status because:
-    # 1. vpn-manager status requires external IP verification (curl to ipinfo.io)
-    # 2. When kill switch is enabled during reconnect, external curl is blocked
-    # 3. "Initialization Sequence Completed" is OpenVPN's definitive success signal
-    for log_location in "$LOG_DIR/openvpn.log" "/tmp/openvpn.log"; do
-        if [[ -f $log_location ]] && sudo grep -q "Initialization Sequence Completed" "$log_location" 2> /dev/null; then
+    # Log-based detection (authoritative): vpn-manager status needs an external
+    # curl, which the kill switch may block during reconnect.
+    # Security: only our own private log is consulted (never a shared /tmp path).
+    if [[ -f $log_file && ! -L $log_file ]]; then
+        if grep -q "Initialization Sequence Completed" "$log_file" 2> /dev/null; then
             echo "connected"
             return 0
         fi
-    done
-
-    # Check for TLS handshake completion (Peer Connection Initiated)
-    for log_location in "$LOG_DIR/openvpn.log" "/tmp/openvpn.log"; do
-        if [[ -f $log_location ]] && sudo grep -q "Peer Connection Initiated" "$log_location" 2> /dev/null; then
-            if [[ $connection_stage != "configuring" ]]; then
-                eval "$connection_stage_var='configuring'"
-                eval "$interval_count_var=0"
-                echo "configuring"
-                return 0
-            fi
+        if [[ $connection_stage != "configuring" && $connection_stage != "verifying" ]] &&
+            grep -q "Peer Connection Initiated" "$log_file" 2> /dev/null; then
+            echo "configuring"
+            return 0
         fi
-    done
+    fi
 
     # Update to verifying stage if we've been configuring for a while
     if [[ $connection_stage == "configuring" && $interval_count -ge 2 ]]; then
-        eval "$connection_stage_var='verifying'"
-        eval "$interval_count_var=0"
         echo "verifying"
         return 0
     fi
@@ -1183,7 +1176,13 @@ monitor_connection_establishment_with_backoff() {
 
         # Check connection progress and status
         local progress_status
-        progress_status=$(check_connection_progress connection_stage interval_count)
+        progress_status=$(check_connection_progress "$connection_stage" "$interval_count")
+
+        # Stage transitions reset the interval counter
+        if [[ $progress_status == "configuring" || $progress_status == "verifying" ]]; then
+            connection_stage="$progress_status"
+            interval_count=0
+        fi
 
         # Handle status transitions and display
         case "$progress_status" in
@@ -1214,7 +1213,7 @@ monitor_connection_establishment_with_backoff() {
 
     # Final check after all intervals - connection may have completed during last sleep
     local final_status
-    final_status=$(check_connection_progress connection_stage interval_count)
+    final_status=$(check_connection_progress "$connection_stage" "$interval_count")
     if [[ "$final_status" == "connected" ]]; then
         announce_connection_status "connected" "Connected"
         if ! detect_accessibility_mode; then
@@ -1246,9 +1245,9 @@ connect_openvpn_profile() {
         start_openvpn_daemon "$profile_path"
 
         # Monitor connection with exponential backoff
-        local monitor_result
-        monitor_connection_establishment_with_backoff "$profile_name"
-        monitor_result=$?
+        # Capture exit code without tripping set -e (1 = auth failure, 2 = timeout)
+        local monitor_result=0
+        monitor_connection_establishment_with_backoff "$profile_name" || monitor_result=$?
 
         if [[ $monitor_result -eq 0 ]]; then
             # Connection established

@@ -9,7 +9,7 @@ if [[ -z "${VPN_DIR:-}" ]]; then
     if [[ -f "/usr/local/bin/vpn-colors" ]]; then
         VPN_DIR="/usr/local/bin"
     else
-        VPN_DIR="$(dirname "$(realpath "$0")")"
+        VPN_DIR="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
     fi
 fi
 

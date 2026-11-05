@@ -21,7 +21,7 @@ if [[ -f "/usr/local/bin/vpn-manager" ]] && [[ -f "/usr/local/bin/vpn-error-hand
     VPN_DIR="/usr/local/bin"
 else
     # Development mode - use local paths relative to script location
-    VPN_DIR="$(dirname "$(realpath "$0")")"
+    VPN_DIR="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
 fi
 
 # Create secure log directory
