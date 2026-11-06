@@ -50,7 +50,6 @@ if [[ ! -f $CREDENTIALS_FILE ]] && [[ -f "$CONFIG_DIR/credentials.txt" ]]; then
     echo "" >&2
 fi
 
-
 # Source temp file manager for coordinated cleanup
 # shellcheck source=src/temp-file-manager
 source "$VPN_DIR/temp-file-manager" 2> /dev/null || {
@@ -1023,7 +1022,11 @@ start_openvpn_daemon() {
 
     # Pre-create the log owned by us with 600 perms, refusing to follow symlinks.
     # OpenVPN (as root) truncates and writes into it, so we can read it unprivileged.
-    if ! (set -o noclobber; umask 077; : > "$log_file") 2> /dev/null || [[ -L $log_file ]]; then
+    if ! (
+        set -o noclobber
+        umask 077
+        : > "$log_file"
+    ) 2> /dev/null || [[ -L $log_file ]]; then
         echo "ERROR: Cannot create private OpenVPN log: $log_file" >&2
         return 1
     fi
@@ -1229,7 +1232,7 @@ monitor_connection_establishment_with_backoff() {
 
     for interval in "${BACKOFF_INTERVALS[@]}"; do
         sleep "$interval"
-        ((interval_count++)) || true  # Prevent set -e from triggering on arithmetic
+        ((interval_count++)) || true # Prevent set -e from triggering on arithmetic
 
         # Check for authentication failures
         if ! check_authentication_failure "$profile_name"; then
@@ -1251,7 +1254,7 @@ monitor_connection_establishment_with_backoff() {
             connected)
                 announce_connection_status "connected" "Connected"
                 if ! detect_accessibility_mode; then
-                    echo ""  # New line after spinner
+                    echo "" # New line after spinner
                 fi
                 return 0 # Connection established
                 ;;

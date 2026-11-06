@@ -33,6 +33,15 @@ test_fail() {
 WORK_DIR=$(mktemp -d)
 trap 'rm -rf "$WORK_DIR"' EXIT
 
+# report <exit-code> <pass-name> <fail-name> [detail]
+report() {
+	if [[ $1 -eq 0 ]]; then
+		test_pass "$2"
+	else
+		test_fail "$3" "${4:-}"
+	fi
+}
+
 # Isolated environment for every sourced/executed script
 export HOME="$WORK_DIR/home"
 export XDG_RUNTIME_DIR="$WORK_DIR/run"
@@ -196,12 +205,14 @@ test_profile_content_validation() {
 		# shellcheck disable=SC1091
 		source "$SRC_DIR/vpn-validators"
 		validate_profile_content "$d/ok.ovpn" 2> /dev/null
-	) && test_pass "stock-style .ovpn profile accepted" || test_fail "stock-style .ovpn profile accepted"
+	)
+	report $? "stock-style .ovpn profile accepted" "stock-style .ovpn profile accepted"
 	(
 		# shellcheck disable=SC1091
 		source "$SRC_DIR/vpn-validators"
 		validate_profile_content "$d/ok.conf" 2> /dev/null
-	) && test_pass "plain WireGuard profile accepted" || test_fail "plain WireGuard profile accepted"
+	)
+	report $? "plain WireGuard profile accepted" "plain WireGuard profile accepted"
 
 	local f
 	for f in up.ovpn plugin.ovpn log.ovpn hook.conf; do
@@ -222,7 +233,8 @@ test_profile_content_validation() {
 		# shellcheck disable=SC1091
 		source "$SRC_DIR/vpn-validators"
 		validate_profile_content "$d/up.ovpn" 2> /dev/null
-	) && test_pass "ALLOW_PROFILE_SCRIPTS=true opts in" || test_fail "ALLOW_PROFILE_SCRIPTS=true opts in"
+	)
+	report $? "ALLOW_PROFILE_SCRIPTS=true opts in" "ALLOW_PROFILE_SCRIPTS=true opts in"
 	rm -f "$XDG_CONFIG_HOME/vpn/config"
 }
 
@@ -306,7 +318,8 @@ test_process_matching() {
 		# shellcheck disable=SC1091
 		source "$SRC_DIR/vpn-validators"
 		validate_openvpn_process "$fake"
-	) && test_pass "openvpn command line is recognised" || test_fail "openvpn command line is recognised"
+	)
+	report $? "openvpn command line is recognised" "openvpn command line is recognised"
 
 	local p
 	for p in "$grep_like" "$less_like"; do
@@ -480,9 +493,12 @@ test_detect_real_user() {
 		getent() { return 0; }
 		SUDO_USER="" VPN_SYSTEM_CONF=/nonexistent detect_real_user
 	)
-	[[ $r1 == nobody ]] && test_pass "SUDO_USER is preferred" || test_fail "SUDO_USER is preferred" "got '$r1'"
-	[[ -z $r2 ]] && test_pass "ambiguous logins yield no user" || test_fail "ambiguous logins yield no user" "got '$r2'"
-	[[ $r3 == alice ]] && test_pass "single logged-in user is detected" || test_fail "single logged-in user is detected" "got '$r3'"
+	[[ $r1 == nobody ]]
+	report $? "SUDO_USER is preferred" "SUDO_USER is preferred" "got '$r1'"
+	[[ -z $r2 ]]
+	report $? "ambiguous logins yield no user" "ambiguous logins yield no user" "got '$r2'"
+	[[ $r3 == alice ]]
+	report $? "single logged-in user is detected" "single logged-in user is detected" "got '$r3'"
 }
 
 # ---------------------------------------------------------------------------
@@ -511,11 +527,16 @@ test_kill_switch_netns() {
 		test_fail "kill switch enable/refresh" "$out"
 		return
 	fi
-	grep -q "jumps=1" <<< "$out" && test_pass "refresh keeps a single OUTPUT jump" || test_fail "refresh keeps a single OUTPUT jump" "$out"
-	grep -q -- "-d 203.0.113.7/32 -j ACCEPT" <<< "$out" && test_pass "VPN server IP taken from OpenVPN log" || test_fail "VPN server IP taken from OpenVPN log" "$out"
-	grep -q -- "--sport 68 --dport 67" <<< "$out" && test_pass "DHCP rule limited to client->server" || test_fail "DHCP rule limited to client->server" "$out"
-	grep -q -- "-A VPN_KILL_SWITCH -j DROP" <<< "$out" && test_pass "chain ends in DROP" || test_fail "chain ends in DROP" "$out"
-	grep -q "left=00" <<< "$out" && test_pass "disable removes all rules" || test_fail "disable removes all rules" "$out"
+	grep -q "jumps=1" <<< "$out"
+	report $? "refresh keeps a single OUTPUT jump" "refresh keeps a single OUTPUT jump" "$out"
+	grep -q -- "-d 203.0.113.7/32 -j ACCEPT" <<< "$out"
+	report $? "VPN server IP taken from OpenVPN log" "VPN server IP taken from OpenVPN log" "$out"
+	grep -q -- "--sport 68 --dport 67" <<< "$out"
+	report $? "DHCP rule limited to client->server" "DHCP rule limited to client->server" "$out"
+	grep -q -- "-A VPN_KILL_SWITCH -j DROP" <<< "$out"
+	report $? "chain ends in DROP" "chain ends in DROP" "$out"
+	grep -q "left=00" <<< "$out"
+	report $? "disable removes all rules" "disable removes all rules" "$out"
 }
 
 # ---------------------------------------------------------------------------
@@ -556,7 +577,8 @@ test_hooks_use_custom_for_paths() {
 		grep -qE 'vpn-connector"? connect "\$(profile|PROFILE)"' "$f" && bad+=" $(basename "$f")"
 		grep -qE 'VPN_CONNECTOR"? connect "\$profile"' "$f" && bad+=" $(basename "$f")"
 	done
-	[[ -z $bad ]] && test_pass "hooks reconnect via 'custom <profile>'" || test_fail "hooks reconnect via 'custom <profile>'" "$bad"
+	[[ -z $bad ]]
+	report $? "hooks reconnect via 'custom <profile>'" "hooks reconnect via 'custom <profile>'" "$bad"
 }
 
 test_connect_runs_cleanup_on_unhealthy

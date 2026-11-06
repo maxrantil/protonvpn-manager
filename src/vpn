@@ -41,7 +41,6 @@ export REAL_USER REAL_GROUP
 CONFIG_DIR="${VPN_CONFIG_DIR:-$HOME/.config/vpn}"
 LOCATIONS_DIR="${LOCATIONS_DIR:-$CONFIG_DIR/locations}"
 
-
 # Source centralized error handling
 source "$VPN_DIR/vpn-error-handler"
 

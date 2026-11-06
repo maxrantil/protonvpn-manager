@@ -213,11 +213,16 @@ remove_vpn_directory() {
 	local removed=0 component
 	for component in "${components[@]}"; do
 		if [[ -f "/usr/local/bin/$component" ]]; then
-			sudo rm -f "/usr/local/bin/$component" && ((removed++)) || true
+			# Plain arithmetic: ((removed++)) returns 1 when removed is 0 (set -e)
+			if sudo rm -f "/usr/local/bin/$component"; then
+				removed=$((removed + 1))
+			fi
 		fi
 	done
 	if [[ -f /etc/protonvpn-manager.conf ]]; then
-		sudo rm -f /etc/protonvpn-manager.conf && ((removed++)) || true
+		if sudo rm -f /etc/protonvpn-manager.conf; then
+			removed=$((removed + 1))
+		fi
 	fi
 	log_success "Removed $removed installed file(s)"
 	log_info "Source directory kept: $VPN_DIR (delete it manually if you no longer need it)"
