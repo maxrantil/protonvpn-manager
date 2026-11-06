@@ -8,15 +8,8 @@ set -euo pipefail
 INTERFACE="${1:-}"
 ACTION="${2:-}"
 
-# Paths
-STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/vpn"
-CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/vpn"
-CONFIG_FILE="$CONFIG_DIR/config"
-LOCK_FILE="$STATE_DIR/reconnect.lock"
-ATTEMPTS_FILE="$STATE_DIR/reconnect.attempts"
-LOG_FILE="$STATE_DIR/reconnect.log"
-LAST_PROFILE="$STATE_DIR/last_profile"
-LAST_PROFILE_HASH="$STATE_DIR/last_profile.sha256"
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
 
 # Binaries - detect installed vs development mode
 if [[ -f "/usr/local/bin/vpn-manager" ]]; then
@@ -25,6 +18,42 @@ else
     # Development mode - find relative to this script
     VPN_DIR="$(dirname "$(dirname "$(dirname "$(dirname "$(realpath "$0")")")")")/src"
 fi
+
+# Runs as root with a minimal environment (HOME is usually unset).
+# Never guess the user (see detect_real_user); every file access in the
+# user's home happens as that user, so planted symlinks cannot redirect it.
+# shellcheck source=src/vpn-utils
+source "$VPN_DIR/vpn-utils"
+REAL_USER=$(detect_real_user) || exit 0
+REAL_HOME=$(getent passwd "$REAL_USER" | cut -d: -f6)
+[[ -n "$REAL_HOME" && -d "$REAL_HOME" ]] || exit 0
+
+# User paths (read/written only via as_user)
+STATE_DIR="$REAL_HOME/.local/state/vpn"
+CONFIG_DIR="$REAL_HOME/.config/vpn"
+CONFIG_FILE="$CONFIG_DIR/config"
+LOG_FILE="$STATE_DIR/reconnect.log"
+LAST_PROFILE="$STATE_DIR/last_profile"
+LAST_PROFILE_HASH="$STATE_DIR/last_profile.sha256"
+
+# Root-private runtime state for locking and rate limiting
+RUN_DIR="/run/protonvpn-manager"
+LOCK_FILE="$RUN_DIR/reconnect.lock"
+ATTEMPTS_FILE="$RUN_DIR/reconnect.attempts"
+
+# Run a command as the real user
+as_user() {
+    if command -v runuser > /dev/null 2>&1; then
+        runuser -u "$REAL_USER" -- "$@"
+    else
+        setpriv --reuid="$REAL_USER" --regid="$(id -g "$REAL_USER")" --init-groups -- "$@"
+    fi
+}
+
+# Read a small file from the user's home as the user (empty if unreadable)
+user_cat() {
+    as_user head -c 4096 "$1" 2> /dev/null || true
+}
 
 KILL_SWITCH="$VPN_DIR/vpn-kill-switch"
 VPN_MANAGER="$VPN_DIR/vpn-manager"
@@ -41,11 +70,12 @@ log_event() {
     local timestamp
     timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
-    # Ensure log directory and file exist
-    mkdir -p "$STATE_DIR" 2>/dev/null || true
+    # Strip control characters (messages may contain untrusted file content)
+    message=$(printf '%s' "$message" | tr -d '\000-\037')
 
-    echo "[$timestamp] [$level] $message" >> "$LOG_FILE" 2>/dev/null || true
     logger -t vpn-reconnect "[$level] $message" 2>/dev/null || true
+    printf '[%s] [%s] %s\n' "$timestamp" "$level" "$message" |
+        as_user sh -c 'mkdir -p "$(dirname "$1")" && umask 077 && cat >> "$1"' sh "$LOG_FILE" 2>/dev/null || true
 }
 
 # === INPUT VALIDATION ===
@@ -74,8 +104,10 @@ load_config() {
     COOLDOWN="$DEFAULT_COOLDOWN"
     MAX_ATTEMPTS="$DEFAULT_MAX_ATTEMPTS"
 
-    if [[ -f "$CONFIG_FILE" ]]; then
-        # Source safely (only known variables)
+    local config_text
+    config_text=$(user_cat "$CONFIG_FILE")
+    if [[ -n "$config_text" ]]; then
+        # Parse safely (only known variables)
         while IFS='=' read -r key value; do
             # Remove leading/trailing whitespace and quotes
             value="${value#\"}"
@@ -88,8 +120,13 @@ load_config() {
                 AUTO_RECONNECT_COOLDOWN) COOLDOWN="$value" ;;
                 AUTO_RECONNECT_MAX_ATTEMPTS) MAX_ATTEMPTS="$value" ;;
             esac
-        done < <(grep -E '^(AUTO_RECONNECT|AUTO_RECONNECT_COOLDOWN|AUTO_RECONNECT_MAX_ATTEMPTS)=' "$CONFIG_FILE" 2>/dev/null || true)
+        done < <(grep -E '^(AUTO_RECONNECT|AUTO_RECONNECT_COOLDOWN|AUTO_RECONNECT_MAX_ATTEMPTS)=' <<< "$config_text" || true)
     fi
+
+    # Security: these come from a user-writable file and are used in bash
+    # arithmetic as root, where a value like 'a[$(cmd)]' would execute.
+    [[ "$COOLDOWN" =~ ^[0-9]{1,6}$ ]] || COOLDOWN="$DEFAULT_COOLDOWN"
+    [[ "$MAX_ATTEMPTS" =~ ^[0-9]{1,4}$ ]] || MAX_ATTEMPTS="$DEFAULT_MAX_ATTEMPTS"
 }
 
 # === SECURITY CHECKS ===
@@ -99,7 +136,7 @@ check_kill_switch() {
         return 1
     fi
 
-    if ! "$KILL_SWITCH" is-enabled 2>/dev/null; then
+    if ! HOME="$REAL_HOME" "$KILL_SWITCH" is-enabled 2>/dev/null; then
         log_event "SECURITY" "Auto-reconnect blocked: kill switch not enabled"
         return 1
     fi
@@ -108,7 +145,8 @@ check_kill_switch() {
 
 # === LOCKING ===
 acquire_lock() {
-    mkdir -p "$STATE_DIR" 2>/dev/null || return 1
+    (umask 077 && mkdir -p "$RUN_DIR") 2>/dev/null || return 1
+    [[ -d "$RUN_DIR" && ! -L "$RUN_DIR" && -O "$RUN_DIR" ]] || return 1
 
     # Use flock for exclusive locking
     exec 200>"$LOCK_FILE"
@@ -152,23 +190,26 @@ check_cooldown() {
 
 # === PROFILE VALIDATION ===
 validate_profile() {
-    if [[ ! -f "$LAST_PROFILE" ]]; then
+    local profile
+    profile=$(user_cat "$LAST_PROFILE" | head -1)
+
+    # Reject empty profile
+    if [[ -z "$profile" ]]; then
         log_event "WARN" "No last profile saved"
         return 1
     fi
 
-    local profile
-    profile=$(cat "$LAST_PROFILE" 2>/dev/null)
-
-    # Reject empty profile
-    if [[ -z "$profile" ]]; then
-        log_event "ERROR" "Empty profile path"
-        return 1
-    fi
-
-    # Check file exists
-    if [[ ! -f "$profile" ]]; then
-        log_event "ERROR" "Profile file does not exist: $profile"
+    # Check path is within the allowed directory (no traversal)
+    local config_locations="$CONFIG_DIR/locations"
+    case "$profile" in
+        "$config_locations"/*.ovpn | "$config_locations"/*.conf) ;;
+        *)
+            log_event "SECURITY" "Profile outside allowed directories: $profile"
+            return 1
+            ;;
+    esac
+    if [[ "$profile" == *..* ]]; then
+        log_event "SECURITY" "Profile path contains '..' (rejected): $profile"
         return 1
     fi
 
@@ -178,27 +219,19 @@ validate_profile() {
         return 1
     fi
 
-    # Check path is within allowed directories
-    local config_locations="$CONFIG_DIR/locations"
-    case "$profile" in
-        "$config_locations"/*) ;;
-        /etc/openvpn/*) ;;
-        *)
-            log_event "SECURITY" "Profile outside allowed directories: $profile"
-            return 1
-            ;;
-    esac
+    # Check file exists
+    if [[ ! -f "$profile" ]]; then
+        log_event "ERROR" "Profile file does not exist: $profile"
+        return 1
+    fi
 
-    # Check integrity hash if available
-    if [[ -f "$LAST_PROFILE_HASH" ]]; then
-        local saved_hash current_hash
-        saved_hash=$(cat "$LAST_PROFILE_HASH" 2>/dev/null)
-        current_hash=$(sha256sum "$profile" 2>/dev/null | cut -d' ' -f1)
-
-        if [[ "$saved_hash" != "$current_hash" ]]; then
-            log_event "SECURITY" "Profile integrity check failed: $profile"
-            return 1
-        fi
+    # Integrity hash is mandatory (written by the connector on success)
+    local saved_hash current_hash
+    saved_hash=$(user_cat "$LAST_PROFILE_HASH" | head -1)
+    current_hash=$(as_user sha256sum "$profile" 2>/dev/null | cut -d' ' -f1)
+    if [[ -z "$saved_hash" || "$saved_hash" != "$current_hash" ]]; then
+        log_event "SECURITY" "Profile integrity check failed: $profile"
+        return 1
     fi
 
     echo "$profile"
@@ -208,7 +241,7 @@ validate_profile() {
 # === VPN HEALTH CHECK ===
 vpn_is_healthy() {
     # Check if OpenVPN process exists with --config argument
-    if pgrep -f "openvpn.*--config" >/dev/null 2>&1; then
+    if pgrep -f '(^|/)openvpn .*--config' >/dev/null 2>&1; then
         # Check if tun0 interface exists and is up
         if ip link show tun0 >/dev/null 2>&1; then
             return 0
@@ -231,18 +264,15 @@ attempt_reconnect() {
 
     log_event "INFO" "Attempting reconnect to: $profile"
 
-    # Ensure attempts file directory exists
-    mkdir -p "$STATE_DIR" 2>/dev/null || true
-
     # Cleanup any dead state
     if [[ -x "$VPN_MANAGER" ]]; then
-        "$VPN_MANAGER" cleanup >/dev/null 2>&1 || true
+        HOME="$REAL_HOME" "$VPN_MANAGER" cleanup >/dev/null 2>&1 || true
     fi
-    sleep 2
 
     # Attempt connection
     if [[ -x "$VPN_CONNECTOR" ]]; then
-        if "$VPN_CONNECTOR" connect "$profile" >>"$LOG_FILE" 2>&1; then
+        # `custom` takes a profile path (`connect` expects a country code)
+        if HOME="$REAL_HOME" "$VPN_CONNECTOR" custom "$profile" >/dev/null 2>&1; then
             echo "${now}:success" >> "$ATTEMPTS_FILE"
             log_event "INFO" "Reconnect successful"
             return 0
@@ -280,7 +310,7 @@ main() {
     # This is critical - network may have changed (new gateway, new WiFi, etc.)
     # Old kill switch rules with wrong IPs will block all traffic
     log_event "INFO" "Refreshing kill switch rules for new network"
-    if ! "$KILL_SWITCH" refresh >>"$LOG_FILE" 2>&1; then
+    if ! HOME="$REAL_HOME" "$KILL_SWITCH" refresh >/dev/null 2>&1; then
         log_event "WARN" "Kill switch refresh failed, attempting reconnect anyway"
     fi
 

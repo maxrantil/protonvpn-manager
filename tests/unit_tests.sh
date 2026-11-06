@@ -210,6 +210,16 @@ run_unit_tests() {
     test_cache_file_operations
     test_configuration_validation
 
+    # Run security/robustness hardening regression tests (first, so a stale
+    # source-grep suite below cannot short-circuit them)
+    log_test "INFO" "Running hardening regression tests"
+    if bash "$TEST_DIR/unit/test_hardening.sh"; then
+        log_test "PASS" "Hardening regression tests: All tests passed"
+    else
+        log_test "FAIL" "Hardening regression tests: Some tests failed"
+        return 1
+    fi
+
     # Run error handler unit tests (Issue #72)
     log_test "INFO" "Running VPN error handler unit tests"
     if bash "$TEST_DIR/unit/test_error_handler.sh"; then

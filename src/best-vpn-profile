@@ -7,7 +7,7 @@ set -euo pipefail
 # Configuration paths
 CONFIG_DIR="${VPN_CONFIG_DIR:-$HOME/.config/vpn}"
 LOG_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/vpn"
-mkdir -p "$LOG_DIR" 2>/dev/null
+(umask 077 && mkdir -p "$LOG_DIR") 2>/dev/null
 
 readonly VPN_LOCATIONS="$CONFIG_DIR/locations"
 readonly CACHE_FILE="$LOG_DIR/vpn_performance.cache"
@@ -17,7 +17,7 @@ if [[ -L "$CACHE_FILE" ]]; then
 	rm -f "$CACHE_FILE"
 fi
 if [[ -f "$CACHE_FILE" ]]; then
-	chmod 644 "$CACHE_FILE"
+	chmod 600 "$CACHE_FILE"
 fi
 
 # Note: This script is standalone and doesn't source other VPN components
@@ -71,8 +71,8 @@ EOF
 				duration="15.0"
 			fi
 
-			# Cache the result
-			echo "$profile_name:$duration" >"$CACHE_FILE"
+			# Cache the result (private file)
+			(umask 077 && echo "$profile_name:$duration" >"$CACHE_FILE")
 			echo "Connection test completed in ${duration}s" >&2
 
 			# Return profile name for compatibility

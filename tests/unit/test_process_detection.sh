@@ -134,8 +134,11 @@ test_vpn_manager_pattern() {
 		return
 	fi
 
-	# Check that the pattern handles full paths (contains /openvpn)
-	if grep -q '/openvpn.*--config' "$src_file"; then
+	# Check that the pattern handles full paths (contains /openvpn).
+	# The shared pattern lives in vpn-validators (OPENVPN_PGREP_PATTERN).
+	if grep -q '/openvpn.*--config' "$src_file" ||
+		{ grep -q 'OPENVPN_PGREP_PATTERN' "$src_file" &&
+			grep -qF "OPENVPN_PGREP_PATTERN='(^|/)openvpn" "$PROJECT_ROOT/src/vpn-validators"; }; then
 		test_pass "vpn-manager pgrep pattern handles full paths"
 	else
 		test_fail "vpn-manager pgrep pattern handles full paths" \

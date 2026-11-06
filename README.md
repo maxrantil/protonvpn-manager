@@ -812,6 +812,31 @@ Security is a top priority. Please review [SECURITY.md](SECURITY.md) for:
 
 **Never open a public issue for security vulnerabilities** - report them privately to rantil@pm.me.
 
+### Profile safety checks
+
+OpenVPN and `wg-quick` run as root, so profiles are checked before use.
+Directives that would run commands, load plugins, include other files, write
+files or open a management socket as root (`up`, `down`, `route-up`,
+`plugin`, `config`, `log`, `writepid`, `management`, ... in `.ovpn`;
+`PreUp`/`PostUp`/`PreDown`/`PostDown` in WireGuard `.conf`) are rejected,
+and OpenVPN is started with `--script-security 1`. Stock ProtonVPN profiles
+use none of these (their DNS script lines ship commented out).
+
+If you deliberately use such a profile (for example an uncommented
+`up /etc/openvpn/update-resolv-conf` for DNS), opt in explicitly:
+
+```bash
+echo 'ALLOW_PROFILE_SCRIPTS=true' >> ~/.config/vpn/config
+```
+
+### Sleep / network hooks
+
+The optional elogind sleep hook and NetworkManager dispatcher hook run as
+root. They act for the user named in `/etc/protonvpn-manager.conf`
+(`VPN_USER=...`, written by `install.sh`), or for the only non-root user
+logged in; with several users logged in and no config they do nothing. All
+file access in that user's home is done as that user.
+
 ## Troubleshooting
 
 ### Connection Issues

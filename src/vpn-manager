@@ -3,52 +3,59 @@ set -euo pipefail
 # ABOUTME: VPN process and connection management script for Artix/Arch Linux
 # ABOUTME: Handles OpenVPN process lifecycle, status checking, and cleanup operations
 
-# Detect real user when running as root (e.g., from sleep hooks)
-REAL_USER=""
-REAL_GROUP=""
-if [[ $EUID -eq 0 ]]; then
-    # Get the logged-in user (not root)
-    REAL_USER=$(who 2>/dev/null | awk 'NR==1{print $1}')
-    if [[ -n "$REAL_USER" && "$REAL_USER" != "root" ]]; then
-        # Get user's primary group
-        REAL_GROUP=$(id -gn "$REAL_USER" 2>/dev/null)
-    fi
-fi
-
 # Script locations - robust detection for installed vs development mode
 if [[ -f "/usr/local/bin/vpn-manager" ]] && [[ -f "/usr/local/bin/vpn-error-handler" ]]; then
     # Installed mode - all components in /usr/local/bin
     VPN_DIR="/usr/local/bin"
 else
     # Development mode - use local paths relative to script location
-    VPN_DIR="$(dirname "$(realpath "$0")")"
+    VPN_DIR="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
 fi
 
-# Create secure log directory
+# Detect the real user when running as root (sleep/network hooks, sudo).
+# HOME may be unset or /root there; never guess between several logged-in users.
+# shellcheck source=src/vpn-utils
+source "$VPN_DIR/vpn-utils"
+REAL_USER=""
+REAL_GROUP=""
+if [[ $EUID -eq 0 ]]; then
+    REAL_USER=$(detect_real_user) || REAL_USER=""
+    if [[ -n $REAL_USER ]]; then
+        REAL_GROUP=$(id -gn "$REAL_USER" 2> /dev/null || true)
+        if [[ -z ${HOME:-} || ${HOME:-} == "/root" ]]; then
+            HOME=$(getent passwd "$REAL_USER" | cut -d: -f6)
+            export HOME
+        fi
+    fi
+elif [[ -z ${HOME:-} ]]; then
+    HOME=$(getent passwd "$EUID" | cut -d: -f6)
+    export HOME
+fi
+export REAL_USER REAL_GROUP
+
+# Create secure log directory (private, never a symlink; see secure_user_dir)
 LOG_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/vpn"
-mkdir -p "$LOG_DIR" 2> /dev/null
-
-# Fix ownership when running as root
-if [[ $EUID -eq 0 && -n "$REAL_USER" && -n "$REAL_GROUP" ]]; then
-    chown "$REAL_USER:$REAL_GROUP" "$LOG_DIR" 2>/dev/null || true
-fi
+secure_user_dir "$LOG_DIR" || exit 1
 
 # Security: Use XDG cache directory for temporary files (prevents symlink attacks)
 CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/vpn"
-mkdir -p "$CACHE_DIR" 2> /dev/null
-chmod 700 "$CACHE_DIR" 2> /dev/null
+secure_user_dir "$CACHE_DIR" || exit 1
 
 # Security: Use XDG runtime directory for lock files (prevents symlink attacks)
 LOCK_DIR="${XDG_RUNTIME_DIR:-/run/user/$UID}/vpn"
 if [[ ! -d $LOCK_DIR ]]; then
-    mkdir -p "$LOCK_DIR" 2> /dev/null || LOCK_DIR="/tmp/vpn_$$"
-    chmod 700 "$LOCK_DIR" 2> /dev/null || {
+    # Fallback uses an unpredictable private directory (never a guessable /tmp name)
+    (umask 077 && mkdir -p "$LOCK_DIR") 2> /dev/null || LOCK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/vpn.XXXXXXXXXX") || {
         echo "ERROR: Cannot create secure lock directory" >&2
         exit 1
     }
 fi
 
-# Verify directory permissions after creation
+# Verify the lock directory is ours, not a symlink, and private
+if [[ -L $LOCK_DIR ]] || [[ "$(stat -c '%u' "$LOCK_DIR" 2> /dev/null)" != "$EUID" ]]; then
+    echo "ERROR: Lock directory is not owned by current user: $LOCK_DIR" >&2
+    exit 1
+fi
 actual_perms=$(stat -c '%a' "$LOCK_DIR" 2> /dev/null)
 if [[ $actual_perms != "700" ]]; then
     echo "ERROR: Lock directory has insecure permissions: $actual_perms" >&2
@@ -65,18 +72,18 @@ if [[ -L $VPN_LOG_FILE ]]; then
 fi
 
 # Security: Ensure log file has secure permissions (600 - only owner can read/write)
+# noclobber creation + symlink check; chown -h never follows a symlink.
 if [[ ! -f $VPN_LOG_FILE ]]; then
-    touch "$VPN_LOG_FILE"
-    chmod 600 "$VPN_LOG_FILE"
-    # Fix ownership when running as root
+    (
+        set -o noclobber
+        umask 077
+        : > "$VPN_LOG_FILE"
+    ) 2> /dev/null || true
+fi
+if [[ -f $VPN_LOG_FILE && ! -L $VPN_LOG_FILE ]]; then
+    chmod 600 "$VPN_LOG_FILE" 2> /dev/null || true
     if [[ $EUID -eq 0 && -n "$REAL_USER" && -n "$REAL_GROUP" ]]; then
-        chown "$REAL_USER:$REAL_GROUP" "$VPN_LOG_FILE" 2>/dev/null || true
-    fi
-elif [[ "$(stat -c '%a' "$VPN_LOG_FILE" 2> /dev/null)" != "600" ]]; then
-    chmod 600 "$VPN_LOG_FILE" 2>/dev/null || true
-    # Fix ownership when running as root
-    if [[ $EUID -eq 0 && -n "$REAL_USER" && -n "$REAL_GROUP" ]]; then
-        chown "$REAL_USER:$REAL_GROUP" "$VPN_LOG_FILE" 2>/dev/null || true
+        chown -h "$REAL_USER:$REAL_GROUP" "$VPN_LOG_FILE" 2> /dev/null || true
     fi
 fi
 
@@ -110,8 +117,12 @@ log_vpn_event() {
 
         if [[ $line_count -gt $max_lines ]]; then
             # Keep last max_lines entries
-            if tail -n "$max_lines" "$log_file" > "${log_file}.tmp" 2> /dev/null; then
-                mv "${log_file}.tmp" "$log_file" 2> /dev/null || true
+            local rotated
+            rotated=$(mktemp "${log_file}.XXXXXX" 2> /dev/null) || return 0
+            if tail -n "$max_lines" "$log_file" > "$rotated" 2> /dev/null; then
+                mv "$rotated" "$log_file" 2> /dev/null || rm -f "$rotated"
+            else
+                rm -f "$rotated"
             fi
         fi
     fi
@@ -172,13 +183,12 @@ get_cached_external_ip() {
     local external_ip
     external_ip=$(curl -s --max-time 5 https://ipinfo.io/ip 2> /dev/null || echo "Unable to determine")
 
-    # Atomic write: write to .tmp then mv (prevents race conditions)
-    echo "$external_ip" > "${cache_file}.tmp" 2> /dev/null || {
-        echo "$external_ip"
-        return
-    }
-    chmod 600 "${cache_file}.tmp" 2> /dev/null
-    mv "${cache_file}.tmp" "$cache_file" 2> /dev/null || true
+    # Atomic write: unique temp file then mv (prevents races and symlink games)
+    local tmp_cache
+    if tmp_cache=$(mktemp "${cache_file}.XXXXXX" 2> /dev/null); then
+        echo "$external_ip" > "$tmp_cache"
+        mv "$tmp_cache" "$cache_file" 2> /dev/null || rm -f "$tmp_cache"
+    fi
 
     echo "$external_ip"
 }
@@ -234,32 +244,23 @@ validate_credentials() {
 }
 
 get_vpn_pid() {
-    local pid_from_file pid_from_process
+    local pid_from_file pid
 
-    # First, try to find running OpenVPN process
-    # Match both /usr/bin/openvpn and openvpn (handles full path or basename)
-    pid_from_process=$(pgrep -f "/openvpn.*--config|^openvpn.*--config" 2> /dev/null | head -1 || true)
-
-    # If we have a PID file, check if it matches the running process
-    if [[ -f $VPN_PID_FILE ]]; then
-        pid_from_file=$(cat "$VPN_PID_FILE" 2> /dev/null)
-
-        # If PID file matches running process, prefer it
-        if [[ -n $pid_from_file && -n $pid_from_process && $pid_from_file == "$pid_from_process" ]]; then
-            echo "$pid_from_file"
-            return 0
-        fi
-
-        # If we can signal the PID from file (user has permission), use it
-        if [[ -n $pid_from_file ]] && kill -0 "$pid_from_file" 2> /dev/null; then
+    # Prefer the PID file written by our daemon, but only if that PID is still
+    # an OpenVPN process (a stale file + PID reuse must never target another
+    # process for termination).
+    if [[ -f $VPN_PID_FILE && ! -L $VPN_PID_FILE ]]; then
+        pid_from_file=$(head -c 16 "$VPN_PID_FILE" 2> /dev/null | tr -cd '0-9')
+        if [[ -n $pid_from_file ]] && validate_openvpn_process "$pid_from_file"; then
             echo "$pid_from_file"
             return 0
         fi
     fi
 
-    # Fall back to process search result
-    if [[ -n $pid_from_process ]]; then
-        echo "$pid_from_process"
+    # Fall back to a validated process search
+    pid=$(find_openvpn_pids | head -1)
+    if [[ -n $pid ]]; then
+        echo "$pid"
         return 0
     fi
 
@@ -287,7 +288,7 @@ is_vpn_running() {
 
 check_process_health() {
     local process_count pids
-    pids=$(pgrep -f "/openvpn.*--config|^openvpn.*--config" 2> /dev/null || true)
+    pids=$(pgrep -f "$OPENVPN_PGREP_PATTERN" 2> /dev/null || true)
     if [[ -n $pids ]]; then
         process_count=$(echo "$pids" | wc -l)
     else
@@ -427,36 +428,17 @@ stop_vpn() {
     if [[ -n $pid ]]; then
         echo "Terminating OpenVPN process (PID: $pid)"
 
-        # Try regular kill first, then sudo if needed
-        local kill_success=false
-        if kill -TERM "$pid" 2> /dev/null; then
-            kill_success=true
-        elif sudo kill -TERM "$pid" 2> /dev/null; then
-            kill_success=true
-            echo "  Used sudo to terminate root process"
-        fi
-
-        if [[ $kill_success == "true" ]]; then
+        # TERM first so OpenVPN can restore routes/DNS; sudo only for a real
+        # (root) openvpn process, see signal_openvpn_process
+        if signal_openvpn_process TERM "$pid"; then
             log_vpn_event "INFO" "VPN process (PID: $pid) termination initiated"
-            local count=0
-            # Wait for process to terminate, using ps check for root processes
-            while [[ $count -lt 10 ]]; do
-                if ps -p "$pid" > /dev/null 2>&1; then
-                    sleep 0.5
-                    count=$((count + 1))
-                else
-                    break
-                fi
-            done
 
-            # If still running, try KILL signal
-            if ps -p "$pid" > /dev/null 2>&1; then
+            # Poll for exit (up to 5s) instead of fixed sleeps
+            if ! wait_for_pids_exit "$pid" 50; then
                 echo "Process still running, sending KILL signal"
                 log_vpn_event "WARN" "VPN process required KILL signal (PID: $pid)"
-                if ! kill -KILL "$pid" 2> /dev/null; then
-                    sudo kill -KILL "$pid" 2> /dev/null || true
-                fi
-                sleep 1
+                signal_openvpn_process KILL "$pid" || true
+                wait_for_pids_exit "$pid" 20 || true
             fi
         else
             process_error "$COMP_VPN_MANAGER" "terminate VPN process" "Unable to send termination signal to process $pid" "Check if process still exists or requires elevated permissions"
@@ -485,7 +467,7 @@ stop_vpn() {
             # Check if auto-reconnect is enabled - if so, preserve kill switch for security
             local config_file="${XDG_CONFIG_HOME:-$HOME/.config}/vpn/config"
             local auto_reconnect
-            auto_reconnect=$(grep "^AUTO_RECONNECT=" "$config_file" 2>/dev/null | cut -d= -f2)
+            auto_reconnect=$(grep "^AUTO_RECONNECT=" "$config_file" 2> /dev/null | cut -d= -f2)
 
             if [[ "$auto_reconnect" == "true" ]]; then
                 echo "Kill switch preserved (auto-reconnect is enabled)"
@@ -516,13 +498,18 @@ attempt_graceful_termination() {
         fi
         if validate_openvpn_process "$pid"; then
             echo "  Sending TERM signal to process $pid..."
-            kill -TERM "$pid" 2> /dev/null || true
+            # Root daemons ignore an unprivileged kill (EPERM); deliver TERM via
+            # sudo so OpenVPN can shut down cleanly and restore routes.
+            if ! kill -TERM "$pid" 2> /dev/null && is_real_openvpn_process "$pid"; then
+                sudo kill -TERM "$pid" 2> /dev/null || true
+            fi
         else
             log_message "SECURITY: Skipped invalid/non-OpenVPN PID $pid" "$VPN_LOG_FILE"
         fi
     done <<< "$pids"
 
-    sleep 3
+    # Poll for exit (up to 5s) instead of a fixed 3s sleep
+    wait_for_pids_exit "$pids" 50 || true
 }
 
 # Attempt forceful termination using KILL signal
@@ -543,15 +530,7 @@ attempt_forceful_termination() {
         fi
     done <<< "$pids"
 
-    # Verify processes terminated (faster than fixed sleep)
-    local wait_count=0
-    while [[ $wait_count -lt 5 ]]; do
-        if ! pgrep -f "openvpn.*--config" > /dev/null 2>&1; then
-            break
-        fi
-        sleep 0.1
-        wait_count=$((wait_count + 1))
-    done
+    wait_for_pids_exit "$pids" 10 || true
 }
 
 # Attempt termination using sudo KILL signal
@@ -572,22 +551,14 @@ attempt_sudo_termination() {
         fi
     done <<< "$pids"
 
-    # Verify processes terminated (faster than fixed sleep)
-    local wait_count=0
-    while [[ $wait_count -lt 5 ]]; do
-        if ! pgrep -f "openvpn.*--config" > /dev/null 2>&1; then
-            break
-        fi
-        sleep 0.1
-        wait_count=$((wait_count + 1))
-    done
+    wait_for_pids_exit "$pids" 20 || true
 }
 
 # Verify that all VPN processes have been cleaned up
 # Returns: 0 if no processes remain, 1 otherwise
 verify_cleanup_success() {
     local remaining_pids
-    remaining_pids=$(pgrep -f "openvpn.*--config" 2> /dev/null || true)
+    remaining_pids=$(pgrep -f "$OPENVPN_PGREP_PATTERN" 2> /dev/null || true)
 
     if [[ -z $remaining_pids ]]; then
         return 0
@@ -653,15 +624,11 @@ attempt_escalated_cleanup_with_timeout() {
                 echo "  Using validated PID-based process killing..."
                 # Only kill processes we've validated as OpenVPN
                 while IFS= read -r pid; do
-                    if [[ -n $pid ]] && [[ $pid =~ ^[0-9]+$ ]]; then
-                        local cmd_line
-                        cmd_line=$(ps -p "$pid" -o cmd= 2> /dev/null || true)
-                        if [[ $cmd_line =~ ^openvpn.*--config ]]; then
-                            sudo kill -KILL "$pid" 2> /dev/null || true
-                        fi
+                    if [[ -n $pid ]] && is_real_openvpn_process "$pid"; then
+                        sudo kill -KILL "$pid" 2> /dev/null || true
                     fi
                 done <<< "$pids"
-                sleep 3
+                wait_for_pids_exit "$pids" 30 || true
                 ;;
         esac
 
@@ -671,7 +638,7 @@ attempt_escalated_cleanup_with_timeout() {
             return 0
         else
             local remaining_pids
-            remaining_pids=$(pgrep -f "openvpn.*--config" 2> /dev/null || true)
+            remaining_pids=$(pgrep -f "$OPENVPN_PGREP_PATTERN" 2> /dev/null || true)
             echo "  Remaining processes after $level: $(echo "$remaining_pids" | tr '\n' ' ')"
         fi
     done
@@ -683,7 +650,7 @@ attempt_escalated_cleanup_with_timeout() {
 # Returns: 0 if successful, 1 if failed
 perform_emergency_process_group_cleanup() {
     local final_check
-    final_check=$(pgrep -f "openvpn.*--config" 2> /dev/null || true)
+    final_check=$(pgrep -f "$OPENVPN_PGREP_PATTERN" 2> /dev/null || true)
 
     echo -e "\033[1;33mForce mode: Attempting validated emergency process group termination...\033[0m"
     # Try to kill entire process groups, but only if they contain only OpenVPN processes
@@ -705,14 +672,14 @@ perform_emergency_process_group_cleanup() {
         fi
     done <<< "$final_check"
 
-    sleep 2
+    wait_for_pids_exit "$final_check" 20 || true
 
     # Verify emergency cleanup
     if verify_cleanup_success; then
         echo -e "\033[1;32m✓ Emergency cleanup successful\033[0m"
         return 0
     else
-        final_check=$(pgrep -f "openvpn.*--config" 2> /dev/null || true)
+        final_check=$(pgrep -f "$OPENVPN_PGREP_PATTERN" 2> /dev/null || true)
         echo -e "\033[1;31mFAILED: Cannot cleanup processes $(echo "$final_check" | tr '\n' ' ')\033[0m"
         echo -e "\033[1;33mRecommendation: Run 'vpn emergency-reset' or consider system reboot\033[0m"
         return 1
@@ -742,7 +709,6 @@ hierarchical_process_cleanup() {
     fi
 
     # Final verification with emergency cleanup if force mode enabled
-    sleep 1
     if verify_cleanup_success; then
         echo -e "\033[1;32m✓ All VPN processes successfully terminated\033[0m"
         return 0
@@ -757,7 +723,7 @@ hierarchical_process_cleanup() {
         fi
     else
         local final_check
-        final_check=$(pgrep -f "openvpn.*--config" 2> /dev/null || true)
+        final_check=$(pgrep -f "$OPENVPN_PGREP_PATTERN" 2> /dev/null || true)
         echo -e "\033[1;31mFAILED: Cannot cleanup processes $(echo "$final_check" | tr '\n' ' ')\033[0m"
         echo -e "\033[1;33mRecommendation: Run 'vpn cleanup' with force mode or 'vpn emergency-reset'\033[0m"
         return 1
@@ -788,14 +754,22 @@ cleanup_files() {
         fi
     fi
 
-    # Clean up lock files (these should be user-writable in secure LOCK_DIR)
-    if [[ -f $LOCK_FILE ]]; then
-        rm -f "$LOCK_FILE" 2> /dev/null || true
+    # Clean up stale lock files only. Deleting a lock that is currently held
+    # (e.g. vpn-connector calls cleanup mid-connect) would let a second
+    # connect create a fresh file and run concurrently.
+    remove_lock_if_free "$LOCK_FILE"
+    remove_lock_if_free "$LOCK_DIR/vpn_connect.lock"
+}
+
+# Remove a flock-based lock file only if nobody holds it
+# Args: $1 = lock file path
+remove_lock_if_free() {
+    local lock="$1"
+    [[ -f $lock && ! -L $lock ]] || return 0
+    if (flock -n 9) 9< "$lock" 2> /dev/null; then
+        rm -f "$lock" 2> /dev/null || true
     fi
-    # Also clean vpn-connector's lock file from same secure directory
-    if [[ -f "$LOCK_DIR/vpn_connect.lock" ]]; then
-        rm -f "$LOCK_DIR/vpn_connect.lock" 2> /dev/null || true
-    fi
+    return 0
 }
 
 cleanup_routes_light() {

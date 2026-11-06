@@ -77,13 +77,18 @@ disconnect_vpn() {
 		fi
 	fi
 
-	# Force cleanup of any remaining processes
-	if pgrep -x openvpn &>/dev/null; then
-		log_warning "Found running OpenVPN processes, terminating..."
-		if sudo pkill -x openvpn 2>/dev/null; then
-			log_success "OpenVPN processes terminated"
+	# Stop only the daemon this tool started (its PID file), never every
+	# OpenVPN process on the system
+	local pid=""
+	if [[ -f /var/run/openvpn.pid ]]; then
+		pid=$(tr -cd '0-9' < /var/run/openvpn.pid)
+	fi
+	if [[ -n "$pid" ]] && [[ "$(cat "/proc/$pid/comm" 2>/dev/null)" == "openvpn" ]]; then
+		log_warning "Stopping OpenVPN daemon started by VPN Manager (PID $pid)..."
+		if sudo kill -TERM "$pid" 2>/dev/null; then
+			log_success "OpenVPN process terminated"
 		else
-			log_warning "Could not terminate OpenVPN processes"
+			log_warning "Could not terminate OpenVPN process $pid"
 		fi
 	fi
 }
@@ -196,22 +201,31 @@ remove_path_modifications() {
 }
 
 remove_vpn_directory() {
-	log_info "Removing VPN Management System directory..."
+	# Remove what install.sh installed. The source checkout ($VPN_DIR) is
+	# deliberately left alone: deleting the directory this script runs from
+	# would destroy a git working tree (and any uncommitted work in it).
+	log_info "Removing installed components..."
 
-	if [[ -d "$VPN_DIR" ]]; then
-		# Count files for reporting
-		local file_count
-		file_count=$(find "$VPN_DIR" -type f | wc -l)
-
-		if rm -rf "$VPN_DIR"; then
-			log_success "Removed VPN directory with $file_count files: $VPN_DIR"
-		else
-			log_error "Failed to remove VPN directory: $VPN_DIR"
-			return 1
+	local components=(
+		vpn vpn-manager vpn-connector vpn-error-handler vpn-utils vpn-colors
+		vpn-validators best-vpn-profile vpn-doctor vpn-kill-switch temp-file-manager
+	)
+	local removed=0 component
+	for component in "${components[@]}"; do
+		if [[ -f "/usr/local/bin/$component" ]]; then
+			# Plain arithmetic: ((removed++)) returns 1 when removed is 0 (set -e)
+			if sudo rm -f "/usr/local/bin/$component"; then
+				removed=$((removed + 1))
+			fi
 		fi
-	else
-		log_info "VPN directory not found: $VPN_DIR"
+	done
+	if [[ -f /etc/protonvpn-manager.conf ]]; then
+		if sudo rm -f /etc/protonvpn-manager.conf; then
+			removed=$((removed + 1))
+		fi
 	fi
+	log_success "Removed $removed installed file(s)"
+	log_info "Source directory kept: $VPN_DIR (delete it manually if you no longer need it)"
 }
 
 check_package_removal() {

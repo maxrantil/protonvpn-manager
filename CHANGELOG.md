@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Security
+- Connection success can no longer be spoofed via a shared `/tmp/openvpn.log`
+- Profiles with directives that run commands or write files as root are
+  rejected (opt in with `ALLOW_PROFILE_SCRIPTS=true`); OpenVPN runs with
+  `--script-security 1`; WireGuard profiles are validated before `wg-quick`
+- NetworkManager hook: config values could execute code as root through bash
+  arithmetic; they are now validated as integers
+- Root hooks access the user's files as that user (no symlink-following root
+  writes) and no longer guess between several logged-in users
+- Temp-file registry and error log moved out of shared `/tmp`
+- Kill switch rules are applied atomically (`iptables-restore`), removing a
+  fail-open window during refresh; DHCP rule narrowed
+- `uninstall.sh` no longer deletes the source checkout or kills every
+  OpenVPN process on the system
+
+### Fixed
+- `vpn connect` aborted instead of auto-cleaning when multiple OpenVPN
+  processes were detected (`set -e`)
+- A timed-out connection attempt aborted the connector instead of retrying,
+  and retries accumulated OpenVPN processes
+- Deadlock in profile-cache rebuilds; cache now tied to its directory and no
+  longer drops the last profile
+- Auto-reconnect hooks called `connect <path>` (country codes only)
+- `install.sh` did not install `vpn-kill-switch` and `temp-file-manager`
+
+### Performance
+- `vpn cleanup` / disconnect: graceful SIGTERM via sudo and polling instead of
+  fixed sleeps (8.3s -> 0.2s on a test daemon); 1s less per connect
+- Kill switch: 2 privileged calls instead of ~20
+
 ## [1.0.0] - 2025-10-18
 
 ### Added

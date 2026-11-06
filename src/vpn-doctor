@@ -14,7 +14,7 @@ if [[ -f "/usr/local/bin/vpn-colors" ]]; then
     VPN_DIR="/usr/local/bin"
 else
     # Development mode
-    VPN_DIR="$(dirname "$(realpath "$0")")"
+    VPN_DIR="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
 fi
 
 # Source required components
@@ -326,7 +326,8 @@ check_process_health() {
     local process_count=0
 
     # Count OpenVPN processes
-    process_count=$(pgrep -f "openvpn.*--config" 2>/dev/null | wc -l || echo 0)
+    # Program must be openvpn itself (grep/editors mentioning it don't count)
+    process_count=$(pgrep -f '(^|/)openvpn .*--config' 2>/dev/null | wc -l || echo 0)
 
     case $process_count in
         0)

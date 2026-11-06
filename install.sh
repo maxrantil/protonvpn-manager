@@ -16,7 +16,13 @@ COMPONENTS=(
 	"vpn-validators"
 	"best-vpn-profile"
 	"vpn-doctor"
+	"vpn-kill-switch"
+	"temp-file-manager"
 )
+
+# Root-owned system config: tells root-run hooks which user's VPN to manage
+# (they refuse to guess when several users are logged in)
+SYSTEM_CONF="/etc/protonvpn-manager.conf"
 
 # Colors for output
 RED='\033[0;31m'
@@ -38,7 +44,7 @@ fi
 # Check for required dependencies
 check_dependencies() {
 	local missing=()
-	for cmd in openvpn curl bc; do
+	for cmd in openvpn curl bc ip flock; do
 		if ! command -v "$cmd" &>/dev/null; then
 			missing+=("$cmd")
 		fi
@@ -61,24 +67,36 @@ install_components() {
 			exit 1
 		fi
 
-		# Copy with sudo, preserving executable bit
-		sudo cp -f "src/$component" "$INSTALL_DIR/"
-		sudo chmod 755 "$INSTALL_DIR/$component"
+		# Root-owned, not writable by the user: these scripts run sudo and are
+		# executed by root hooks, so a user-writable copy would be a root backdoor
+		sudo install -o root -g root -m 755 "src/$component" "$INSTALL_DIR/$component"
 		log_info "Installed: $component"
 	done
+}
+
+# Record the managing user for root-run hooks (sleep / NetworkManager)
+setup_system_config() {
+	local user
+	user=$(id -un)
+	if [[ ! "$user" =~ ^[a-z_][a-z0-9_-]*$ ]]; then
+		log_warning "Unusual username '$user'; skipping $SYSTEM_CONF"
+		return 0
+	fi
+	printf '# ProtonVPN Manager - user whose VPN the system hooks manage\nVPN_USER=%s\n' "$user" |
+		sudo install -o root -g root -m 644 /dev/stdin "$SYSTEM_CONF"
+	log_info "Wrote $SYSTEM_CONF (VPN_USER=$user)"
 }
 
 # Create config directory
 setup_config() {
 	log_info "Creating config directory: $CONFIG_DIR"
-	mkdir -p "$CONFIG_DIR"
-
-	# Create locations subdirectory for .ovpn files
-	mkdir -p "$CONFIG_DIR/locations"
+	# Private: holds credentials and profiles
+	(umask 077 && mkdir -p "$CONFIG_DIR/locations")
+	chmod 700 "$CONFIG_DIR" "$CONFIG_DIR/locations"
 
 	# Create credentials template if it doesn't exist
 	if [[ ! -f "$CONFIG_DIR/vpn-credentials.txt" ]]; then
-		cat >"$CONFIG_DIR/vpn-credentials.txt" <<'EOF'
+		(umask 077 && cat >"$CONFIG_DIR/vpn-credentials.txt") <<'EOF'
 # ProtonVPN OpenVPN Credentials
 # Line 1: Username
 # Line 2: Password
@@ -104,6 +122,7 @@ main() {
 
 	check_dependencies
 	install_components
+	setup_system_config
 	setup_config
 
 	echo ""

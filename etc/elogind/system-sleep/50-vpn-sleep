@@ -2,34 +2,81 @@
 # ABOUTME: Elogind sleep/wake handler for VPN reconnection on Artix Linux
 # ABOUTME: Handles pre-sleep disconnect and post-wake reconnection
 
-# Get the actual user (not root)
-REAL_USER=$(who | awk 'NR==1{print $1}')
+# Runs as root. Security rules for this hook:
+# - Never guess the user: VPN_USER from root-owned /etc/protonvpn-manager.conf,
+#   otherwise the single non-root user logged in, otherwise do nothing.
+# - Every read/write of files in the user's home happens AS THAT USER
+#   (runuser), so planted symlinks cannot redirect root's writes.
+# - The saved profile is validated (location, type, integrity hash) before use.
+
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
+SYSTEM_CONF=/etc/protonvpn-manager.conf
+
+syslog() {
+    logger -t vpn-sleep "$1" 2>/dev/null || true
+}
+
+detect_user() {
+    _u=""
+    if [ -f "$SYSTEM_CONF" ] && [ ! -L "$SYSTEM_CONF" ] && [ "$(stat -c %u "$SYSTEM_CONF" 2>/dev/null)" = "0" ]; then
+        _u=$(sed -n 's/^VPN_USER=["'\'']\{0,1\}\([a-z_][a-z0-9_-]*\)["'\'']\{0,1\}$/\1/p' "$SYSTEM_CONF" | head -1)
+    fi
+    if [ -z "$_u" ]; then
+        _users=$(who 2>/dev/null | awk '$1 != "root" {print $1}' | sort -u)
+        if [ -n "$_users" ] && [ "$(printf '%s\n' "$_users" | wc -l)" -eq 1 ]; then
+            _u="$_users"
+        fi
+    fi
+    case "$_u" in
+        "" | root | *[!a-z0-9_-]*) return 1 ;;
+    esac
+    getent passwd "$_u" >/dev/null 2>&1 || return 1
+    printf '%s\n' "$_u"
+}
+
+REAL_USER=$(detect_user) || {
+    syslog "No unambiguous VPN user (set VPN_USER in $SYSTEM_CONF); skipping"
+    exit 0
+}
 REAL_HOME=$(getent passwd "$REAL_USER" | cut -d: -f6)
 STATE_DIR="$REAL_HOME/.local/state/vpn"
 CONFIG_DIR="$REAL_HOME/.config/vpn"
 LAST_PROFILE_FILE="$STATE_DIR/last_profile"
+LAST_PROFILE_HASH="$STATE_DIR/last_profile.sha256"
 CONFIG_FILE="$CONFIG_DIR/config"
 LOG_FILE="$STATE_DIR/sleep-hook.log"
 
+# Run a command as the real user (drops root for file access in their home)
+as_user() {
+    if command -v runuser >/dev/null 2>&1; then
+        runuser -u "$REAL_USER" -- "$@"
+    else
+        setpriv --reuid="$REAL_USER" --regid="$(id -g "$REAL_USER")" --init-groups -- "$@"
+    fi
+}
+
+# Read a small file from the user's home as the user (empty if unreadable)
+user_cat() {
+    as_user head -c 4096 "$1" 2>/dev/null
+}
+
 log_msg() {
-    echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) $1" >> "$LOG_FILE" 2>/dev/null || true
+    syslog "$1"
+    # Append as the user; strip control characters from untrusted content
+    _line="$(date -u +%Y-%m-%dT%H:%M:%SZ) $(printf '%s' "$1" | tr -d '\000-\037')"
+    printf '%s\n' "$_line" | as_user sh -c 'mkdir -p "$(dirname "$1")" && umask 077 && cat >> "$1"' sh "$LOG_FILE" 2>/dev/null || true
 }
 
 case "${1-}" in
     'pre')
         log_msg "PRE-SLEEP: Starting"
+        # The connector saves last_profile (+ integrity hash) on every
+        # successful connect, so nothing needs to be written here.
 
-        # Save current profile before disconnect (for auto-reconnect)
-        CURRENT=$(pgrep -a openvpn 2>/dev/null | grep -o '/[^ ]*\.ovpn' | head -1)
-        if [ -n "$CURRENT" ]; then
-            mkdir -p "$STATE_DIR"
-            echo "$CURRENT" > "$LAST_PROFILE_FILE"
-            chown "$REAL_USER:$REAL_USER" "$LAST_PROFILE_FILE" 2>/dev/null || true
-            log_msg "PRE-SLEEP: Saved profile $CURRENT"
-        fi
-
-        # Clean disconnect before sleep (but keep kill switch enabled!)
-        /usr/local/bin/vpn disconnect 2>/dev/null || true
+        # Clean disconnect before sleep (kill switch state is preserved)
+        HOME="$REAL_HOME" /usr/local/bin/vpn disconnect >/dev/null 2>&1 || true
         log_msg "PRE-SLEEP: VPN disconnected"
         ;;
 
@@ -37,26 +84,14 @@ case "${1-}" in
         log_msg "POST-WAKE: Starting"
 
         # Check if auto-reconnect is enabled
-        AUTO_RECONNECT="false"
-        if [ -f "$CONFIG_FILE" ]; then
-            AUTO_RECONNECT=$(grep '^AUTO_RECONNECT=' "$CONFIG_FILE" 2>/dev/null | cut -d= -f2 | tr -d '"' | tr -d "'")
-        fi
-
+        AUTO_RECONNECT=$(user_cat "$CONFIG_FILE" | grep '^AUTO_RECONNECT=' | tail -1 | cut -d= -f2 | tr -d "\"'")
         if [ "$AUTO_RECONNECT" != "true" ]; then
             log_msg "POST-WAKE: Auto-reconnect disabled, skipping"
             exit 0
         fi
 
-        # Check kill switch state file (iptables rules may be lost on suspend)
-        KILL_SWITCH_STATE="$STATE_DIR/kill_switch.state"
-        KILL_SWITCH_WAS_ENABLED="false"
-        if [ -f "$KILL_SWITCH_STATE" ]; then
-            if grep -q "^status=enabled" "$KILL_SWITCH_STATE" 2>/dev/null; then
-                KILL_SWITCH_WAS_ENABLED="true"
-            fi
-        fi
-
-        if [ "$KILL_SWITCH_WAS_ENABLED" != "true" ]; then
+        # Only reconnect if the kill switch was enabled before sleep
+        if ! user_cat "$STATE_DIR/kill_switch.state" | grep -q "^status=enabled"; then
             log_msg "POST-WAKE: Kill switch was not enabled before sleep, skipping auto-reconnect"
             exit 0
         fi
@@ -79,28 +114,45 @@ case "${1-}" in
         fi
 
         # Re-enable kill switch (iptables rules may be lost on suspend)
-        # This also detects new gateway IP for the new network
         log_msg "POST-WAKE: Re-enabling kill switch for new network"
-        /usr/local/bin/vpn-kill-switch enable --force >> "$LOG_FILE" 2>&1 || {
+        if ! HOME="$REAL_HOME" /usr/local/bin/vpn-kill-switch enable --force >/dev/null 2>&1; then
             log_msg "POST-WAKE: Failed to re-enable kill switch"
             exit 1
-        }
-
-        # Get saved profile
-        if [ ! -f "$LAST_PROFILE_FILE" ]; then
-            log_msg "POST-WAKE: No saved profile, skipping"
-            exit 0
         fi
 
-        PROFILE=$(cat "$LAST_PROFILE_FILE" 2>/dev/null)
-        if [ -z "$PROFILE" ] || [ ! -f "$PROFILE" ]; then
+        # Validate the saved profile before handing it to a root process
+        PROFILE=$(user_cat "$LAST_PROFILE_FILE" | head -1)
+        case "$PROFILE" in
+            "$CONFIG_DIR"/locations/*.ovpn | "$CONFIG_DIR"/locations/*.conf) ;;
+            "")
+                log_msg "POST-WAKE: No saved profile, skipping"
+                exit 0
+                ;;
+            *)
+                log_msg "POST-WAKE: Saved profile outside locations directory, refusing"
+                exit 1
+                ;;
+        esac
+        case "$PROFILE" in
+            *..*)
+                log_msg "POST-WAKE: Saved profile path contains '..', refusing"
+                exit 1
+                ;;
+        esac
+        if [ -L "$PROFILE" ] || [ ! -f "$PROFILE" ]; then
             log_msg "POST-WAKE: Invalid profile: $PROFILE"
             exit 1
         fi
+        SAVED_HASH=$(user_cat "$LAST_PROFILE_HASH" | head -1)
+        CURRENT_HASH=$(as_user sha256sum "$PROFILE" 2>/dev/null | cut -d' ' -f1)
+        if [ -z "$SAVED_HASH" ] || [ "$SAVED_HASH" != "$CURRENT_HASH" ]; then
+            log_msg "POST-WAKE: Profile integrity check failed, refusing"
+            exit 1
+        fi
 
-        # Attempt reconnection
+        # Attempt reconnection (`custom` takes a profile path; `connect` takes a country)
         log_msg "POST-WAKE: Reconnecting to $PROFILE"
-        if /usr/local/bin/vpn-connector connect "$PROFILE" >> "$LOG_FILE" 2>&1; then
+        if HOME="$REAL_HOME" /usr/local/bin/vpn-connector custom "$PROFILE" >/dev/null 2>&1; then
             log_msg "POST-WAKE: Reconnection successful"
         else
             log_msg "POST-WAKE: Reconnection failed"
