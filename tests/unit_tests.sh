@@ -210,8 +210,7 @@ run_unit_tests() {
     test_cache_file_operations
     test_configuration_validation
 
-    # Run security/robustness hardening regression tests (first, so a stale
-    # source-grep suite below cannot short-circuit them)
+    # Run security/robustness hardening regression tests
     log_test "INFO" "Running hardening regression tests"
     if bash "$TEST_DIR/unit/test_hardening.sh"; then
         log_test "PASS" "Hardening regression tests: All tests passed"
@@ -241,7 +240,7 @@ run_unit_tests() {
     # Run exponential backoff optimization tests (Issue #62)
     log_test "INFO" "Running exponential backoff optimization tests"
     if bash "$TEST_DIR/unit/test_exponential_backoff.sh"; then
-        log_test "PASS" "Exponential backoff tests: All 7 tests passed"
+        log_test "PASS" "Exponential backoff tests: All tests passed"
     else
         log_test "FAIL" "Exponential backoff tests: Some tests failed"
         return 1
