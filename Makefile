@@ -13,7 +13,7 @@ help:
 	@echo "Installation is handled by install.sh script."
 	@echo ""
 	@echo "To install:"
-	@echo "  sudo ./install.sh"
+	@echo "  ./install.sh   (as your normal user; it uses sudo itself)"
 	@echo ""
 	@echo "To uninstall:"
 	@echo "  sudo ./uninstall.sh"

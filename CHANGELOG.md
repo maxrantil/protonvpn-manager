@@ -16,6 +16,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   root-owned copies and logs into a root-owned session directory, instead
   of user-writable files that could be swapped after validation
 
+### Removed
+- `vpn download-configs` and `vpn service` (they called scripts that do not
+  exist)
+- `vpn-manager status-wcag|status-enhanced|status-format` views, which
+  printed hard-coded data ("Sweden (se-65)", "All Systems Operational")
+- Leftover enterprise config files, `scripts/protonvpn-service-manager`,
+  `core_components.txt`, and unused functions
+- `uninstall.sh` no longer edits `~/.bashrc`/`~/.zshrc`/`~/.profile`
+  (install never adds anything there)
+
+### Changed
+- `vpn secure` fails when no Secure Core profiles exist instead of silently
+  connecting to a regular server, and picks the fastest Secure Core server
+- README: correct install command, log paths and component list
+
 ### Added
 - Latency-based server selection: `vpn connect`, `vpn best` and `vpn fast`
   now pick the server with the lowest measured ping (parallel, cached; TCP

@@ -154,30 +154,6 @@ test_detect_stat_format_runs_only_once() {
 # INTEGRATION TESTS: Performance Cache with Optimized Stat
 # ============================================================================
 
-test_load_performance_cache_uses_optimized_stat() {
-    start_test "load_performance_cache uses STAT_MTIME_FLAG (no fallback)"
-
-    # Check that load_performance_cache function doesn't contain the old fallback pattern
-    # This is a static code check to ensure the optimization is applied
-    if type load_performance_cache &> /dev/null; then
-        # Get the function definition
-        local func_def
-        func_def=$(declare -f load_performance_cache)
-
-        # Check if it still contains the old BSD/GNU fallback pattern
-        if echo "$func_def" | grep -q "stat -f %m.*||.*stat -c %Y"; then
-            fail_test "Still using inefficient BSD/GNU fallback pattern"
-            return 1
-        else
-            pass_test
-            return 0
-        fi
-    else
-        fail_test "load_performance_cache function not found"
-        return 1
-    fi
-}
-
 # ============================================================================
 # RUN ALL TESTS
 # ============================================================================
@@ -193,7 +169,6 @@ test_stat_mtime_variable_is_set || true
 test_stat_mtime_format_is_valid || true
 test_stat_mtime_flag_works || true
 test_detect_stat_format_runs_only_once || true
-test_load_performance_cache_uses_optimized_stat || true
 
 # Print summary
 echo

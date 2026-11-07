@@ -243,14 +243,6 @@ vpn_info() {
     [[ -n "$details" ]] && echo "Details: $details"
 }
 
-# Success message
-vpn_success() {
-    local component="$1"
-    local message="$2"
-
-    echo -e "\033[1;32m[SUCCESS] $component: $message\033[0m"
-}
-
 # Warning message (non-blocking)
 vpn_warn() {
     local component="$1"

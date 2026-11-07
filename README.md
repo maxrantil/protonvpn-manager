@@ -166,8 +166,9 @@ stat -c "%a" ~/.config/vpn/vpn-credentials.txt
 For convenience, you can install scripts to `/usr/local/bin`:
 
 ```bash
-# Run the install script
-sudo ./install.sh
+# Run the install script as your normal user (it calls sudo itself and
+# refuses to run as root)
+./install.sh
 
 # Now you can use 'vpn' from anywhere
 vpn connect
@@ -235,18 +236,17 @@ You're ready to use ProtonVPN Manager. Try these commands:
 ./src/vpn help
 ```
 
-## Core Components (3,217 lines total)
+## Core Components
 
-This simplified version contains only essential components:
-
-- **`src/vpn`** - Main CLI interface (303 lines)
-- **`src/vpn-manager`** - Process management and safety (1,108 lines)
-- **`src/vpn-connector`** - Server selection logic (1,081 lines)
-- **`src/best-vpn-profile`** - Performance testing engine (104 lines)
-- **`src/vpn-error-handler`** - Error handling (287 lines)
-- **`src/vpn-validators`** - Input validation and security checks (230 lines)
-- **`src/vpn-utils`** - Shared utility functions (34 lines)
-- **`src/vpn-colors`** - Color management with NO_COLOR support (70 lines)
+- **`src/vpn`** - Main CLI interface
+- **`src/vpn-connector`** - Profile selection and connection (OpenVPN/WireGuard)
+- **`src/vpn-manager`** - Status, disconnect and cleanup
+- **`src/vpn-kill-switch`** - iptables leak protection
+- **`src/best-vpn-profile`** - Server latency evaluator (fastest server)
+- **`src/vpn-doctor`** - System diagnostics
+- **`src/vpn-validators`** - Input, path and profile validation
+- **`src/vpn-error-handler`**, **`src/vpn-utils`**, **`src/vpn-colors`**, **`src/temp-file-manager`** - Shared libraries
+- **`etc/`** - Optional elogind sleep hook and NetworkManager dispatcher hook
 
 ## Available Commands
 
@@ -307,7 +307,7 @@ LATENCY_CACHE_MAX_AGE=900    # seconds `vpn connect` reuses measurements
 - View logs with: `./src/vpn logs [lines]`
 - Color-coded output (green=INFO, yellow=WARN, red=ERROR)
 - Automatic log rotation (keeps last 1000 lines)
-- Logs stored at: `/tmp/vpn_simple.log`
+- Logs stored at: `~/.local/state/vpn/vpn_manager.log` (connections: `vpn_connect.log`)
 
 ## What Was Removed
 
@@ -763,8 +763,7 @@ chmod 600 ~/.config/vpn/vpn-credentials.txt
 # Symptom: Random failures, inconsistent results
 
 # Solution: Clean test artifacts
-rm -rf /tmp/vpn_*
-rm -rf ~/.config/vpn/*.cache
+rm -rf ~/.local/state/vpn/*.cache ~/.cache/vpn/*.cache
 
 # Re-run tests
 ./run_tests.sh
@@ -1014,8 +1013,8 @@ which openvpn
 # Clean up lock files
 ./src/vpn cleanup
 
-# If that fails, manually remove
-rm -f "$XDG_RUNTIME_DIR/vpn/"*.lock /tmp/vpn_*.lock 2>/dev/null
+# If that fails, manually remove stale locks
+rm -f "${XDG_RUNTIME_DIR:-/run/user/$UID}/vpn/"*.lock 2>/dev/null
 ```
 
 ### DNS and Network Issues
@@ -1104,7 +1103,7 @@ rm -f "$XDG_CACHE_HOME/vpn/"*.cache
 ./src/vpn logs 500 | grep -i error
 
 # View full log file
-less /tmp/vpn_simple.log
+less ~/.local/state/vpn/vpn_manager.log
 ```
 
 #### Enable Verbose Logging

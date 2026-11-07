@@ -224,6 +224,20 @@ else
 	test_pass "vpn best fails when no server answers"
 fi
 
+# 11. secure: never silently falls back to a regular server
+state s1
+picked=$(connector secure_core_connect)
+if [[ -z $picked ]]; then
+	test_pass "secure fails instead of using a regular server when no Secure Core profile exists"
+else
+	test_fail "secure fails instead of using a regular server when no Secure Core profile exists" "$picked"
+fi
+ovpn ch-se-1 10.0.0.3
+ovpn is-se-1 10.0.0.2
+state s2
+check "secure picks the fastest Secure Core server" "CONNECT is-se-1.ovpn" "$(connector secure_core_connect)"
+rm -f "$LOC/ch-se-1.ovpn" "$LOC/is-se-1.ovpn"
+
 echo ""
 echo -e "${T_BLUE}Results: $TESTS_PASSED/$TESTS_RUN passed${T_NC}"
 if [[ $TESTS_FAILED -gt 0 ]]; then
