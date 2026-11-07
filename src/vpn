@@ -57,14 +57,14 @@ show_help() {
     echo -e "\033[1;33mUsage: vpn <command> [options]\033[0m"
     echo
     echo -e "\033[1;32mConnection Commands:\033[0m"
-    echo "  connect [country]    - Connect to VPN server (optional country code)"
+    echo "  connect [country]    - Connect to the fastest server (optional country code)"
     echo "  disconnect          - Disconnect from VPN"
     echo "  reconnect           - Reconnect to current VPN server"
     echo "  status              - Show VPN connection status"
     echo
     echo -e "\033[1;32mServer Selection:\033[0m"
-    echo "  best                - Connect to best performing server"
-    echo "  fast [country]      - Quick connect using cached results"
+    echo "  best [country]      - Re-measure latency, connect to the fastest server"
+    echo "  fast [country]      - Fastest server using latency results up to 2h old"
     echo "  secure              - Connect to secure core server"
     echo "  custom <profile>    - Connect using custom profile path"
     echo "  list                - List available VPN profiles"
@@ -165,7 +165,7 @@ case "${1:-}" in
         ;;
     "best" | "b")
         if [[ -x "$VPN_CONNECTOR" ]]; then
-            "$VPN_CONNECTOR" best
+            "$VPN_CONNECTOR" best "${2:-}"
         else
             file_not_found_error "$COMP_VPN_MAIN" "$VPN_CONNECTOR" "Check installation and file permissions"
             exit 1

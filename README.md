@@ -252,7 +252,7 @@ This simplified version contains only essential components:
 
 ### Connection Management
 ```bash
-./src/vpn connect [country]    # Connect to VPN (optional country code)
+./src/vpn connect [country]    # Connect to the fastest server (optional country code)
 ./src/vpn disconnect          # Disconnect from VPN
 ./src/vpn reconnect          # Reconnect to current server
 ./src/vpn status             # Show connection status
@@ -261,10 +261,29 @@ This simplified version contains only essential components:
 
 ### Server Selection
 ```bash
-./src/vpn best               # Connect to best performing server
-./src/vpn fast [country]     # Quick connect using cached results
+./src/vpn best [country]     # Re-measure latency, connect to the fastest server
+./src/vpn fast [country]     # Fastest server, reusing latency results up to 2h old
 ./src/vpn list               # List available servers
 ./src/vpn test               # Test current connection performance
+best-vpn-profile test [country]  # Show measured latency per server
+```
+
+**How the fastest server is chosen:** each candidate profile's server
+(`remote` in `.ovpn`, `Endpoint` in WireGuard `.conf`) is pinged in parallel
+and the lowest average round-trip time wins. If no server answers ping
+(ICMP filtered), the TCP handshake time is used instead and a note is shown.
+TCP timings are never mixed with ping results, because a captive portal or
+transparent proxy can answer TCP on the server's behalf. Results are cached in
+`~/.local/state/vpn/vpn_performance.cache`: `connect` reuses them for 15
+minutes, `fast` for 2 hours, and `best` always re-measures.
+
+If nothing can be measured (offline, or the kill switch blocking probes),
+`connect` falls back to a random server for the country. Settings in
+`~/.config/vpn/config`:
+
+```bash
+SERVER_SELECTION=random      # restore random selection for `vpn connect`
+LATENCY_CACHE_MAX_AGE=900    # seconds `vpn connect` reuses measurements
 ```
 
 ### System Management

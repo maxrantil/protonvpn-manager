@@ -271,87 +271,65 @@ test_resolve_profile_path_empty_country_filter() {
 # INTEGRATION TESTS: Verify backward compatibility
 # ============================================================================
 
-test_get_cached_best_profile_still_works() {
-    start_test "get_cached_best_profile works with refactored code"
+# Create a mock best-vpn-profile in a temporary directory (never touch src/)
+# Its `rank` answer is the first stdin path matching $1, at 12.5 ms
+make_mock_evaluator() {
+    local pattern="$1" dir
+    dir=$(mktemp -d)
+    cat > "$dir/best-vpn-profile" << MOCK
+#!/bin/bash
+[[ "\$1" == "rank" ]] || exit 1
+match=\$(grep -m1 -- '$pattern')
+[[ -n "\$match" ]] || exit 1
+printf '12.5\t%s\n' "\$match"
+MOCK
+    chmod +x "$dir/best-vpn-profile"
+    echo "$dir"
+}
+
+test_select_fastest_profile_uses_evaluator() {
+    start_test "select_fastest_profile returns the evaluator's fastest profile"
 
     setup_resolution_test_env
     rebuild_cache > /dev/null 2>&1
 
-    # Mock best-vpn-profile to return known profile
-    cat > "$VPN_DIR/best-vpn-profile" << 'EOF'
-#!/bin/bash
-# Mock for testing
-if [[ "$1" == "best" ]]; then
-    echo "se-01"
-    exit 0
-fi
-exit 1
-EOF
-    chmod +x "$VPN_DIR/best-vpn-profile"
+    local mock_dir result
+    mock_dir=$(make_mock_evaluator "se-01")
+    result=$(get_cached_profiles | VPN_DIR="$mock_dir" select_fastest_profile 0 2> /dev/null)
+    rm -rf "$mock_dir"
 
-    # Test get_cached_best_profile function
-    local result
-    result=$(get_cached_best_profile "se" 2>&1)
-
-    # Restore original best-vpn-profile (if backup exists)
-    if [[ -f "$VPN_DIR/best-vpn-profile.bak" ]]; then
-        mv "$VPN_DIR/best-vpn-profile.bak" "$VPN_DIR/best-vpn-profile"
-    else
-        rm -f "$VPN_DIR/best-vpn-profile"
-        git checkout "$VPN_DIR/best-vpn-profile" 2>/dev/null || true
-    fi
-
-    if [[ "$result" == *"se-01"* ]]; then
+    if [[ "$result" == "$LOCATIONS_DIR/se-01.protonvpn.udp.ovpn" ]]; then
         pass_test
         cleanup_resolution_test_env
         return 0
     else
-        fail_test "get_cached_best_profile integration failed"
+        fail_test "expected se-01 path, got: $result"
         cleanup_resolution_test_env
         return 1
     fi
 }
 
-test_test_and_cache_performance_still_works() {
-    start_test "test_and_cache_performance works with refactored code"
+test_best_server_connect_uses_fastest() {
+    start_test "best_server_connect connects to the fastest profile"
 
     setup_resolution_test_env
     rebuild_cache > /dev/null 2>&1
 
-    # Mock best-vpn-profile to return known profile
-    cat > "$VPN_DIR/best-vpn-profile" << 'EOF'
-#!/bin/bash
-# Mock for testing
-if [[ "$1" == "fresh" ]]; then
-    echo "us-free-01"
-    exit 0
-fi
-exit 1
-EOF
-    chmod +x "$VPN_DIR/best-vpn-profile"
+    local mock_dir result
+    mock_dir=$(make_mock_evaluator "us-free-01")
+    result=$(
+        VPN_DIR="$mock_dir"
+        connect_to_profile() { echo "CONNECT $1"; }
+        best_server_connect full "" 2> /dev/null | grep '^CONNECT'
+    )
+    rm -rf "$mock_dir"
 
-    # Mock check_internet to pass
-    check_internet() { return 0; }
-    export -f check_internet
-
-    # Test test_and_cache_performance function
-    local result
-    result=$(test_and_cache_performance "" 2>&1)
-
-    # Restore
-    if [[ -f "$VPN_DIR/best-vpn-profile.bak" ]]; then
-        mv "$VPN_DIR/best-vpn-profile.bak" "$VPN_DIR/best-vpn-profile"
-    else
-        rm -f "$VPN_DIR/best-vpn-profile"
-        git checkout "$VPN_DIR/best-vpn-profile" 2>/dev/null || true
-    fi
-
-    if [[ "$result" == *"us-free-01"* ]]; then
+    if [[ "$result" == "CONNECT $LOCATIONS_DIR/us-free-01.protonvpn.udp.ovpn" ]]; then
         pass_test
         cleanup_resolution_test_env
         return 0
     else
-        fail_test "test_and_cache_performance integration failed"
+        fail_test "expected us-free-01 connection, got: $result"
         cleanup_resolution_test_env
         return 1
     fi
@@ -379,8 +357,8 @@ test_resolve_profile_path_returns_empty_for_nonexistent || true
 test_resolve_profile_path_empty_country_filter || true
 
 # Integration/backward compatibility tests
-test_get_cached_best_profile_still_works || true
-test_test_and_cache_performance_still_works || true
+test_select_fastest_profile_uses_evaluator || true
+test_best_server_connect_uses_fastest || true
 
 # Summary
 echo ""

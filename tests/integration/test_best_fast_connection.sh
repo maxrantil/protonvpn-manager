@@ -15,7 +15,7 @@ test_vpn_best_connects() {
     # First ensure we're disconnected
     "$PROJECT_DIR/src/vpn" disconnect > /dev/null 2>&1 || true
 
-    # Mock best-vpn-profile to return a known test profile
+    # (Legacy mock binary, kept for reference; the connector now calls select_fastest_profile)
     local mock_best_profile="$TEST_TEMP_DIR/best-vpn-profile"
     cat > "$mock_best_profile" << 'EOF'
 #!/bin/bash
@@ -33,12 +33,12 @@ EOF
 
     # Call best_server_connect with "full" mode
     local output
-    output=$(VPN_DIR="$PROJECT_DIR/src" bash -c "
+    output=$(VPN_DIR="$PROJECT_DIR/src" LOCATIONS_DIR="$TEST_LOCATIONS_DIR" bash -c "
         source '$connector_script'
-        # Override best-vpn-profile command
-        best-vpn-profile() {
-            echo 'se-test'
-            return 0
+        # Stub the latency evaluator: pick the se-test profile
+        select_fastest_profile() {
+            cat > /dev/null
+            echo '$TEST_LOCATIONS_DIR/se-test.ovpn'
         }
         # Track if connect_to_profile is called
         original_connect_to_profile=\$(declare -f connect_to_profile)
@@ -91,12 +91,13 @@ test_vpn_fast_connects() {
     local connection_tracker="$TEST_TEMP_DIR/fast_connection_tracker"
 
     local output
-    output=$(VPN_DIR="$PROJECT_DIR/src" bash -c "
+    output=$(VPN_DIR="$PROJECT_DIR/src" LOCATIONS_DIR="$TEST_LOCATIONS_DIR" bash -c "
         source '$PROJECT_DIR/src/vpn-connector'
-        # Mock get_cached_best_profile to succeed
-        get_cached_best_profile() {
-            echo 'dk-test'
-            return 0
+        # Stub the latency evaluator; fast mode must reuse results up to 2h old
+        select_fastest_profile() {
+            cat > /dev/null
+            [[ \$1 -eq 7200 ]] || return 1
+            echo '$TEST_LOCATIONS_DIR/dk-test.ovpn'
         }
         # Track if connect_to_profile is called
         connect_to_profile() {
@@ -146,10 +147,11 @@ test_vpn_best_error_handling() {
 
     local output
     local exit_code
-    output=$(VPN_DIR="$PROJECT_DIR/src" bash -c "
+    output=$(VPN_DIR="$PROJECT_DIR/src" LOCATIONS_DIR="$TEST_LOCATIONS_DIR" bash -c "
         source '$PROJECT_DIR/src/vpn-connector'
-        # Mock best-vpn-profile to fail
-        best-vpn-profile() {
+        # Stub the latency evaluator: no server answered
+        select_fastest_profile() {
+            cat > /dev/null
             return 1
         }
         best_server_connect 'full' ''

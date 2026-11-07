@@ -280,7 +280,44 @@ cleanup_test_env() {
         rm -rf "$TEST_TEMP_DIR"
         log_test "INFO" "Test environment cleaned up"
     fi
+    if [[ -n "${LATENCY_FIXTURE_HOME:-}" ]] && [[ -d "$LATENCY_FIXTURE_HOME" ]]; then
+        rm -rf "$LATENCY_FIXTURE_HOME"
+    fi
     cleanup_mocks
+}
+
+# Isolated fixture for best-vpn-profile: a private HOME with a few profiles and
+# a stub `ping` that answers with fixed latencies, so latency-based selection
+# can be tested without network access or the user's real profiles.
+setup_latency_fixture() {
+    [[ -n "${LATENCY_FIXTURE_HOME:-}" && -d "$LATENCY_FIXTURE_HOME" ]] && return 0
+    LATENCY_FIXTURE_HOME=$(mktemp -d)
+    local loc="$LATENCY_FIXTURE_HOME/.config/vpn/locations" entry name host
+    mkdir -p "$loc" "$LATENCY_FIXTURE_HOME/bin"
+    for entry in "se-1:10.0.0.1" "se-2:10.0.0.2" "dk-1:10.0.0.4"; do
+        name="${entry%%:*}"
+        host="${entry#*:}"
+        printf 'client\nproto udp\nremote %s 1194\n' "$host" > "$loc/$name.ovpn"
+    done
+    cat > "$LATENCY_FIXTURE_HOME/bin/ping" << 'PING'
+#!/bin/bash
+case "${*: -1}" in
+    10.0.0.1) avg=40.5 ;;
+    10.0.0.2) avg=12.25 ;;
+    10.0.0.4) avg=5.1 ;;
+    *) exit 1 ;;
+esac
+echo "rtt min/avg/max/mdev = 1.0/$avg/2.0/0.1 ms"
+PING
+    chmod +x "$LATENCY_FIXTURE_HOME/bin/ping"
+}
+
+# Run a command inside the latency fixture
+run_with_latency_fixture() {
+    setup_latency_fixture
+    HOME="$LATENCY_FIXTURE_HOME" XDG_STATE_HOME="$LATENCY_FIXTURE_HOME/.local/state" \
+        LOCATIONS_DIR="$LATENCY_FIXTURE_HOME/.config/vpn/locations" \
+        PATH="$LATENCY_FIXTURE_HOME/bin:$PATH" "$@"
 }
 
 show_test_summary() {

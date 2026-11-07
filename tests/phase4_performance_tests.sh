@@ -78,7 +78,7 @@ test_best_command_returns_profile_name() {
     fi
 
     local result
-    result=$(timeout 30 "$EXPECTED_SCRIPT_PATH" best 2> /dev/null | tail -n1 || echo "")
+    result=$(run_with_latency_fixture timeout 30 "$EXPECTED_SCRIPT_PATH" best 2> /dev/null | tail -n1 || echo "")
 
     if [[ -n "$result" ]] && [[ "$result" != "" ]]; then
         log_test "PASS" "$CURRENT_TEST: got result '$result'"
