@@ -31,6 +31,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   connecting to a regular server, and picks the fastest Secure Core server
 - README: correct install command, log paths and component list
 
+### Performance
+- `vpn connect` polls the OpenVPN log 4x per second instead of sleeping in
+  1-8s steps, so it returns as soon as the tunnel is up
+- If the fastest server does not answer, the next fastest is tried (one
+  attempt each, `FAILOVER_SERVERS`, default 3) instead of retrying the same
+  server three times; bad credentials stop immediately
+- Connecting no longer requires curl, bc, libnotify or wireguard-tools
+  (wg-quick is only needed for WireGuard profiles)
+
 ### Added
 - Latency-based server selection: `vpn connect`, `vpn best` and `vpn fast`
   now pick the server with the lowest measured ping (parallel, cached; TCP

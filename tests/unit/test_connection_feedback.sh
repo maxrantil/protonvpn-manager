@@ -151,7 +151,8 @@ test_minimal_feedback_replaced() {
 	# Old implementation just showed dots "."
 	# New should show stage names instead
 	local connection_loop
-	connection_loop=$(grep -A 30 "for interval in" "$VPN_DIR/vpn-connector" 2>/dev/null || echo "")
+	# The monitor loop is the body of monitor_connection_establishment_with_backoff
+	connection_loop=$(sed -n '/^monitor_connection_establishment_with_backoff() {/,/^}/p' "$VPN_DIR/vpn-connector" 2>/dev/null || echo "")
 
 	# Check if we're using stage-based feedback instead of just dots
 	if [[ "$connection_loop" == *"Establishing"* ]] || [[ "$connection_loop" == *"Configuring"* ]]; then

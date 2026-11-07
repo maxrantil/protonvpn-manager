@@ -238,6 +238,52 @@ state s2
 check "secure picks the fastest Secure Core server" "CONNECT is-se-1.ovpn" "$(connector secure_core_connect)"
 rm -f "$LOC/ch-se-1.ovpn" "$LOC/is-se-1.ovpn"
 
+# 12. Failover: a server that does not answer is skipped; other failures stop
+failover() {
+	# $1 = per-profile results "name=rc ..." for the stubbed connect_to_profile
+	bash -c '
+		source "$1/vpn-connector" > /dev/null 2>&1
+		set +e
+		results="$2"
+		connect_to_profile() {
+			local name rc
+			name=$(basename "$1" .ovpn)
+			echo "TRY $name attempts=$2"
+			rc=$(tr " " "\n" <<< "$results" | sed -n "s/^$name=//p")
+			return "${rc:-1}"
+		}
+		printf "%s\n" "$3/se-2.ovpn" "$3/se-1.ovpn" "$3/se-3.ovpn" | connect_with_failover
+		echo "rc=$?"
+	' _ "$SRC_DIR" "$1" "$LOC" 2> /dev/null | grep -E "^(TRY|rc=)" | tr '\n' ' '
+}
+check "failover moves on when the fastest server does not answer" \
+	"TRY se-2 attempts=1 TRY se-1 attempts=1 rc=0 " "$(failover "se-2=2 se-1=0")"
+check "failover stops on a non-timeout failure (e.g. bad credentials)" \
+	"TRY se-2 attempts=1 rc=1 " "$(failover "se-2=1 se-1=0")"
+check "failover reports a timeout when no server answers" \
+	"TRY se-2 attempts=1 TRY se-1 attempts=1 TRY se-3 attempts=1 rc=2 " "$(failover "se-2=2 se-1=2 se-3=2")"
+single=$(bash -c '
+	source "$1/vpn-connector" > /dev/null 2>&1
+	set +e
+	connect_to_profile() { echo "TRY attempts=$2"; return 0; }
+	echo "$2/se-1.ovpn" | connect_with_failover
+' _ "$SRC_DIR" "$LOC" 2> /dev/null | grep '^TRY')
+check "a single candidate keeps the usual 3 attempts" "TRY attempts=3" "$single"
+
+# 13. Connecting only needs openvpn, ip and flock
+mkdir -p "$WORK_DIR/depbin"
+for c in openvpn ip flock; do printf '#!/bin/sh\n' > "$WORK_DIR/depbin/$c"; chmod +x "$WORK_DIR/depbin/$c"; done
+if bash -c '
+	source "$1/vpn-connector" > /dev/null 2>&1
+	set +e
+	PATH="$2"
+	check_dependencies
+' _ "$SRC_DIR" "$WORK_DIR/depbin" > /dev/null 2>&1; then
+	test_pass "dependency check needs only openvpn, ip and flock (no curl/bc/notify-send/wg-quick)"
+else
+	test_fail "dependency check needs only openvpn, ip and flock (no curl/bc/notify-send/wg-quick)"
+fi
+
 echo ""
 echo -e "${T_BLUE}Results: $TESTS_PASSED/$TESTS_RUN passed${T_NC}"
 if [[ $TESTS_FAILED -gt 0 ]]; then
