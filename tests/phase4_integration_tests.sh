@@ -66,8 +66,8 @@ test_country_prioritization_exists() {
 
     # Test that best command accepts country parameter
     local result1 result2
-    result1=$("$BEST_VPN_PROFILE_PATH" best 2> /dev/null || echo "failed")
-    result2=$("$BEST_VPN_PROFILE_PATH" best SE 2> /dev/null || echo "failed")
+    result1=$(run_with_latency_fixture "$BEST_VPN_PROFILE_PATH" best 2> /dev/null || echo "failed")
+    result2=$(run_with_latency_fixture "$BEST_VPN_PROFILE_PATH" best SE 2> /dev/null || echo "failed")
 
     if [[ "$result1" != "failed" ]] && [[ "$result2" != "failed" ]]; then
         log_test "PASS" "$CURRENT_TEST: accepts country parameter"
