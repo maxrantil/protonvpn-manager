@@ -39,8 +39,18 @@ export REAL_USER REAL_GROUP
 # Configuration
 STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/vpn"
 STATE_FILE="$STATE_DIR/kill_switch.state"
-# shellcheck disable=SC2034  # CONFIG_DIR reserved for future config-based kill switch default
 CONFIG_DIR="${VPN_CONFIG_DIR:-$HOME/.config/vpn}"
+# OpenVPN logs into the connector's root-owned session directory
+SESSION_DIR="${VPN_SESSION_DIR:-/run/protonvpn-manager-session}"
+
+# Read KEY=value from ~/.config/vpn/config (quotes stripped)
+config_value() {
+    local key="$1" default="${2:-}" value=""
+    if [[ -f "$CONFIG_DIR/config" && ! -L "$CONFIG_DIR/config" ]]; then
+        value=$(grep -E "^${key}=" "$CONFIG_DIR/config" 2> /dev/null | tail -1 | cut -d= -f2- | tr -d "\"'")
+    fi
+    echo "${value:-$default}"
+}
 
 # Chain names for iptables rules
 CHAIN_NAME="VPN_KILL_SWITCH"
@@ -131,7 +141,7 @@ get_vpn_server_ip() {
     local vpn_ip=""
 
     # Method 0: OpenVPN's own log of the current session (most reliable)
-    local ovpn_log="$STATE_DIR/openvpn.log"
+    local ovpn_log="$SESSION_DIR/openvpn.log"
     if [[ -f "$ovpn_log" && ! -L "$ovpn_log" ]]; then
         vpn_ip=$(grep -oE '(link remote|Peer Connection Initiated with|connection established with): \[AF_INET\][0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' "$ovpn_log" 2> /dev/null |
             tail -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' || true)
@@ -224,9 +234,14 @@ enable_kill_switch() {
         echo ""
     fi
 
+    # DNS to the local gateway bypasses the tunnel (a DNS leak), so it is only
+    # allowed on explicit opt-in. The connector's DNS helper points DNS at the
+    # VPN's servers, which go through the tunnel like all other traffic.
     local default_gw=""
-    default_gw=$(get_default_gateway)
-    [[ "$default_gw" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || default_gw=""
+    if [[ "$(config_value KILL_SWITCH_ALLOW_LAN_DNS false)" == "true" ]]; then
+        default_gw=$(get_default_gateway)
+        [[ "$default_gw" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || default_gw=""
+    fi
     local have_tailscale=""
     ip link show tailscale0 &> /dev/null && have_tailscale=1
 
@@ -250,8 +265,7 @@ enable_kill_switch() {
     v4+="
 -A $CHAIN_NAME -d 192.168.122.0/24 -j ACCEPT
 -A $CHAIN_NAME -p udp --sport 68 --dport 67 -j ACCEPT"
-    # DNS to the local gateway (systems that resolve via the router).
-    # NOTE: these queries bypass the tunnel (kept for compatibility).
+    # Opt-in only (KILL_SWITCH_ALLOW_LAN_DNS=true): DNS to the local gateway
     [[ -n "$default_gw" ]] && v4+="
 -A $CHAIN_NAME -d $default_gw -p udp --dport 53 -j ACCEPT
 -A $CHAIN_NAME -d $default_gw -p tcp --dport 53 -j ACCEPT"
@@ -284,7 +298,7 @@ COMMIT"
     echo "  Setting up IPv4 rules..."
     [[ -n "$vpn_server_ip" ]] && echo "  Allowing VPN server: $vpn_server_ip"
     [[ -n "$have_tailscale" ]] && echo "  Allowing Tailscale traffic: tailscale0"
-    [[ -n "$default_gw" ]] && echo "  Allowing DNS to gateway: $default_gw"
+    [[ -n "$default_gw" ]] && echo "  Allowing DNS to gateway (KILL_SWITCH_ALLOW_LAN_DNS): $default_gw"
     if ! run_iptables_restore <<< "$v4"; then
         echo -e "${RED}Error: Failed to apply IPv4 kill switch rules${NC}" >&2
         return 1

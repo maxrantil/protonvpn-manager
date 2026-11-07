@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- DNS leak: OpenVPN now applies the VPN's pushed DNS servers via a
+  root-owned `resolvconf` helper and restores the previous DNS on
+  disconnect; the kill switch no longer lets DNS through to the router
+  (opt back in with `KILL_SWITCH_ALLOW_LAN_DNS=true`)
+- Profile/credential/log race: the root daemon now only reads validated,
+  root-owned copies and logs into a root-owned session directory, instead
+  of user-writable files that could be swapped after validation
+
 ### Added
 - Latency-based server selection: `vpn connect`, `vpn best` and `vpn fast`
   now pick the server with the lowest measured ping (parallel, cached; TCP
