@@ -1,14 +1,22 @@
 #!/bin/bash
 # ABOUTME: Unit tests for exponential backoff connection optimization (Issue #62)
+# ABOUTME: Checks backoff shape/budget and that the monitor loop breaks early on success
 
-set -euo pipefail
+set -uo pipefail
 
 # Test configuration
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VPN_DIR="$(cd "$SCRIPT_DIR/../../src" && pwd)"
+CONNECTOR="$VPN_DIR/vpn-connector"
+MONITOR_FN="monitor_connection_establishment_with_backoff"
 TEST_COUNT=0
 PASS_COUNT=0
 FAIL_COUNT=0
+
+# Upper bound for the whole wait per attempt (seconds). The intervals were
+# deliberately extended for post-wake network instability; keep a ceiling so
+# a single attempt cannot silently grow unbounded.
+MAX_TOTAL_WAIT=40
 
 # Color codes
 RED='\033[0;31m'
@@ -16,164 +24,178 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-# Test helpers
+# Test helpers (plain arithmetic: ((x++)) returns 1 when x is 0)
 assert_equals() {
 	local expected="$1"
 	local actual="$2"
 	local test_name="$3"
 
-	((TEST_COUNT++))
+	TEST_COUNT=$((TEST_COUNT + 1))
 	if [[ "$expected" == "$actual" ]]; then
 		echo -e "${GREEN}  ✓ $test_name${NC}"
-		((PASS_COUNT++))
+		PASS_COUNT=$((PASS_COUNT + 1))
 		return 0
-	else
-		echo -e "${RED}  ✗ $test_name${NC}"
-		echo -e "${RED}    Expected: $expected${NC}"
-		echo -e "${RED}    Got: $actual${NC}"
-		((FAIL_COUNT++))
-		return 1
 	fi
+	echo -e "${RED}  ✗ $test_name${NC}"
+	echo -e "${RED}    Expected: $expected${NC}"
+	echo -e "${RED}    Got: $actual${NC}"
+	FAIL_COUNT=$((FAIL_COUNT + 1))
+	return 1
 }
 
 assert_true() {
 	local condition="$1"
 	local test_name="$2"
+	local detail="${3:-}"
 
-	((TEST_COUNT++))
+	TEST_COUNT=$((TEST_COUNT + 1))
 	if [[ "$condition" == "true" ]]; then
 		echo -e "${GREEN}  ✓ $test_name${NC}"
-		((PASS_COUNT++))
+		PASS_COUNT=$((PASS_COUNT + 1))
 		return 0
-	else
-		echo -e "${RED}  ✗ $test_name${NC}"
-		((FAIL_COUNT++))
-		return 1
 	fi
+	echo -e "${RED}  ✗ $test_name${NC}"
+	[[ -n "$detail" ]] && echo -e "${RED}    $detail${NC}"
+	FAIL_COUNT=$((FAIL_COUNT + 1))
+	return 1
+}
+
+# Print the body of a top-level function from the connector
+function_body() {
+	sed -n "/^$1() {/,/^}/p" "$CONNECTOR"
+}
+
+# Extract the BACKOFF_INTERVALS values from the monitor function
+backoff_intervals() {
+	function_body "$MONITOR_FN" | sed -n 's/.*BACKOFF_INTERVALS=(\([0-9 ]*\)).*/\1/p' | head -1
 }
 
 echo "========================================"
 echo "Exponential Backoff Optimization Tests"
-echo "Issue #62: 40% faster connection establishment"
+echo "Issue #62: faster connection establishment"
 echo "========================================"
 
-# Test 1: Verify exponential backoff intervals are defined
+# Test 1: intervals are defined, start fast and never decrease
 echo -e "\n${YELLOW}Testing Exponential Backoff Configuration${NC}"
 
-test_backoff_intervals_defined() {
-	# Source the vpn-connector to check if backoff array exists
-	# This test will fail initially (TDD RED phase)
-	if grep -q "BACKOFF_INTERVALS" "$VPN_DIR/vpn-connector" 2>/dev/null; then
-		local intervals
-		intervals=$(grep "BACKOFF_INTERVALS=" "$VPN_DIR/vpn-connector" | head -1)
-
-		if [[ "$intervals" == *"1 1 2 2 3 4 5 6"* ]] || [[ "$intervals" == *"1,1,2,2,3,4,5,6"* ]]; then
-			assert_true "true" "Backoff intervals array defined with correct values [1,1,2,2,3,4,5,6]"
-		else
-			assert_true "false" "Backoff intervals array defined with correct values [1,1,2,2,3,4,5,6]"
-		fi
-	else
-		assert_true "false" "Backoff intervals array defined"
+test_backoff_shape() {
+	local intervals
+	intervals=$(backoff_intervals)
+	if [[ -z "$intervals" ]]; then
+		assert_true "false" "Backoff intervals defined in $MONITOR_FN"
+		return
 	fi
+	assert_true "true" "Backoff intervals defined in $MONITOR_FN ($intervals)"
+
+	local -a values
+	read -ra values <<< "$intervals"
+	local prev=0 ok="true" v
+	for v in "${values[@]}"; do
+		[[ $v -ge $prev ]] || ok="false"
+		prev=$v
+	done
+	assert_true "$ok" "Intervals never decrease (backoff, not fixed polling)" "got: $intervals"
+	assert_true "$([[ ${values[0]} -le 1 ]] && echo true || echo false)" \
+		"First check happens within 1s (fast connects are detected quickly)" "first interval: ${values[0]}"
 }
 
-test_backoff_intervals_defined || true
+test_backoff_shape
 
-# Test 2: Verify total backoff time is reduced
-echo -e "\n${YELLOW}Testing Total Wait Time Reduction${NC}"
+# Test 2: total wait per attempt stays within budget
+echo -e "\n${YELLOW}Testing Total Wait Time Budget${NC}"
 
 test_total_backoff_time() {
-	# Expected: 1+1+2+2+3+4+5+6 = 24 seconds (vs old: 3×4 + 8×4 = 44 seconds)
-	# Reduction: (44-24)/44 = 45% improvement
-
-	# Check if code uses the new backoff timing by looking for the backoff loop
-	if grep -A 20 "Establishing connection" "$VPN_DIR/vpn-connector" 2>/dev/null | grep -q 'for interval in.*BACKOFF_INTERVALS'; then
-		# Using new intervals with exponential backoff
-		assert_true "true" "Connection loop uses exponential backoff instead of fixed sleep 4"
-	else
-		# Still using old approach
-		assert_true "false" "Connection loop uses exponential backoff instead of fixed sleep 4"
-	fi
+	local intervals total=0 v
+	intervals=$(backoff_intervals)
+	for v in $intervals; do
+		total=$((total + v))
+	done
+	assert_true "$([[ $total -gt 0 && $total -le $MAX_TOTAL_WAIT ]] && echo true || echo false)" \
+		"Total wait per attempt is ${total}s (budget: ${MAX_TOTAL_WAIT}s)" "total: ${total}s"
 }
 
-test_total_backoff_time || true
+test_total_backoff_time
 
-# Test 3: Verify backoff is used in connection establishment
+# Test 3: the monitor loop sleeps through the intervals and is used by connect
 echo -e "\n${YELLOW}Testing Backoff Integration in Connection Loop${NC}"
 
 test_backoff_in_connection_loop() {
-	# Check if the connection loop uses the backoff intervals
-	local uses_backoff="false"
-
-	if grep "connect_openvpn_profile" "$VPN_DIR/vpn-connector" -A 80 2>/dev/null | grep -q "BACKOFF_INTERVALS"; then
-		uses_backoff="true"
-	fi
-
-	assert_equals "true" "$uses_backoff" "Connection establishment uses exponential backoff"
+	local body
+	body=$(function_body "$MONITOR_FN")
+	assert_true "$(grep -q 'for interval in "\${BACKOFF_INTERVALS\[@\]}"' <<< "$body" && echo true || echo false)" \
+		"Monitor loop iterates over BACKOFF_INTERVALS"
+	assert_true "$(grep -q 'sleep "\$interval"' <<< "$body" && echo true || echo false)" \
+		"Monitor loop sleeps for the current interval"
+	assert_true "$(function_body connect_openvpn_profile | grep -q "$MONITOR_FN" && echo true || echo false)" \
+		"connect_openvpn_profile uses $MONITOR_FN"
 }
 
-test_backoff_in_connection_loop || true
+test_backoff_in_connection_loop
 
-# Test 4: Verify early break logic is preserved
-echo -e "\n${YELLOW}Testing Early Break Optimization${NC}"
+# Test 4: success/progress markers from the OpenVPN log are still checked
+echo -e "\n${YELLOW}Testing Early Break Markers${NC}"
 
-test_early_break_preserved() {
-	# Ensure the optimization doesn't remove early-break logic
-	local has_peer_connection_check="false"
-	local has_connected_check="false"
-
-	if grep -q "Peer Connection Initiated" "$VPN_DIR/vpn-connector" 2>/dev/null; then
-		has_peer_connection_check="true"
-	fi
-
-	if grep -q "CONNECTED" "$VPN_DIR/vpn-connector" 2>/dev/null; then
-		has_connected_check="true"
-	fi
-
-	assert_equals "true" "$has_peer_connection_check" "Peer connection check preserved (early break)" || true
-	assert_equals "true" "$has_connected_check" "Connected status check preserved (early break)" || true
+test_early_break_markers() {
+	local body
+	body=$(function_body check_connection_progress)
+	assert_true "$(grep -q 'Initialization Sequence Completed' <<< "$body" && echo true || echo false)" \
+		"Connected marker (Initialization Sequence Completed) checked"
+	assert_true "$(grep -q 'Peer Connection Initiated' <<< "$body" && echo true || echo false)" \
+		"Peer connection marker checked"
 }
 
-test_early_break_preserved
+test_early_break_markers
 
-# Test 5: Verify no fixed sleep 4 in connection loops
+# Test 5: behavioural - loop returns as soon as the connection is established
+echo -e "\n${YELLOW}Testing Early Break Behaviour${NC}"
+
+test_early_break_behaviour() {
+	local work result
+	work=$(mktemp -d)
+	mkdir -p "$work/run" && chmod 700 "$work/run"
+	result=$(
+		export HOME="$work" XDG_RUNTIME_DIR="$work/run" XDG_STATE_HOME="$work/state" VPN_LOG_DIR="$work/state/vpn"
+		# shellcheck disable=SC1090
+		source "$CONNECTOR" > /dev/null 2>&1
+		set +e
+		sleeps=0
+		sleep() { sleeps=$((sleeps + 1)); }
+		check_authentication_failure() { return 0; }
+		announce_connection_status() { :; }
+		detect_accessibility_mode() { return 0; }
+		# Report "connected" on the 3rd check
+		check_connection_progress() {
+			if [[ $sleeps -ge 3 ]]; then echo connected; else echo in_progress; fi
+		}
+		"$MONITOR_FN" "test-profile" > /dev/null 2>&1
+		echo "rc=$? sleeps=$sleeps"
+	)
+	rm -rf "$work"
+	assert_equals "rc=0 sleeps=3" "$result" "Returns success right after the connection is up (no full wait)"
+}
+
+test_early_break_behaviour
+
+# Test 6: no fixed sleep in the monitor loop
 echo -e "\n${YELLOW}Testing Removal of Fixed Sleep Intervals${NC}"
 
-test_no_fixed_sleep_4() {
-	# Count occurrences of 'sleep 4' in connection establishment section
-	local conn_section_start
-	local conn_section_end
-
-	conn_section_start=$(grep -n "Establishing connection" "$VPN_DIR/vpn-connector" 2>/dev/null | head -1 | cut -d: -f1)
-	conn_section_end=$(grep -n "connection_established=1" "$VPN_DIR/vpn-connector" 2>/dev/null | head -1 | cut -d: -f1)
-
-	if [[ -n "$conn_section_start" ]] && [[ -n "$conn_section_end" ]]; then
-		local sleep_4_count
-		sleep_4_count=$(sed -n "${conn_section_start},${conn_section_end}p" "$VPN_DIR/vpn-connector" | grep -c "sleep 4" 2>/dev/null || true)
-		[[ -z "$sleep_4_count" ]] && sleep_4_count=0
-
-		# Should be 0 after optimization (using sleep "$interval" instead)
-		assert_equals "0" "$sleep_4_count" "No fixed 'sleep 4' in connection establishment section"
-	else
-		assert_true "false" "Could not locate connection establishment section"
-	fi
+test_no_fixed_sleep() {
+	local fixed
+	fixed=$(function_body "$MONITOR_FN" | grep -cE '^[[:space:]]*sleep [0-9]+' || true)
+	assert_equals "0" "${fixed:-0}" "No fixed 'sleep N' in $MONITOR_FN"
 }
 
-test_no_fixed_sleep_4 || true
+test_no_fixed_sleep
 
-# Test 6: Verify documentation/comments explain the optimization
+# Test 7: documentation
 echo -e "\n${YELLOW}Testing Documentation${NC}"
 
 test_optimization_documented() {
-	# Check if there's a comment explaining the exponential backoff
-	if grep -i "exponential.*backoff\|backoff.*exponential" "$VPN_DIR/vpn-connector" >/dev/null 2>&1; then
-		assert_true "true" "Exponential backoff optimization is documented in code"
-	else
-		assert_true "false" "Exponential backoff optimization is documented in code"
-	fi
+	assert_true "$(grep -qi 'exponential.*backoff\|backoff.*exponential' "$CONNECTOR" && echo true || echo false)" \
+		"Exponential backoff optimization is documented in code"
 }
 
-test_optimization_documented || true
+test_optimization_documented
 
 # Test Summary
 echo ""
