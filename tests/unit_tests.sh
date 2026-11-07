@@ -228,6 +228,38 @@ run_unit_tests() {
         return 1
     fi
 
+    # Focused suites that used to exist without being run by anything
+    local suite suite_output
+    local -a focused_suites=(
+        unit/test_auto_reconnect.sh
+        unit/test_connection_feedback.sh
+        unit/test_kill_switch.sh
+        unit/test_process_detection.sh
+        unit/test_profile_resolution.sh
+        unit/test_temp_file_manager.sh
+        integration/test_best_fast_connection.sh
+        security/test_credentials_security.sh
+        security/test_openvpn_path_hardcoding.sh
+        test_log_security.sh
+        test_vpn_colors.sh
+        phase4_integration_tests.sh
+        phase4_performance_tests.sh
+        phase5_custom_profile_tests.sh
+        phase5_fast_switching_tests.sh
+        phase5_secure_core_tests.sh
+        phase5_wireguard_tests.sh
+    )
+    for suite in "${focused_suites[@]}"; do
+        log_test "INFO" "Running $suite"
+        if suite_output=$(bash "$TEST_DIR/$suite" 2>&1 < /dev/null); then
+            log_test "PASS" "$suite: All tests passed"
+        else
+            log_test "FAIL" "$suite: Some tests failed"
+            echo "$suite_output" | tail -20
+            return 1
+        fi
+    done
+
     # Run error handler unit tests (Issue #72)
     log_test "INFO" "Running VPN error handler unit tests"
     if bash "$TEST_DIR/unit/test_error_handler.sh"; then

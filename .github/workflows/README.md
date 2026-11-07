@@ -190,7 +190,6 @@ cd tests
 3. `config/.pre-commit-config.yaml`
 4. `tests/test_github_workflows.sh` (4 locations)
 
-**Better:** Use composite action (see `.github/actions/validate-conventional-commit/`)
 
 ### Performance Considerations:
 - Most workflows complete in < 10 seconds
