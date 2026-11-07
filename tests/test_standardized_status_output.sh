@@ -83,7 +83,6 @@ test_enterprise_status_functions_removed() {
     local found_enterprise=0
     local enterprise_functions=(
         "show_status_wcag"
-        "show_status_accessible"
         "show_status_enhanced"
         "show_status_json"
         "show_status_csv"
@@ -110,7 +109,6 @@ test_enterprise_status_cases_removed() {
     local found_cases=0
     local case_patterns=(
         "status-wcag"
-        "status-accessible"
         "status-enhanced"
         "status-format"
         "status-dashboard"
@@ -139,15 +137,15 @@ test_show_status_is_only_status_function() {
             "Could not find show_status() definition"
     fi
 
-    # Count total status-related functions (should be exactly 1)
-    local status_func_count
-    status_func_count=$(grep -c "^show_status.*()" "$PROJECT_ROOT/src/vpn-manager" || echo "0")
+    # Only show_status() plus the screen-reader variant (WCAG, issue #147)
+    local extra_funcs
+    extra_funcs=$(grep -oE "^show_status_[a-z_]+\(\)" "$PROJECT_ROOT/src/vpn-manager" | grep -v "^show_status_accessible()" || true)
 
-    if [[ $status_func_count -eq 1 ]]; then
-        pass "show_status() is the only status function (unified format)"
+    if [[ -z $extra_funcs ]]; then
+        pass "show_status() plus the accessible variant are the only status functions"
     else
-        fail "Should have exactly 1 status function (show_status)" \
-            "Found $status_func_count status functions"
+        fail "Unexpected status functions besides show_status/show_status_accessible" \
+            "Found: $(echo "$extra_funcs" | tr '\n' ' ')"
     fi
 }
 
@@ -164,8 +162,9 @@ test_vpn_status_no_format_flags() {
             "Found case statement on \$2 in status handler"
     fi
 
-    if echo "$status_case" | grep -q '\-\-accessible\|\-\-enhanced\|\-\-dashboard\|\-\-format'; then
-        fail "vpn status should not handle --accessible, --enhanced, --dashboard, or --format flags" \
+    # --accessible is kept on purpose (screen readers, issue #147)
+    if echo "$status_case" | grep -q '\-\-enhanced\|\-\-dashboard\|\-\-format'; then
+        fail "vpn status should not handle --enhanced, --dashboard, or --format flags" \
             "Found enterprise flags in status case"
     fi
 

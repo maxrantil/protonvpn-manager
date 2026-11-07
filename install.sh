@@ -20,6 +20,11 @@ COMPONENTS=(
 	"temp-file-manager"
 )
 
+# Root-owned helper OpenVPN runs as root to apply the VPN's DNS (resolvconf).
+# It must stay root-owned: the connector refuses to use it otherwise.
+HELPER_DIR="/usr/local/lib/protonvpn-manager"
+DNS_HELPER="vpn-dns-update"
+
 # Root-owned system config: tells root-run hooks which user's VPN to manage
 # (they refuse to guess when several users are logged in)
 SYSTEM_CONF="/etc/protonvpn-manager.conf"
@@ -44,7 +49,7 @@ fi
 # Check for required dependencies
 check_dependencies() {
 	local missing=()
-	for cmd in openvpn curl bc ip flock; do
+	for cmd in openvpn curl ip flock; do
 		if ! command -v "$cmd" &>/dev/null; then
 			missing+=("$cmd")
 		fi
@@ -72,6 +77,17 @@ install_components() {
 		sudo install -o root -g root -m 755 "src/$component" "$INSTALL_DIR/$component"
 		log_info "Installed: $component"
 	done
+}
+
+# Install the DNS helper outside the user's reach
+install_dns_helper() {
+	sudo install -d -o root -g root -m 755 "$HELPER_DIR"
+	sudo install -o root -g root -m 755 "src/$DNS_HELPER" "$HELPER_DIR/$DNS_HELPER"
+	log_info "Installed: $HELPER_DIR/$DNS_HELPER"
+	if ! command -v resolvconf &>/dev/null; then
+		log_warning "resolvconf not found: VPN DNS cannot be applied (DNS may leak)."
+		log_warning "Install it with: sudo pacman -S openresolv"
+	fi
 }
 
 # Record the managing user for root-run hooks (sleep / NetworkManager)
@@ -122,6 +138,7 @@ main() {
 
 	check_dependencies
 	install_components
+	install_dns_helper
 	setup_system_config
 	setup_config
 
