@@ -827,6 +827,13 @@ Found a bug or have a suggestion?
 - Create a new issue with clear description and reproduction steps
 - For security vulnerabilities, see [SECURITY.md](SECURITY.md)
 
+## Validating on your machine
+
+After installing or updating, work through
+[docs/MACHINE-VALIDATION.md](docs/MACHINE-VALIDATION.md). It's a step-by-step
+checklist for connect speed, the fastest-server choice, DNS, the kill
+switch, failover and cleanup, with what to collect if something fails.
+
 ## Security
 
 Security is a top priority. Please review [SECURITY.md](SECURITY.md) for:
