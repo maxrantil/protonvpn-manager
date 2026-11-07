@@ -220,6 +220,15 @@ run_unit_tests() {
         return 1
     fi
 
+    # Run latency-based server selection tests
+    log_test "INFO" "Running latency-based server selection tests"
+    if bash "$TEST_DIR/unit/test_latency_selection.sh"; then
+        log_test "PASS" "Latency selection tests: All tests passed"
+    else
+        log_test "FAIL" "Latency selection tests: Some tests failed"
+        return 1
+    fi
+
     # Run error handler unit tests (Issue #72)
     log_test "INFO" "Running VPN error handler unit tests"
     if bash "$TEST_DIR/unit/test_error_handler.sh"; then

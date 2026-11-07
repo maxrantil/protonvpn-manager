@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Latency-based server selection: `vpn connect`, `vpn best` and `vpn fast`
+  now pick the server with the lowest measured ping (parallel, cached; TCP
+  handshake fallback when ICMP is filtered). `SERVER_SELECTION=random` in
+  `~/.config/vpn/config` restores the old random choice for `vpn connect`.
+
+### Fixed
+- `best-vpn-profile` was a placeholder: it slept 2s and returned the first
+  profile file, ignoring the country; the connector also asked it for an
+  unsupported `fresh` mode
+- `vpn best <country>` ignored the country argument
+
 ### Security
 - Connection success can no longer be spoofed via a shared `/tmp/openvpn.log`
 - Profiles with directives that run commands or write files as root are

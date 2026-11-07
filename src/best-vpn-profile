@@ -1,98 +1,287 @@
 #!/bin/bash
-# ABOUTME: Server performance testing script - finds best VPN server
-# ABOUTME: Tests connection speed and selects optimal server
+# ABOUTME: Server latency evaluator - ranks VPN profiles by measured round-trip time
+# ABOUTME: Pings each profile's server in parallel (TCP connect fallback) and caches results
 
 set -euo pipefail
 
 # Configuration paths
 CONFIG_DIR="${VPN_CONFIG_DIR:-$HOME/.config/vpn}"
+LOCATIONS_DIR="${LOCATIONS_DIR:-$CONFIG_DIR/locations}"
 LOG_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/vpn"
-(umask 077 && mkdir -p "$LOG_DIR") 2>/dev/null
+CACHE_FILE="$LOG_DIR/vpn_performance.cache"
+LOCK_FILE="$CACHE_FILE.lock"
 
-readonly VPN_LOCATIONS="$CONFIG_DIR/locations"
-readonly CACHE_FILE="$LOG_DIR/vpn_performance.cache"
+# This script re-invokes itself for parallel measurement workers
+SELF="$(realpath "${BASH_SOURCE[0]}")"
 
-# Ensure cache file has secure permissions
-if [[ -L "$CACHE_FILE" ]]; then
-	rm -f "$CACHE_FILE"
-fi
-if [[ -f "$CACHE_FILE" ]]; then
-	chmod 600 "$CACHE_FILE"
-fi
+# Tunables (environment overrides)
+JOBS="${VPN_LATENCY_JOBS:-16}"              # parallel measurements
+PING_COUNT="${VPN_LATENCY_PINGS:-3}"        # echo requests per server
+TCP_TIMEOUT="${VPN_LATENCY_TCP_TIMEOUT:-2}" # seconds for the TCP fallback
+FAST_MAX_AGE=7200                           # `best` reuses results newer than this
 
-# Note: This script is standalone and doesn't source other VPN components
-# VPN_DIR detection removed as it's not used
+# Validate tunables
+[[ $JOBS =~ ^[0-9]+$ && $JOBS -ge 1 ]] || JOBS=16
+[[ $PING_COUNT =~ ^[0-9]+$ && $PING_COUNT -ge 1 ]] || PING_COUNT=3
+# `timeout 0` means "no timeout": require at least 1 second
+[[ $TCP_TIMEOUT =~ ^[0-9]+$ && $TCP_TIMEOUT -ge 1 ]] || TCP_TIMEOUT=2
 
-# Main command handler
-case "${1:-}" in
-"help" | "-h" | "--help")
-	cat <<'EOF'
-VPN Performance Testing Engine
+# Cache format (one line per profile, tab separated):
+#   <epoch> <rtt_ms> <method> <profile_path>
+# method is icmp or tcp; rtt_ms and method are "-" when the server did not answer.
+# Ranking prefers ICMP: a TCP handshake can be answered by a captive portal or
+# transparent proxy instead of the server, so TCP timings are only used when no
+# server answered ping at all (e.g. ICMP filtered on this network).
 
-Usage: ./best-vpn-profile <command> [country]
+usage() {
+	cat << 'EOF'
+VPN Server Latency Evaluator
+
+Usage: best-vpn-profile <command> [options]
 
 Commands:
-  test [country]    - Run performance tests (optionally filter by country)
-  best [country]    - Find best profile (use cache if available)
-  cache            - Show cached performance data
-  help, -h, --help - Show this help message
+  rank [--max-age SECONDS]  Read profile paths on stdin, print "<rtt_ms>\t<path>"
+                            fastest first (unreachable servers are omitted).
+                            Results newer than SECONDS are reused (default 0).
+  best [country]            Print the fastest profile name (reuses results < 2h)
+  fresh [country]           Like best, but always re-measure
+  test [country]            Measure and print a ranked table
+  cache                     Show cached measurements
+  clear                     Remove cached measurements
+  help, -h, --help          Show this help message
+
+Environment:
+  VPN_LATENCY_JOBS          Parallel measurements (default 16)
+  VPN_LATENCY_PINGS         Pings per server (default 3)
+  VPN_LATENCY_TCP_TIMEOUT   TCP fallback timeout in seconds (default 2)
 EOF
-	;;
-"cache")
-	if [[ -f "$CACHE_FILE" ]]; then
-		echo "Performance cache contents:"
-		cat "$CACHE_FILE"
-	else
-		echo "No performance cache found"
-	fi
-	;;
-"best")
-	# Support both OpenVPN (.ovpn) and WireGuard (.conf) protocols
-	if [[ -d "$VPN_LOCATIONS" ]]; then
-		# Look for both .ovpn and .conf files
-		profile=$(find "$VPN_LOCATIONS" \( -name "*.ovpn" -o -name "*.conf" \) | head -n1)
-		if [[ -n "$profile" ]]; then
-			# Test connection speed to make performance tests pass
-			start_time=$(date +%s.%N)
+}
 
-			# Simulate connection testing (minimal implementation for GREEN phase)
-			profile_name=$(basename "$profile" | sed 's/\.\(ovpn\|conf\)$//')
-			echo "Testing connection speed for $profile_name..." >&2
+# --- endpoint parsing -------------------------------------------------------
 
-			# Simulate connection test for TDD GREEN phase (realistic timing)
-			# Sleep to simulate network testing time
-			sleep 2
+# Print "<host> <port> <proto>" for a profile, or nothing if none is found
+profile_endpoint() {
+	local profile="$1" host="" port="" proto=""
+	case "$profile" in
+		*.ovpn)
+			proto=$(awk 'tolower($1) == "proto" {print tolower($2); exit}' "$profile" 2> /dev/null)
+			read -r host port < <(awk 'tolower($1) == "remote" {print $2, $3; exit}' "$profile" 2> /dev/null) || true
+			[[ -n $port ]] || port=1194
+			;;
+		*.conf)
+			local endpoint
+			endpoint=$(sed -n 's/^[[:space:]]*Endpoint[[:space:]]*=[[:space:]]*\([^[:space:]]*\).*/\1/Ip' "$profile" 2> /dev/null | head -1)
+			host="${endpoint%:*}"
+			port="${endpoint##*:}"
+			proto="udp"
+			;;
+	esac
+	proto="${proto%%[0-9]*}" # udp4/tcp6-client -> udp/tcp-client
+	proto="${proto%-client}"
 
-			end_time=$(date +%s.%N)
-			duration=$(echo "$end_time - $start_time" | bc -l 2>/dev/null || echo "15.0")
+	# Security: the host is passed to ping/bash; accept only plain hostnames/IPv4
+	[[ $host =~ ^[A-Za-z0-9]([A-Za-z0-9.-]{0,252})$ ]] || return 0
+	[[ $port =~ ^[0-9]{1,5}$ ]] || port=443
+	echo "$host $port ${proto:-udp}"
+}
 
-			# Ensure duration is reasonable for tests (under 30s requirement)
-			if (($(echo "$duration > 25.0" | bc -l 2>/dev/null || echo 0))); then
-				duration="15.0"
+# --- measurement ------------------------------------------------------------
+
+# Round-trip time in ms via ICMP (average); fails if ping is unavailable/blocked
+measure_ping() {
+	local host="$1" out avg
+	command -v ping > /dev/null 2>&1 || return 1
+	out=$(ping -n -q -c "$PING_COUNT" -i 0.2 -W 1 "$host" 2> /dev/null) || return 1
+	avg=$(sed -n 's|.*= [0-9.]*/\([0-9.]*\)/.*|\1|p' <<< "$out" | head -1)
+	[[ -n $avg ]] || return 1
+	echo "$avg"
+}
+
+# Round-trip time in ms of a TCP handshake (fallback when ICMP is filtered).
+# UDP OpenVPN servers are probed on 443, which ProtonVPN also serves over TCP.
+measure_tcp() {
+	local host="$1" port="$2" start end
+	start=$(date +%s%N)
+	timeout "$TCP_TIMEOUT" bash -c 'exec 3<> "/dev/tcp/$1/$2"' _ "$host" "$port" 2> /dev/null || return 1
+	end=$(date +%s%N)
+	echo $(((end - start) / 1000000))
+}
+
+# Worker: measure one profile and print "<epoch>\t<rtt|->\t<method|->\t<path>"
+measure_profile() {
+	local profile="$1" endpoint host port proto rtt="-" method="-"
+	if [[ -f $profile && ! -L $profile ]]; then
+		endpoint=$(profile_endpoint "$profile")
+		if [[ -n $endpoint ]]; then
+			read -r host port proto <<< "$endpoint"
+			[[ $proto == tcp ]] || port=443
+			if rtt=$(measure_ping "$host"); then
+				method=icmp
+			elif rtt=$(measure_tcp "$host" "$port"); then
+				method=tcp
+			else
+				rtt="-"
 			fi
-
-			# Cache the result (private file)
-			(umask 077 && echo "$profile_name:$duration" >"$CACHE_FILE")
-			echo "Connection test completed in ${duration}s" >&2
-
-			# Return profile name for compatibility
-			echo "$profile_name"
-		else
-			echo "No profiles found"
-			exit 1
 		fi
-	else
-		echo "No VPN locations directory found"
-		exit 1
 	fi
-	;;
-"test")
-	echo "Running performance tests..."
-	# Minimal implementation - just echo for now
-	echo "test-profile:50:10:60"
-	;;
-*)
-	echo "Usage: $0 {test|best|cache|help} [country]"
-	exit 1
-	;;
+	printf '%s\t%s\t%s\t%s\n' "$(date +%s)" "$rtt" "$method" "$profile"
+}
+
+# --- cache ------------------------------------------------------------------
+
+ensure_private_dir() {
+	(umask 077 && mkdir -p "$LOG_DIR") 2> /dev/null || return 1
+	[[ -d $LOG_DIR && ! -L $LOG_DIR ]]
+}
+
+# Print cached lines for the given profiles that are newer than max_age
+cached_results() {
+	local max_age="$1" profiles_file="$2" now
+	now=$(date +%s)
+	[[ $max_age -gt 0 && -f $CACHE_FILE && ! -L $CACHE_FILE ]] || return 0
+	# FILENAME test, not NR == FNR: that is also true for the 2nd file when the 1st is empty
+	awk -F '\t' -v now="$now" -v max="$max_age" -v first="$profiles_file" '
+		FILENAME == first { want[$0] = 1; next }
+		NF == 4 && ($4 in want) && $1 ~ /^[0-9]+$/ && (now - $1) <= max { print }
+	' "$profiles_file" "$CACHE_FILE"
+}
+
+# Merge fresh results into the cache (newest entry per profile wins)
+update_cache() {
+	local fresh="$1" tmp
+	ensure_private_dir || return 0
+	(
+		flock -w 5 9 || exit 0
+		tmp=$(mktemp "$CACHE_FILE.XXXXXX") || exit 0
+		{
+			[[ -f $CACHE_FILE && ! -L $CACHE_FILE ]] && awk -F '\t' 'NF == 4' "$CACHE_FILE"
+			cat "$fresh"
+		} | awk -F '\t' '{ last[$4] = $0 } END { for (p in last) print last[p] }' > "$tmp"
+		chmod 600 "$tmp"
+		mv -f "$tmp" "$CACHE_FILE" || rm -f "$tmp"
+	) 9> "$LOCK_FILE"
+}
+
+# --- ranking ----------------------------------------------------------------
+
+# Read profile paths on stdin; print "<rtt_ms>\t<path>" fastest first
+rank_profiles() {
+	local max_age="${1:-0}" work
+	work=$(mktemp -d) || return 1
+	# shellcheck disable=SC2064  # expand now: work is local
+	trap "rm -rf '$work'" RETURN
+
+	# Unique, existing, regular profile files only
+	while IFS= read -r p; do
+		[[ -n $p && -f $p && ! -L $p ]] || continue
+		[[ $p == *.ovpn || $p == *.conf ]] && printf '%s\n' "$p"
+	done | sort -u > "$work/profiles"
+	[[ -s $work/profiles ]] || return 1
+
+	cached_results "$max_age" "$work/profiles" > "$work/cached"
+	# FILENAME test, not NR == FNR: that is also true for the 2nd file when the 1st is empty
+	awk -F '\t' -v first="$work/cached" 'FILENAME == first { have[$4] = 1; next } !($0 in have)' \
+		"$work/cached" "$work/profiles" > "$work/todo"
+
+	: > "$work/fresh"
+	if [[ -s $work/todo ]]; then
+		# Each worker is this script; profile paths are passed as arguments
+		tr '\n' '\0' < "$work/todo" |
+			xargs -0 -r -P "$JOBS" -n 1 bash "$SELF" __measure > "$work/fresh" 2> /dev/null || true
+		update_cache "$work/fresh"
+	fi
+
+	# Use ICMP results if any server answered ping; TCP only as a last resort
+	local method=icmp
+	cat "$work/cached" "$work/fresh" > "$work/all"
+	if ! awk -F '\t' '$3 == "icmp" { found = 1 } END { exit !found }' "$work/all"; then
+		method=tcp
+		echo "Note: no server answered ping; ranking by TCP handshake time (less reliable)" >&2
+	fi
+	awk -F '\t' -v m="$method" '$3 == m && $2 != "-" { print $2 "\t" $4 }' "$work/all" |
+		sort -t "$(printf '\t')" -k1,1g > "$work/ranked"
+	[[ -s $work/ranked ]] || return 1
+	cat "$work/ranked"
+}
+
+# Profiles in LOCATIONS_DIR for an optional country code (filename prefix)
+list_profiles() {
+	local country="${1:-}"
+	if [[ -n $country && ! $country =~ ^[A-Za-z]{2}$ ]]; then
+		echo "Invalid country code: $country" >&2
+		return 1
+	fi
+	country="${country,,}"
+	[[ -d $LOCATIONS_DIR ]] || {
+		echo "No VPN locations directory found" >&2
+		return 1
+	}
+	find "$LOCATIONS_DIR" -maxdepth 3 -type f \( -name "*.ovpn" -o -name "*.conf" \) 2> /dev/null |
+		if [[ -n $country ]]; then
+			grep -iE "/${country}([-_.#]|[0-9])[^/]*$" || true
+		else
+			cat
+		fi
+}
+
+best_profile_name() {
+	local max_age="$1" country="${2:-}" best
+	best=$(list_profiles "$country" | rank_profiles "$max_age" | head -1 | cut -f2) || true
+	if [[ -z $best ]]; then
+		echo "No reachable VPN server found" >&2
+		return 1
+	fi
+	basename "$best" | sed 's/\.\(ovpn\|conf\)$//'
+}
+
+case "${1:-}" in
+	"help" | "-h" | "--help")
+		usage
+		;;
+	"__measure")
+		measure_profile "${2:-}"
+		;;
+	"rank")
+		max_age=0
+		if [[ ${2:-} == "--max-age" ]]; then
+			max_age="${3:-0}"
+			[[ $max_age =~ ^[0-9]+$ ]] || {
+				echo "Invalid --max-age: $max_age" >&2
+				exit 1
+			}
+		fi
+		rank_profiles "$max_age"
+		;;
+	"best")
+		best_profile_name "$FAST_MAX_AGE" "${2:-}"
+		;;
+	"fresh")
+		best_profile_name 0 "${2:-}"
+		;;
+	"test")
+		results=$(list_profiles "${2:-}" | rank_profiles 0) || {
+			echo "No reachable VPN server found" >&2
+			exit 1
+		}
+		printf '%-10s %s\n' "RTT (ms)" "Profile"
+		while IFS=$'\t' read -r rtt path; do
+			printf '%-10s %s\n' "$rtt" "$(basename "$path")"
+		done <<< "$results"
+		;;
+	"cache")
+		if [[ -s $CACHE_FILE ]]; then
+			echo "Performance cache contents (epoch, rtt_ms, method, profile):"
+			cat "$CACHE_FILE"
+		else
+			echo "No performance cache found"
+		fi
+		;;
+	"clear")
+		rm -f "$CACHE_FILE"
+		echo "Performance cache cleared"
+		;;
+	*)
+		usage >&2
+		exit 1
+		;;
 esac
