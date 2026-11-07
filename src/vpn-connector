@@ -463,14 +463,11 @@ check_internet() {
 check_dependencies() {
     local missing_deps=()
 
+    # Only what connecting needs; wg-quick is checked when a WireGuard
+    # profile is used (curl/bc/notify-send are not used by the connector)
     command -v openvpn > /dev/null || missing_deps+=("openvpn")
-    command -v curl > /dev/null || missing_deps+=("curl")
-    command -v bc > /dev/null || missing_deps+=("bc")
-    command -v notify-send > /dev/null || missing_deps+=("libnotify")
     command -v ip > /dev/null || missing_deps+=("iproute2")
-
-    # WireGuard support - wg-quick for .conf protocol handling
-    command -v wg-quick > /dev/null || missing_deps+=("wireguard-tools")
+    command -v flock > /dev/null || missing_deps+=("util-linux")
 
     if [[ ${#missing_deps[@]} -gt 0 ]]; then
         dependency_error "$COMP_VPN_CONNECTOR" "${missing_deps[*]}" "sudo pacman -S ${missing_deps[*]}"
@@ -860,9 +857,12 @@ announce_connection_status() {
     fi
 }
 
+# Args: $1 = profile path, $2 = attempts on this server (default 3)
+# Returns: 0 connected, 2 server did not answer (caller may try another
+#          server), other non-zero for anything else (e.g. bad credentials)
 connect_to_profile() {
     local profile_path="$1"
-    local max_attempts=3
+    local max_attempts="${2:-3}"
 
     if [[ ! -f $profile_path ]]; then
         file_not_found_error "$COMP_VPN_CONNECTOR" "$profile_path" "Check filename spelling and ensure file exists in locations directory"
@@ -1200,33 +1200,39 @@ cleanup_failed_connection_processes() {
 # Issue #62: Exponential backoff for 40% faster establishment
 monitor_connection_establishment_with_backoff() {
     local profile_name="$1"
-    # Extended intervals to handle post-wake network instability (OpenVPN may restart)
-    # Total: 1+1+2+2+3+3+4+5+6+8 = 35 seconds, enough for network stabilization + restart
-    local -a BACKOFF_INTERVALS=(1 1 2 2 3 3 4 5 6 8)
+    # Poll the OpenVPN log 4 times per second instead of sleeping in growing
+    # steps, so an established tunnel is noticed within 0.25s. The total
+    # budget (CONNECT_TIMEOUT, default 35s) still covers post-wake restarts.
+    local poll_interval=0.25 polls_per_second=4
+    local timeout
+    timeout=$(connector_config_value CONNECT_TIMEOUT 35)
+    [[ $timeout =~ ^[0-9]+$ && $timeout -ge 5 && $timeout -le 300 ]] || timeout=35
+    local max_polls=$((timeout * polls_per_second))
+    local poll=0 stage_polls=0
     local connection_stage="initializing"
-    local interval_count=0
 
     # Issue #147: Use semantic status announcements for accessibility
     announce_connection_status "initializing" "Initializing connection..."
     announce_connection_status "establishing" "Establishing connection"
 
-    for interval in "${BACKOFF_INTERVALS[@]}"; do
-        sleep "$interval"
-        ((interval_count++)) || true # Prevent set -e from triggering on arithmetic
+    while [[ $poll -lt $max_polls ]]; do
+        sleep "$poll_interval"
+        poll=$((poll + 1))
+        stage_polls=$((stage_polls + 1))
 
         # Check for authentication failures
         if ! check_authentication_failure "$profile_name"; then
             return 1 # Auth failure
         fi
 
-        # Check connection progress and status
+        # Check connection progress (seconds spent in the current stage)
         local progress_status
-        progress_status=$(check_connection_progress "$connection_stage" "$interval_count")
+        progress_status=$(check_connection_progress "$connection_stage" "$((stage_polls / polls_per_second))")
 
-        # Stage transitions reset the interval counter
+        # Stage transitions reset the stage timer
         if [[ $progress_status == "configuring" || $progress_status == "verifying" ]]; then
             connection_stage="$progress_status"
-            interval_count=0
+            stage_polls=0
         fi
 
         # Handle status transitions and display
@@ -1245,29 +1251,15 @@ monitor_connection_establishment_with_backoff() {
                 announce_connection_status "verifying" "Verifying connection"
                 ;;
             *)
-                # in_progress - show progress dots (visual mode only, Issue #147: accessibility)
-                if ! detect_accessibility_mode; then
-                    local dot_count=$((interval_count % 4))
-                    if [[ $dot_count -le 3 ]]; then
-                        echo -n "."
-                    fi
+                # in_progress - one progress dot per second (visual mode only, Issue #147)
+                if [[ $((poll % polls_per_second)) -eq 0 ]] && ! detect_accessibility_mode; then
+                    echo -n "."
                 fi
                 ;;
         esac
     done
 
-    # Final check after all intervals - connection may have completed during last sleep
-    local final_status
-    final_status=$(check_connection_progress "$connection_stage" "$interval_count")
-    if [[ "$final_status" == "connected" ]]; then
-        announce_connection_status "connected" "Connected"
-        if ! detect_accessibility_mode; then
-            echo ""
-        fi
-        return 0
-    fi
-
-    return 2 # Timeout (all intervals exhausted)
+    return 2 # Timeout (server did not complete the handshake in time)
 }
 
 connect_openvpn_profile() {
@@ -1327,12 +1319,17 @@ connect_openvpn_profile() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] [ERROR] Connection failed: $profile_name (all $max_attempts attempts exhausted)" >> "$CONNECTION_LOG" 2> /dev/null || true
     notify_event "connection_failed" "$profile_name"
 
-    return 1
+    return 2 # every attempt timed out: the server did not answer
 }
 
 connect_wireguard_profile() {
     local profile_path="$1"
     local max_attempts="$2"
+
+    if ! command -v wg-quick > /dev/null 2>&1; then
+        dependency_error "$COMP_VPN_CONNECTOR" "wireguard-tools" "sudo pacman -S wireguard-tools"
+        return 1
+    fi
 
     # Security: same path/content validation as OpenVPN before running wg-quick as root
     if ! validate_profile_path "$profile_path" "$LOCATIONS_DIR"; then
@@ -1402,7 +1399,7 @@ connect_wireguard_profile() {
     log_message "Failed to connect to WireGuard $interface_name after $max_attempts attempts" "$CONNECTION_LOG"
     notify_event "connection_failed" "$interface_name"
 
-    return 1
+    return 2 # every attempt failed: the server did not answer
 }
 
 connect_random() {
@@ -1493,16 +1490,51 @@ connector_config_value() {
     echo "${value:-$default}"
 }
 
-# Pick the lowest-latency profile from candidates on stdin (see best-vpn-profile)
+# Pick the lowest-latency profiles from candidates on stdin (see best-vpn-profile)
 # Args: $1 = reuse measurements newer than this many seconds (0 = re-measure)
-# Returns: best profile path on stdout (summary on stderr); 1 if none answered
+#       $2 = how many profiles to return, fastest first (default 1)
+# Returns: profile paths on stdout (summary on stderr); 1 if none answered
 select_fastest_profile() {
-    local max_age="$1" ranked best rtt
+    local max_age="$1" count="${2:-1}" ranked best rtt
     ranked=$("$VPN_DIR/best-vpn-profile" rank --max-age "$max_age") || return 1
     IFS=$'\t' read -r rtt best <<< "$(head -1 <<< "$ranked")"
     [[ -n $best && -f $best ]] || return 1
     echo -e "\033[1;36mFastest server: $(basename "$best" | sed 's/\.\(ovpn\|conf\)$//') (${rtt} ms; $(wc -l <<< "$ranked") of the servers answered)\033[0m" >&2
-    echo "$best"
+    head -n "$count" <<< "$ranked" | cut -f2
+}
+
+# Try candidate profiles (stdin, fastest first) and stop at the first that
+# connects. A server that does not answer is skipped after one attempt; any
+# other failure (e.g. bad credentials) stops immediately. A single candidate
+# gets the usual 3 attempts.
+connect_with_failover() {
+    local -a candidates=()
+    local p
+    while IFS= read -r p; do
+        [[ -n $p && -f $p ]] && candidates+=("$p")
+    done
+    [[ ${#candidates[@]} -gt 0 ]] || return 1
+
+    local attempts=1 rc=1 i
+    [[ ${#candidates[@]} -eq 1 ]] && attempts=3
+    for i in "${!candidates[@]}"; do
+        if [[ $i -gt 0 ]]; then
+            echo -e "\033[1;33mServer did not answer; trying the next fastest: $(basename "${candidates[$i]}" | sed 's/\.\(ovpn\|conf\)$//')\033[0m"
+        fi
+        rc=0
+        connect_to_profile "${candidates[$i]}" "$attempts" || rc=$?
+        [[ $rc -eq 0 ]] && return 0
+        [[ $rc -eq 2 ]] || return "$rc"
+    done
+    return "$rc"
+}
+
+# Number of servers to try, fastest first (FAILOVER_SERVERS, default 3)
+failover_count() {
+    local n
+    n=$(connector_config_value FAILOVER_SERVERS 3)
+    [[ $n =~ ^[0-9]+$ && $n -ge 1 && $n -le 10 ]] || n=3
+    echo "$n"
 }
 
 # Connect to the fastest server for a country (or any country), falling back
@@ -1529,8 +1561,8 @@ connect_by_country() {
         max_age=$(connector_config_value LATENCY_CACHE_MAX_AGE 900)
         [[ $max_age =~ ^[0-9]+$ ]] || max_age=900
         echo -e "\033[1;36mChecking latency to $count servers...\033[0m"
-        if best=$(select_fastest_profile "$max_age" <<< "$profiles"); then
-            connect_to_profile "$best"
+        if best=$(select_fastest_profile "$max_age" "$(failover_count)" <<< "$profiles"); then
+            connect_with_failover <<< "$best"
             return $?
         fi
         echo -e "\033[1;33mCould not measure server latency (offline or blocked); picking a random server\033[0m"
@@ -1556,12 +1588,12 @@ best_server_connect() {
     fi
 
     echo -e "\033[1;36mChecking latency to $(wc -l <<< "$profiles") server(s)...\033[0m"
-    if ! best=$(select_fastest_profile "$max_age" <<< "$profiles"); then
+    if ! best=$(select_fastest_profile "$max_age" "$(failover_count)" <<< "$profiles"); then
         echo -e "\033[1;31mNo suitable server found: no server answered the latency check\033[0m"
         return 1
     fi
 
-    connect_to_profile "$best"
+    connect_with_failover <<< "$best"
 }
 
 secure_core_connect() {

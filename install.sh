@@ -44,7 +44,7 @@ fi
 # Check for required dependencies
 check_dependencies() {
 	local missing=()
-	for cmd in openvpn curl bc ip flock; do
+	for cmd in openvpn curl ip flock; do
 		if ! command -v "$cmd" &>/dev/null; then
 			missing+=("$cmd")
 		fi

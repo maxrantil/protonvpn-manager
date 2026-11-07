@@ -284,7 +284,14 @@ If nothing can be measured (offline, or the kill switch blocking probes),
 ```bash
 SERVER_SELECTION=random      # restore random selection for `vpn connect`
 LATENCY_CACHE_MAX_AGE=900    # seconds `vpn connect` reuses measurements
+FAILOVER_SERVERS=3           # servers to try, fastest first, if one doesn't answer
+CONNECT_TIMEOUT=35           # seconds to wait for one server (5-300)
 ```
+
+While connecting, the OpenVPN log is checked 4 times per second, so
+`vpn connect` returns as soon as the tunnel is up. If the fastest server
+doesn't complete the handshake within `CONNECT_TIMEOUT`, the next fastest is
+tried (one attempt each). Bad credentials stop immediately instead.
 
 ### System Management
 ```bash

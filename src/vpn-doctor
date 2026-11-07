@@ -106,7 +106,7 @@ Examples:
   vpn doctor --check=deps       # Only check dependencies
 
 Categories:
-  deps      - System dependencies (openvpn, curl, bc, etc.)
+  deps      - System dependencies (openvpn, curl, ip, etc.)
   perms     - File permissions (config dir, credentials)
   config    - Configuration validation (credentials, .ovpn files)
   network   - Network connectivity (DNS, VPN servers)
@@ -140,7 +140,7 @@ store_check_result() {
 check_dependencies() {
     local status="PASS"
     local details=""
-    local required_commands=("openvpn" "curl" "bc" "ip")
+    local required_commands=("openvpn" "curl" "ip")
     local missing=()
     local found=()
 
