@@ -49,7 +49,6 @@ confirm_uninstall() {
 	echo "  • VPN scripts and utilities"
 	echo "  • Configuration files (except credentials)"
 	echo "  • Log files and caches"
-	echo "  • PATH modifications"
 	echo ""
 	log_info "The following will be preserved:"
 	echo "  • Your ProtonVPN configuration files (*.ovpn)"
@@ -171,35 +170,6 @@ backup_user_data() {
 	fi
 }
 
-remove_path_modifications() {
-	log_info "Removing PATH modifications..."
-
-	local shell_configs=("$HOME/.bashrc" "$HOME/.zshrc" "$HOME/.profile")
-	local removed=0
-
-	for config in "${shell_configs[@]}"; do
-		if [[ -f "$config" ]]; then
-			# Create temporary file without VPN PATH entries
-			if grep -v "vpn.*PATH\|VPN Management System" "$config" >"${config}.tmp" 2>/dev/null; then
-				# Check if anything was actually removed
-				if ! cmp -s "$config" "${config}.tmp"; then
-					mv "${config}.tmp" "$config"
-					log_success "Removed PATH modifications from $(basename "$config")"
-					((removed++))
-				else
-					rm -f "${config}.tmp"
-				fi
-			else
-				rm -f "${config}.tmp"
-			fi
-		fi
-	done
-
-	if [[ $removed -eq 0 ]]; then
-		log_info "No PATH modifications found to remove"
-	fi
-}
-
 remove_vpn_directory() {
 	# Remove what install.sh installed. The source checkout ($VPN_DIR) is
 	# deliberately left alone: deleting the directory this script runs from
@@ -219,6 +189,12 @@ remove_vpn_directory() {
 			fi
 		fi
 	done
+	if [[ -f /usr/local/lib/protonvpn-manager/vpn-dns-update ]]; then
+		if sudo rm -f /usr/local/lib/protonvpn-manager/vpn-dns-update; then
+			removed=$((removed + 1))
+		fi
+		sudo rmdir /usr/local/lib/protonvpn-manager 2>/dev/null || true
+	fi
 	if [[ -f /etc/protonvpn-manager.conf ]]; then
 		if sudo rm -f /etc/protonvpn-manager.conf; then
 			removed=$((removed + 1))
@@ -333,7 +309,6 @@ print_completion_message() {
 	echo -e "${YELLOW}What was removed:${NC}"
 	echo "• VPN management scripts and utilities"
 	echo "• Configuration and cache files"
-	echo "• Shell PATH modifications"
 	echo "• Temporary files and logs"
 	echo ""
 
@@ -360,7 +335,6 @@ main() {
 	disconnect_vpn
 	cleanup_temp_files
 	backup_user_data
-	remove_path_modifications
 	remove_vpn_directory
 	check_package_removal
 

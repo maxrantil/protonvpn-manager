@@ -48,6 +48,8 @@ export XDG_RUNTIME_DIR="$WORK_DIR/run"
 export XDG_STATE_HOME="$HOME/.local/state"
 export XDG_CACHE_HOME="$HOME/.cache"
 export XDG_CONFIG_HOME="$HOME/.config"
+export VPN_SESSION_DIR="$WORK_DIR/session"
+export VPN_DNS_HELPER="$WORK_DIR/no-dns-helper"
 export VPN_LOG_DIR="$XDG_STATE_HOME/vpn"
 mkdir -p "$HOME/.config/vpn/locations" "$XDG_RUNTIME_DIR"
 chmod 700 "$XDG_RUNTIME_DIR"
@@ -137,8 +139,9 @@ test_tmp_log_cannot_spoof_success() {
 	local result
 	result=$(
 		source_connector
-		rm -f "$LOG_DIR/openvpn.log"
-		: > "$LOG_DIR/openvpn.log"
+		mkdir -p "$VPN_SESSION_DIR"
+		rm -f "$VPN_SESSION_DIR/openvpn.log"
+		: > "$VPN_SESSION_DIR/openvpn.log"
 		check_connection_progress "initializing" 0
 	)
 	if grep -rq '/tmp/openvpn.log' "$SRC_DIR/vpn-connector"; then
@@ -151,7 +154,7 @@ test_tmp_log_cannot_spoof_success() {
 
 	result=$(
 		source_connector
-		echo "Initialization Sequence Completed" > "$LOG_DIR/openvpn.log"
+		echo "Initialization Sequence Completed" > "$VPN_SESSION_DIR/openvpn.log"
 		check_connection_progress "initializing" 0
 	)
 	if [[ $result == "connected" ]]; then
@@ -168,12 +171,12 @@ test_progress_stage_transitions() {
 	local r1 r2
 	r1=$(
 		source_connector
-		echo "Peer Connection Initiated" > "$LOG_DIR/openvpn.log"
+		echo "Peer Connection Initiated" > "$VPN_SESSION_DIR/openvpn.log"
 		check_connection_progress "initializing" 0
 	)
 	r2=$(
 		source_connector
-		echo "Peer Connection Initiated" > "$LOG_DIR/openvpn.log"
+		echo "Peer Connection Initiated" > "$VPN_SESSION_DIR/openvpn.log"
 		check_connection_progress "configuring" 2
 	)
 	if [[ $r1 == "configuring" && $r2 == "verifying" ]]; then
@@ -241,22 +244,172 @@ test_profile_content_validation() {
 # ---------------------------------------------------------------------------
 # 6. OpenVPN is started with --script-security 1 and our private log.
 # ---------------------------------------------------------------------------
-test_openvpn_invocation() {
-	local args
-	args=$(
+# Emulate `sudo`: run `install` for real (without chown), print openvpn args
+# shellcheck disable=SC2329  # used by the sourced connector
+fake_sudo_body='
+sudo() {
+	if [[ $1 == install ]]; then
+		shift
+		local mode="" dir=0 args=()
+		while [[ $# -gt 0 ]]; do
+			case "$1" in
+				-d) dir=1 ;;
+				-m) mode="$2"; shift ;;
+				-o | -g) shift ;;
+				*) args+=("$1") ;;
+			esac
+			shift
+		done
+		if [[ $dir -eq 1 ]]; then mkdir -p "${args[0]}"; return; fi
+		cat "${args[0]}" > "${args[1]}" && chmod "$mode" "${args[1]}"
+	elif [[ $1 == "$OPENVPN_BINARY" ]]; then
+		shift
+		printf "%s\n" "$@" > "$WORK_DIR/openvpn.args"
+	fi
+}'
+
+run_daemon_start() {
+	local profile="$1"
+	rm -f "$WORK_DIR/openvpn.args"
+	(
 		source_connector
-		sudo() { printf '%s\n' "$@"; }
-		start_openvpn_daemon "/p.ovpn"
-	)
-	if grep -qx -- "--script-security" <<< "$args" && grep -A1 -x -- "--script-security" <<< "$args" | grep -qx 1; then
-		test_pass "openvpn started with --script-security 1"
+		eval "$fake_sudo_body"
+		start_openvpn_daemon "$profile"
+	) > /dev/null 2>&1
+}
+
+test_openvpn_invocation() {
+	local loc="$HOME/.config/vpn/locations"
+	mkdir -p "$loc"
+	printf 'client\ndev tun\nremote 10.0.0.1 1194\n' > "$loc/se-1.ovpn"
+	printf 'user\npass\n' > "$HOME/.config/vpn/vpn-credentials.txt"
+	chmod 600 "$HOME/.config/vpn/vpn-credentials.txt"
+
+	run_daemon_start "$loc/se-1.ovpn"
+	local args
+	args=$(cat "$WORK_DIR/openvpn.args" 2> /dev/null)
+	if grep -A1 -x -- "--script-security" <<< "$args" | grep -qx 1; then
+		test_pass "openvpn started with --script-security 1 (no DNS helper)"
 	else
-		test_fail "openvpn started with --script-security 1" "args: $(tr '\n' ' ' <<< "$args")"
+		test_fail "openvpn started with --script-security 1 (no DNS helper)" "args: $(tr '\n' ' ' <<< "$args")"
+	fi
+	if grep -A1 -x -- "--config" <<< "$args" | grep -qx "$VPN_SESSION_DIR/profile.ovpn" &&
+		grep -A1 -x -- "--auth-user-pass" <<< "$args" | grep -qx "$VPN_SESSION_DIR/credentials" &&
+		grep -A1 -x -- "--log" <<< "$args" | grep -qx "$VPN_SESSION_DIR/openvpn.log"; then
+		test_pass "openvpn only uses the session copies (profile, credentials, log)"
+	else
+		test_fail "openvpn only uses the session copies (profile, credentials, log)" "args: $(tr '\n' ' ' <<< "$args")"
+	fi
+	if cmp -s "$loc/se-1.ovpn" "$VPN_SESSION_DIR/profile.ovpn"; then
+		test_pass "session profile is the validated text"
+	else
+		test_fail "session profile is the validated text"
 	fi
 	if grep -q "^/tmp/openvpn" <<< "$args"; then
 		test_fail "openvpn invocation uses no /tmp paths"
 	else
 		test_pass "openvpn invocation uses no /tmp paths"
+	fi
+
+	# A profile swapped for a malicious one after the early checks is caught
+	# at the point of use (the text handed to root is re-validated)
+	printf 'client\nscript-security 2\nup /bin/evil\n' > "$loc/se-1.ovpn"
+	if run_daemon_start "$loc/se-1.ovpn" || [[ -f "$WORK_DIR/openvpn.args" ]]; then
+		test_fail "swapped-in malicious profile is rejected before openvpn starts"
+	else
+		test_pass "swapped-in malicious profile is rejected before openvpn starts"
+	fi
+	printf 'client\ndev tun\nremote 10.0.0.1 1194\n' > "$loc/se-1.ovpn"
+}
+
+# ---------------------------------------------------------------------------
+# 6b. DNS helper is only handed to root OpenVPN when it is root-owned and safe
+# ---------------------------------------------------------------------------
+test_dns_helper_trust() {
+	local loc="$HOME/.config/vpn/locations" args
+	mkdir -p "$WORK_DIR/rcbin"
+	printf '#!/bin/sh\nexit 0\n' > "$WORK_DIR/rcbin/resolvconf"
+	chmod +x "$WORK_DIR/rcbin/resolvconf"
+
+	# A helper in a world-writable / user-owned location must never be used
+	printf '#!/bin/sh\n' > "$WORK_DIR/user-helper"
+	chmod 755 "$WORK_DIR/user-helper"
+	PATH="$WORK_DIR/rcbin:$PATH" VPN_DNS_HELPER="$WORK_DIR/user-helper" run_daemon_start "$loc/se-1.ovpn"
+	args=$(cat "$WORK_DIR/openvpn.args" 2> /dev/null)
+	if grep -qx -- "--up" <<< "$args"; then
+		test_fail "user-writable DNS helper is not passed to root openvpn"
+	else
+		test_pass "user-writable DNS helper is not passed to root openvpn"
+	fi
+
+	# A root-owned, non-writable helper (stand-in: /usr/bin/true) is used
+	if [[ "$(stat -c %u /usr/bin/true 2> /dev/null)" == "0" && ! -L /usr/bin/true ]]; then
+		PATH="$WORK_DIR/rcbin:$PATH" VPN_DNS_HELPER=/usr/bin/true run_daemon_start "$loc/se-1.ovpn"
+		args=$(cat "$WORK_DIR/openvpn.args" 2> /dev/null)
+		if grep -A1 -x -- "--up" <<< "$args" | grep -qx /usr/bin/true &&
+			grep -A1 -x -- "--down" <<< "$args" | grep -qx /usr/bin/true &&
+			grep -A1 -x -- "--script-security" <<< "$args" | grep -qx 2; then
+			test_pass "root-owned DNS helper is used for --up/--down"
+		else
+			test_fail "root-owned DNS helper is used for --up/--down" "args: $(tr '\n' ' ' <<< "$args")"
+		fi
+		echo "DNS_MODE=none" > "$HOME/.config/vpn/config"
+		PATH="$WORK_DIR/rcbin:$PATH" VPN_DNS_HELPER=/usr/bin/true run_daemon_start "$loc/se-1.ovpn"
+		: > "$HOME/.config/vpn/config"
+		if grep -qx -- "--up" "$WORK_DIR/openvpn.args" 2> /dev/null; then
+			test_fail "DNS_MODE=none disables the DNS helper"
+		else
+			test_pass "DNS_MODE=none disables the DNS helper"
+		fi
+	else
+		test_pass "root-owned DNS helper test (skipped: /usr/bin/true not root-owned)"
+	fi
+}
+
+# ---------------------------------------------------------------------------
+# 6c. DNS helper applies only valid pushed values via resolvconf
+# ---------------------------------------------------------------------------
+test_dns_helper_script() {
+	local helper="$SRC_DIR/vpn-dns-update" rc="$WORK_DIR/rc2"
+	mkdir -p "$rc"
+	cat > "$rc/resolvconf" << 'EOF'
+#!/bin/sh
+echo "ARGS: $*" >> "$RC_LOG"
+case "$*" in *-a*) cat >> "$RC_LOG" ;; esac
+EOF
+	chmod +x "$rc/resolvconf"
+	local log="$WORK_DIR/rc.log"
+
+	: > "$log"
+	env -i PATH="$rc:/usr/bin:/bin" RC_LOG="$log" script_type=up dev=tun0 \
+		'foreign_option_1=dhcp-option DNS 10.2.0.1' 'foreign_option_2=dhcp-option DOMAIN example.net' sh "$helper"
+	if grep -q "ARGS: -x -a tun0.protonvpn" "$log" && grep -qx "nameserver 10.2.0.1" "$log" && grep -qx "search example.net" "$log"; then
+		test_pass "DNS helper registers pushed DNS with resolvconf (exclusive)"
+	else
+		test_fail "DNS helper registers pushed DNS with resolvconf (exclusive)" "$(cat "$log")"
+	fi
+
+	: > "$log"
+	env -i PATH="$rc:/usr/bin:/bin" RC_LOG="$log" script_type=up dev=tun0 \
+		'foreign_option_1=dhcp-option DNS 1.2.3.4;touch /tmp/x' 'foreign_option_2=dhcp-option DNS $(id)' sh "$helper"
+	if [[ ! -s $log ]]; then
+		test_pass "DNS helper ignores invalid pushed values"
+	else
+		test_fail "DNS helper ignores invalid pushed values" "$(cat "$log")"
+	fi
+
+	if env -i PATH="$rc:/usr/bin:/bin" RC_LOG="$log" script_type=up 'dev=tun0;id' sh "$helper" 2> /dev/null; then
+		test_fail "DNS helper rejects an invalid device name"
+	else
+		test_pass "DNS helper rejects an invalid device name"
+	fi
+
+	: > "$log"
+	env -i PATH="$rc:/usr/bin:/bin" RC_LOG="$log" script_type=down dev=tun0 sh "$helper"
+	if grep -q "ARGS: -f -d tun0.protonvpn" "$log"; then
+		test_pass "DNS helper removes the VPN DNS on down"
+	else
+		test_fail "DNS helper removes the VPN DNS on down" "$(cat "$log")"
 	fi
 }
 
@@ -510,13 +663,21 @@ test_kill_switch_netns() {
 		test_pass "kill switch netns test (skipped: needs unshare/iptables/ip and privileges)"
 		return
 	fi
-	mkdir -p "$XDG_STATE_HOME/vpn"
-	echo "UDP link remote: [AF_INET]203.0.113.7:1194" > "$XDG_STATE_HOME/vpn/openvpn.log"
+	mkdir -p "$VPN_SESSION_DIR"
+	echo "UDP link remote: [AF_INET]203.0.113.7:1194" > "$VPN_SESSION_DIR/openvpn.log"
 	local out
 	out=$(unshare -n bash -c '
 		ip link set lo up
 		ip tuntap add dev tun0 mode tun 2>/dev/null && ip link set tun0 up
+		# a default gateway, so the (opt-in) gateway DNS rule has a target
+		ip link add veth0 type veth peer name veth1 2>/dev/null && ip link set veth0 up &&
+			ip addr add 10.9.0.2/24 dev veth0 && ip route add default via 10.9.0.1 2>/dev/null
 		bash "$1/vpn-kill-switch" enable > /dev/null 2>&1 || echo "ENABLE_FAILED"
+		echo "dns_default=$(iptables -S VPN_KILL_SWITCH | grep -c -- "--dport 53")"
+		echo "KILL_SWITCH_ALLOW_LAN_DNS=true" > "$HOME/.config/vpn/config"
+		bash "$1/vpn-kill-switch" enable > /dev/null 2>&1 || echo "ENABLE_FAILED"
+		echo "dns_optin=$(iptables -S VPN_KILL_SWITCH | grep -c -- "-d 10.9.0.1/32 -p udp -m udp --dport 53")"
+		: > "$HOME/.config/vpn/config"
 		bash "$1/vpn-kill-switch" refresh > /dev/null 2>&1 || echo "REFRESH_FAILED"
 		echo "jumps=$(iptables -S OUTPUT | grep -c VPN_KILL_SWITCH)"
 		iptables -S VPN_KILL_SWITCH
@@ -537,6 +698,10 @@ test_kill_switch_netns() {
 	report $? "chain ends in DROP" "chain ends in DROP" "$out"
 	grep -q "left=00" <<< "$out"
 	report $? "disable removes all rules" "disable removes all rules" "$out"
+	grep -q "dns_default=0" <<< "$out"
+	report $? "no DNS-to-gateway exception by default (no DNS leak)" "no DNS-to-gateway exception by default (no DNS leak)" "$out"
+	grep -q "dns_optin=1" <<< "$out"
+	report $? "KILL_SWITCH_ALLOW_LAN_DNS=true restores gateway DNS" "KILL_SWITCH_ALLOW_LAN_DNS=true restores gateway DNS" "$out"
 }
 
 # ---------------------------------------------------------------------------
@@ -587,6 +752,8 @@ test_tmp_log_cannot_spoof_success
 test_progress_stage_transitions
 test_profile_content_validation
 test_openvpn_invocation
+test_dns_helper_trust
+test_dns_helper_script
 test_cleanup_keeps_held_lock
 test_process_matching
 test_stale_pid_file_ignored

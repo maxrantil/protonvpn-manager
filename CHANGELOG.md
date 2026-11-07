@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- DNS leak: OpenVPN now applies the VPN's pushed DNS servers via a
+  root-owned `resolvconf` helper and restores the previous DNS on
+  disconnect; the kill switch no longer lets DNS through to the router
+  (opt back in with `KILL_SWITCH_ALLOW_LAN_DNS=true`)
+- Profile/credential/log race: the root daemon now only reads validated,
+  root-owned copies and logs into a root-owned session directory, instead
+  of user-writable files that could be swapped after validation
+
+### Removed
+- `vpn download-configs` and `vpn service` (they called scripts that do not
+  exist)
+- `vpn-manager status-wcag|status-enhanced|status-format` views, which
+  printed hard-coded data ("Sweden (se-65)", "All Systems Operational")
+- Leftover enterprise config files, `scripts/protonvpn-service-manager`,
+  `core_components.txt`, and unused functions
+- `uninstall.sh` no longer edits `~/.bashrc`/`~/.zshrc`/`~/.profile`
+  (install never adds anything there)
+
+### Changed
+- `vpn secure` fails when no Secure Core profiles exist instead of silently
+  connecting to a regular server, and picks the fastest Secure Core server
+- README: correct install command, log paths and component list
+
 ### Performance
 - `vpn connect` polls the OpenVPN log 4x per second instead of sleeping in
   1-8s steps, so it returns as soon as the tunnel is up
