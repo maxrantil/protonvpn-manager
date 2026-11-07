@@ -746,6 +746,12 @@ kill_all_vpn() {
 }
 
 cleanup_files() {
+    # Remove the connector's root-owned session copies of profile/credentials
+    local session_dir="${VPN_SESSION_DIR:-/run/protonvpn-manager-session}"
+    if [[ -e "$session_dir/profile.ovpn" || -e "$session_dir/credentials" ]]; then
+        sudo rm -f "$session_dir/profile.ovpn" "$session_dir/credentials" 2> /dev/null || true
+    fi
+
     # Clean up PID file (may need sudo since OpenVPN creates it as root)
     if [[ -f $VPN_PID_FILE ]]; then
         if ! rm -f "$VPN_PID_FILE" 2> /dev/null; then

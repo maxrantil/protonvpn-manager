@@ -78,14 +78,22 @@ validate_profile_path() {
 # programs, load code, or write files would run with root privileges, so they
 # are rejected unless the user explicitly opts in (ALLOW_PROFILE_SCRIPTS=true
 # in ~/.config/vpn/config). Stock ProtonVPN profiles use none of them.
-# Args: $1 = profile path
+# Args: $1 = profile path (its extension selects the profile type),
+#       $2 = profile text (optional). Pass the exact text that will be used:
+#       validating a file and then letting root read it again is a race.
 # Returns: 0 if safe, 1 if a dangerous directive was found
 validate_profile_content() {
     local path="$1"
+    local text
 
-    if [[ -z "$path" || ! -f "$path" || -L "$path" ]]; then
-        echo "ERROR: Profile must be an existing regular file: $path" >&2
-        return 1
+    if [[ $# -ge 2 ]]; then
+        text="$2"
+    else
+        if [[ -z "$path" || ! -f "$path" || -L "$path" ]]; then
+            echo "ERROR: Profile must be an existing regular file: $path" >&2
+            return 1
+        fi
+        text=$(cat "$path" 2> /dev/null) || return 1
     fi
 
     local found=""
@@ -101,11 +109,11 @@ validate_profile_content() {
                 inblock { next }
                 /^[[:space:]]*[#;]/ { next }
                 $0 ~ re { print NR": "$1; }
-            ' "$path" 2> /dev/null | head -5)
+            ' <<< "$text" 2> /dev/null | head -5)
             ;;
         *.conf)
             # wg-quick executes these hook values with bash as root
-            found=$(grep -inE '^[[:space:]]*(PreUp|PostUp|PreDown|PostDown)[[:space:]]*=' "$path" 2> /dev/null | head -5)
+            found=$(grep -inE '^[[:space:]]*(PreUp|PostUp|PreDown|PostDown)[[:space:]]*=' <<< "$text" 2> /dev/null | head -5)
             ;;
         *)
             echo "ERROR: Unknown profile type: $path" >&2
