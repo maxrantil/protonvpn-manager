@@ -168,11 +168,6 @@ get_vpn_server_ip() {
     fi
 }
 
-# Get the default gateway interface (physical NIC)
-get_default_interface() {
-    ip route show default 2> /dev/null | awk '/default/ {for(i=1;i<=NF;i++) if($i=="dev") print $(i+1)}' | head -1
-}
-
 # Get the default gateway IP
 get_default_gateway() {
     ip route show default 2> /dev/null | awk '/default/ {for(i=1;i<=NF;i++) if($i=="via") print $(i+1)}' | head -1

@@ -1433,56 +1433,6 @@ connect_random() {
     connect_to_profile "$selected_profile"
 }
 
-load_performance_cache() {
-    if [[ ! -f $PERFORMANCE_CACHE ]]; then
-        return 1
-    fi
-
-    # Check if cache is older than 2 hours (7200 seconds)
-    # Issue #73: Use detected stat format (25% faster - no fallback overhead)
-    local cache_age
-    # shellcheck disable=SC2086  # STAT_MTIME_FLAG must expand into flags (-c %Y or -f %m)
-    cache_age=$(($(date +%s) - $(stat $STAT_MTIME_FLAG "$PERFORMANCE_CACHE" 2> /dev/null || echo 0)))
-
-    if [[ $cache_age -gt 7200 ]]; then
-        echo -e "\033[1;33mPerformance cache expired (${cache_age}s old), will refresh\033[0m"
-        return 1
-    fi
-
-    echo -e "\033[1;36mUsing cached performance data (${cache_age}s old)\033[0m"
-    return 0
-}
-
-# Resolve profile path from profile name (Issue #141: Extract duplicate logic)
-# Args: $1 = profile_name, $2 = country_filter (optional)
-# Returns: Full path to profile file, or empty string if not found
-resolve_profile_path() {
-    local profile_name="$1"
-    local country_filter="${2:-}"
-
-    # Validate input: reject empty profile names (prevents matching all profiles)
-    [[ -z $profile_name ]] && return 1
-
-    local profile_path
-
-    # Primary resolution: match with extension
-    if [[ -n $country_filter ]]; then
-        # Flexible matching for country-filtered profiles (anywhere in path)
-        profile_path=$(get_cached_profiles | grep -E "${profile_name}.*\.(ovpn|conf)$" | head -n1)
-    else
-        # Strict matching for non-country profiles (exact filename)
-        profile_path=$(get_cached_profiles | grep -E "/${profile_name}\.(ovpn|conf)$" | head -n1)
-    fi
-
-    # Fallback: Partial match if primary resolution failed
-    if [[ ! -f $profile_path ]]; then
-        profile_path=$(get_cached_profiles | grep "$profile_name" | head -n1)
-    fi
-
-    # Return path (will be empty if no match found)
-    echo "$profile_path"
-}
-
 # Read a value from ~/.config/vpn/config (KEY=value, quotes stripped)
 # Args: $1 = key, $2 = default
 connector_config_value() {
@@ -1567,25 +1517,33 @@ best_server_connect() {
 secure_core_connect() {
     echo -e "\033[1;36mSecure core server selection\033[0m"
     # Secure core provides enhanced privacy through double-hop routing
-    local secure_profiles
+    local secure_profiles count
     secure_profiles=$(detect_secure_core_profiles)
 
+    # Never silently fall back to a regular server: the user asked for secure core
     if [[ -z $secure_profiles ]]; then
-        echo -e "\033[1;33mNo secure core profiles detected, using regular profiles\033[0m"
-        connect_random
-    else
-        echo -e "\033[1;32mFound $(echo "$secure_profiles" | wc -l) secure core profiles\033[0m"
+        echo -e "\033[1;31mNo Secure Core profiles found in $LOCATIONS_DIR\033[0m"
+        echo "Download Secure Core configs from ProtonVPN (names like ch-se-01) and try again."
+        return 1
+    fi
+
+    count=$(wc -l <<< "$secure_profiles")
+    echo -e "\033[1;32mFound $count secure core profiles\033[0m"
+
+    local selected_profile=""
+    if [[ $count -gt 1 ]]; then
+        selected_profile=$(select_fastest_profile "$(connector_config_value LATENCY_CACHE_MAX_AGE 900)" <<< "$secure_profiles") || selected_profile=""
+    fi
+    if [[ -z $selected_profile ]]; then
         local profile_array=()
         while IFS= read -r profile; do
             profile_array+=("$profile")
         done <<< "$secure_profiles"
-
-        local random_index=$((RANDOM % ${#profile_array[@]}))
-        local selected_profile="${profile_array[$random_index]}"
-
-        echo -e "\033[1;36mSelected secure core: $(basename "$selected_profile" .ovpn)\033[0m"
-        connect_to_profile "$selected_profile"
+        selected_profile="${profile_array[$((RANDOM % ${#profile_array[@]}))]}"
     fi
+
+    echo -e "\033[1;36mSelected secure core: $(basename "$selected_profile" .ovpn)\033[0m"
+    connect_to_profile "$selected_profile"
 }
 
 connect_custom_profile() {
