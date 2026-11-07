@@ -219,6 +219,12 @@ remove_vpn_directory() {
 			fi
 		fi
 	done
+	if [[ -f /usr/local/lib/protonvpn-manager/vpn-dns-update ]]; then
+		if sudo rm -f /usr/local/lib/protonvpn-manager/vpn-dns-update; then
+			removed=$((removed + 1))
+		fi
+		sudo rmdir /usr/local/lib/protonvpn-manager 2>/dev/null || true
+	fi
 	if [[ -f /etc/protonvpn-manager.conf ]]; then
 		if sudo rm -f /etc/protonvpn-manager.conf; then
 			removed=$((removed + 1))

@@ -848,6 +848,35 @@ If you deliberately use such a profile (for example an uncommented
 echo 'ALLOW_PROFILE_SCRIPTS=true' >> ~/.config/vpn/config
 ```
 
+### DNS (no leaks)
+
+ProtonVPN pushes its own DNS servers when the tunnel comes up. A root-owned
+helper (`/usr/local/lib/protonvpn-manager/vpn-dns-update`, installed by
+`install.sh`) registers them with `resolvconf` while connected, exclusively
+with openresolv, and restores your normal DNS on disconnect. Install
+openresolv if you don't have it: `sudo pacman -S openresolv`.
+
+The connector only passes the helper to OpenVPN if it is owned by root and
+not writable by anyone else. If it's missing, or `resolvconf` isn't
+installed, `vpn connect` warns that DNS may leak.
+
+With the kill switch on, DNS to your router is blocked, because those queries
+would bypass the tunnel. Settings in `~/.config/vpn/config`:
+
+```bash
+DNS_MODE=none                    # don't manage DNS (and silence the warning)
+KILL_SWITCH_ALLOW_LAN_DNS=true   # allow DNS to the router with the kill switch on (leaks)
+```
+
+### Root-owned session files
+
+OpenVPN runs as root, so it never reads your profile, credentials or log
+directly from your home directory. The connector reads the profile and
+credentials once, validates that exact text, and writes root-owned copies to
+`/run/protonvpn-manager-session/`. OpenVPN uses those copies and logs there;
+your group can read the log. This prevents swapping a file between the check
+and its use. The copies are removed on disconnect and cleanup.
+
 ### Sleep / network hooks
 
 The optional elogind sleep hook and NetworkManager dispatcher hook run as

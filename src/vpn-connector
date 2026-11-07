@@ -42,6 +42,15 @@ CREDENTIALS_FILE="${CREDENTIALS_FILE:-$CONFIG_DIR/vpn-credentials.txt}"
 # HIGH-severity: Prevents privilege escalation via malicious PATH
 OPENVPN_BINARY="/usr/bin/openvpn"
 
+# Root-owned per-session directory. Everything the root daemon reads (profile,
+# credentials) or writes (log) lives here, so nothing user-writable can be
+# swapped in between validation and use. The log is group-readable for us.
+SESSION_DIR="${VPN_SESSION_DIR:-/run/protonvpn-manager-session}"
+OPENVPN_LOG="$SESSION_DIR/openvpn.log"
+
+# Root-owned OpenVPN up/down helper that applies the VPN's DNS via resolvconf
+DNS_HELPER="${VPN_DNS_HELPER:-/usr/local/lib/protonvpn-manager/vpn-dns-update}"
+
 # Backward compatibility: Check for old credentials filename
 if [[ ! -f $CREDENTIALS_FILE ]] && [[ -f "$CONFIG_DIR/credentials.txt" ]]; then
     echo "⚠️  WARNING: Found old credentials file 'credentials.txt'" >&2
@@ -992,44 +1001,106 @@ initialize_connection_attempt() {
 # Returns: 0 on daemon start (note: start != connected)
 start_openvpn_daemon() {
     local profile_path="$1"
-    local log_file="$LOG_DIR/openvpn.log"
+    local profile_text credentials_text
 
-    # Clear previous log to avoid false positives. A root-owned leftover from an
-    # older version can only be removed with sudo; never touch shared /tmp paths.
-    if [[ -e $log_file || -L $log_file ]]; then
-        rm -f "$log_file" 2> /dev/null || sudo rm -f "$log_file" 2> /dev/null || true
+    # Read the profile and credentials ONCE, validate exactly those bytes and
+    # hand OpenVPN root-owned copies of them. Validating the user-owned file
+    # and then letting root read it again would be a time-of-check/time-of-use
+    # race (anything running as the user could swap the file in between).
+    profile_text=$(head -c 1048576 "$profile_path" 2> /dev/null) || {
+        echo "ERROR: Cannot read profile: $profile_path" >&2
+        return 1
+    }
+    if ! validate_profile_content "$profile_path" "$profile_text"; then
+        log_message "SECURITY: Profile content validation failed: $profile_path" "$CONNECTION_LOG"
+        return 1
     fi
+    credentials_text=$(head -c 4096 "$CREDENTIALS_FILE" 2> /dev/null) || {
+        echo "ERROR: Cannot read credentials: $CREDENTIALS_FILE" >&2
+        return 1
+    }
 
-    # Pre-create the log owned by us with 600 perms, refusing to follow symlinks.
-    # OpenVPN (as root) truncates and writes into it, so we can read it unprivileged.
-    if ! (
-        set -o noclobber
-        umask 077
-        : > "$log_file"
-    ) 2> /dev/null || [[ -L $log_file ]]; then
-        echo "ERROR: Cannot create private OpenVPN log: $log_file" >&2
+    if ! prepare_session_dir ||
+        ! printf '%s\n' "$profile_text" | write_session_file profile.ovpn 600 ||
+        ! printf '%s\n' "$credentials_text" | write_session_file credentials 600 ||
+        ! write_session_file openvpn.log 640 < /dev/null; then
+        echo "ERROR: Cannot prepare root-owned session files in $SESSION_DIR" >&2
         return 1
     fi
 
-    # Script hooks are only allowed when the user explicitly opted in
-    # (validate_profile_content already rejected them otherwise). Placing
-    # --script-security after --config makes it override the profile.
-    local script_security=1
-    if [[ -f "$CONFIG_DIR/config" ]] && grep -qE '^ALLOW_PROFILE_SCRIPTS=["'\'']?true["'\'']?$' "$CONFIG_DIR/config" 2> /dev/null; then
-        script_security=2
+    # Script hooks from the profile are only allowed when the user opted in
+    # (validate_profile_content already rejected them otherwise). Options after
+    # --config override the profile.
+    local -a script_args=(--script-security 1)
+    if [[ "$(connector_config_value ALLOW_PROFILE_SCRIPTS false)" == "true" ]]; then
+        script_args=(--script-security 2)
+    fi
+    if dns_helper_usable; then
+        # Our own root-owned helper applies the pushed DNS servers (no leak to
+        # the local router/ISP) and restores the previous DNS on disconnect.
+        script_args=(--script-security 2 --up "$DNS_HELPER" --down "$DNS_HELPER" --up-restart)
+    else
+        warn_dns_not_managed
     fi
 
     # Security: Use hardcoded trusted path (Issue #165)
     sudo "$OPENVPN_BINARY" \
-        --config "$profile_path" \
-        --auth-user-pass "$CREDENTIALS_FILE" \
-        --script-security "$script_security" \
+        --config "$SESSION_DIR/profile.ovpn" \
+        --auth-user-pass "$SESSION_DIR/credentials" \
+        "${script_args[@]}" \
         --daemon \
         --writepid /var/run/openvpn.pid \
-        --log "$log_file" \
+        --log "$OPENVPN_LOG" \
         --verb 3
 
     return 0
+}
+
+# Create the root-owned session directory (group-readable for the user)
+prepare_session_dir() {
+    sudo install -d -m 750 -o root -g "$(id -gn)" "$SESSION_DIR"
+}
+
+# Write stdin to a root-owned file in the session directory
+# Args: $1 = file name, $2 = mode
+write_session_file() {
+    sudo install -m "$2" -o root -g "$(id -gn)" /dev/stdin "$SESSION_DIR/$1"
+}
+
+# Remove the session copies of the profile and credentials
+remove_session_secrets() {
+    [[ -d "$SESSION_DIR" ]] || return 0
+    sudo rm -f "$SESSION_DIR/profile.ovpn" "$SESSION_DIR/credentials" 2> /dev/null || true
+}
+
+# True if DNS should be managed and the helper is safe to run as root:
+# resolvconf exists, and the helper and every parent directory are owned by
+# root and not group/other-writable (a user-writable script run by root
+# would be a privilege escalation).
+dns_helper_usable() {
+    [[ "$(connector_config_value DNS_MODE resolvconf)" != "none" ]] || return 1
+    command -v resolvconf > /dev/null 2>&1 || return 1
+    local p="$DNS_HELPER" mode
+    [[ -f $p && -x $p ]] || return 1
+    while [[ -n $p && $p != "/" ]]; do
+        [[ -e $p && ! -L $p ]] || return 1
+        [[ "$(stat -c %u "$p" 2> /dev/null)" == "0" ]] || return 1
+        mode=$(stat -c %a "$p" 2> /dev/null) || return 1
+        (((8#$mode & 8#022) == 0)) || return 1
+        p=$(dirname "$p")
+    done
+    return 0
+}
+
+warn_dns_not_managed() {
+    [[ "$(connector_config_value DNS_MODE resolvconf)" == "none" ]] && return 0
+    if ! command -v resolvconf > /dev/null 2>&1; then
+        echo -e "\033[1;33mWarning: resolvconf not found - DNS will not use the VPN (possible DNS leak).\033[0m" >&2
+        echo "  Install openresolv, or set DNS_MODE=none in ~/.config/vpn/config to silence this." >&2
+    else
+        echo -e "\033[1;33mWarning: DNS helper not installed root-owned at $DNS_HELPER - DNS will not use the VPN.\033[0m" >&2
+        echo "  Run ./install.sh to install it." >&2
+    fi
 }
 
 # Checks for authentication failures in OpenVPN logs
@@ -1039,7 +1110,7 @@ check_authentication_failure() {
     local profile_name="$1"
 
     # Security: only our own private log is consulted (never a shared /tmp path)
-    local log_location="$LOG_DIR/openvpn.log"
+    local log_location="$OPENVPN_LOG"
     if [[ -f $log_location && ! -L $log_location ]] && grep -q "AUTH_FAILED" "$log_location" 2> /dev/null; then
         # Issue #147: Use semantic announcement for accessibility
         announce_connection_status "failed" "Authentication failed - check credentials in $CREDENTIALS_FILE"
@@ -1063,7 +1134,7 @@ check_authentication_failure() {
 check_connection_progress() {
     local connection_stage="$1"
     local interval_count="$2"
-    local log_file="$LOG_DIR/openvpn.log"
+    local log_file="$OPENVPN_LOG"
 
     # Log-based detection (authoritative): vpn-manager status needs an external
     # curl, which the kill switch may block during reconnect.
@@ -1357,6 +1428,19 @@ connect_wireguard_profile() {
     local interface_name
     interface_name=$(basename "$profile_path" .conf)
 
+    # Same TOCTOU protection as OpenVPN: validate the exact text, then let
+    # wg-quick (root) use a root-owned copy. wg-quick derives the interface
+    # name from the file name, so the copy keeps it.
+    local wg_text wg_config="$SESSION_DIR/$interface_name.conf"
+    wg_text=$(head -c 65536 "$profile_path" 2> /dev/null) || return 1
+    if ! validate_profile_content "$profile_path" "$wg_text"; then
+        return 1
+    fi
+    if ! prepare_session_dir || ! printf '%s\n' "$wg_text" | write_session_file "$interface_name.conf" 600; then
+        echo "ERROR: Cannot prepare root-owned WireGuard config in $SESSION_DIR" >&2
+        return 1
+    fi
+
     # Note: Pre-cleanup removed due to network disruption issues
 
     echo -e "\033[1;33mConnecting to WireGuard profile: $interface_name...\033[0m"
@@ -1368,7 +1452,7 @@ connect_wireguard_profile() {
         # WireGuard connection attempt notification removed - using centralized system for result only
 
         # Simple WireGuard connection attempt (reverted to prevent network disruption)
-        if sudo wg-quick up "$profile_path" > /dev/null 2>&1; then
+        if sudo wg-quick up "$wg_config" > /dev/null 2>&1; then
             sleep 3
 
             # Verify connection is up (requires sudo to access WireGuard interface)
@@ -1390,7 +1474,7 @@ connect_wireguard_profile() {
         log_message "WireGuard connection attempt $attempt failed for $interface_name" "$CONNECTION_LOG"
 
         # Cleanup failed attempt - use full path to config file
-        sudo wg-quick down "$profile_path" > /dev/null 2>&1 || true
+        sudo wg-quick down "$wg_config" > /dev/null 2>&1 || true
 
         if [[ $attempt -lt $max_attempts ]]; then
             echo "  Waiting before retry..."
