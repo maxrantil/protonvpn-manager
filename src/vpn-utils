@@ -120,15 +120,60 @@ clear_vpn_dns() {
     return 0
 }
 
+# Tailscale with MagicDNS owns /etc/resolv.conf (100.100.100.100) and sends
+# lookups to the ISP's resolver outside the tunnel: a DNS leak, and with the
+# kill switch on nothing resolves at all. While a VPN is connected its DNS is
+# paused, so resolv.conf comes from resolvconf (the VPN's exclusive entry).
+# The record file means "we paused it": a setting the user turned off
+# themselves is never turned back on.
+tailscale_dns_record() {
+    echo "${XDG_STATE_HOME:-$HOME/.local/state}/vpn/tailscale-dns-paused"
+}
+
+pause_tailscale_dns() {
+    command -v tailscale > /dev/null 2>&1 || return 0
+    # Only when tailscaled runs and manages DNS
+    tailscale debug prefs 2> /dev/null | grep -q '"CorpDNS": true' || return 0
+    local record
+    record=$(tailscale_dns_record)
+    secure_user_dir "$(dirname "$record")" || return 1
+    # Record first: a crash after the change must still lead to a restore
+    : > "$record"
+    if ! sudo tailscale set --accept-dns=false > /dev/null 2>&1; then
+        rm -f "$record"
+        echo "WARNING: Could not pause Tailscale DNS; DNS may bypass the VPN" >&2
+        return 1
+    fi
+    # Tailscale put back its pre-Tailscale resolv.conf (router/ISP DNS);
+    # rebuild it from resolvconf, where the VPN's entry is exclusive
+    sudo resolvconf -u 2> /dev/null || true
+    echo "DNS goes through the VPN (Tailscale DNS paused until disconnect)"
+}
+
+restore_tailscale_dns() {
+    local record
+    record=$(tailscale_dns_record)
+    [[ -f $record ]] || return 0
+    if command -v tailscale > /dev/null 2>&1 && sudo tailscale set --accept-dns=true > /dev/null 2>&1; then
+        rm -f "$record"
+        return 0
+    fi
+    echo "WARNING: Could not restore Tailscale DNS; run: sudo tailscale set --accept-dns=true" >&2
+    return 1
+}
+
 # Undo what a VPN session leaves in the network config once no VPN runs:
-# the VPN's DNS entry and the kill switch. Callers that keep the kill switch
-# on purpose (sleep/reconnect hooks) set VPN_KEEP_KILL_SWITCH=1.
+# the VPN's DNS entry, paused Tailscale DNS, the IPv6 block and the kill
+# switch. Callers that keep the kill switch on purpose (sleep/reconnect
+# hooks) set VPN_KEEP_KILL_SWITCH=1; it blocks IPv6 and DNS leaks itself.
 # Uses $VPN_DIR of the calling script.
 release_vpn_network_state() {
     clear_vpn_dns
-    [[ ${VPN_KEEP_KILL_SWITCH:-} == 1 ]] && return 0
+    restore_tailscale_dns || true
     local kill_switch="${VPN_DIR:-/usr/local/bin}/vpn-kill-switch"
     [[ -x $kill_switch ]] || return 0
+    "$kill_switch" ipv6-guard off > /dev/null 2>&1 || true
+    [[ ${VPN_KEEP_KILL_SWITCH:-} == 1 ]] && return 0
     "$kill_switch" is-enabled 2> /dev/null || return 0
     echo "Disabling kill switch..."
     "$kill_switch" disable
@@ -141,3 +186,6 @@ export -f detect_real_user
 export -f secure_user_dir
 export -f clear_vpn_dns
 export -f release_vpn_network_state
+export -f tailscale_dns_record
+export -f pause_tailscale_dns
+export -f restore_tailscale_dns
