@@ -217,8 +217,7 @@ test_disconnect_survives_signal() {
     WORK_DIR="$WORK_DIR" bash "$driver" > /dev/null 2>&1 &
     local pid=$!
     set +m
-    local i
-    for i in $(seq 1 40); do
+    for _ in $(seq 1 40); do
         [[ -f $WORK_DIR/in_cleanup ]] && break
         sleep 0.05
     done
@@ -314,8 +313,7 @@ run_connect_signal_case() {
     WORK_DIR="$WORK_DIR" bash "$driver" > /dev/null 2>&1 &
     local pid=$!
     set +m
-    local i
-    for i in $(seq 1 40); do
+    for _ in $(seq 1 40); do
         [[ -f $WORK_DIR/waiting ]] && break
         sleep 0.05
     done
