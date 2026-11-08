@@ -54,7 +54,10 @@ export XDG_CONFIG_HOME="$HOME/.config"
 export VPN_SESSION_DIR="$WORK_DIR/session"
 export VPN_DNS_HELPER="$WORK_DIR/no-dns-helper"
 export VPN_LOG_DIR="$XDG_STATE_HOME/vpn"
+export VPN_RESOLV_CONF="$WORK_DIR/resolv.conf"
+export VPN_NM_RESOLV_CONF="$WORK_DIR/nm-resolv.conf"
 mkdir -p "$HOME/.config/vpn/locations" "$XDG_RUNTIME_DIR" "$VPN_LOG_DIR"
+printf 'nameserver 192.0.2.53\n' > "$VPN_RESOLV_CONF"
 chmod 700 "$XDG_RUNTIME_DIR"
 
 STUB_DIR="$WORK_DIR/stub"    # replaces VPN_DIR (vpn-kill-switch, vpn-manager)

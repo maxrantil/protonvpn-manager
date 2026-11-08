@@ -120,6 +120,20 @@ clear_vpn_dns() {
     return 0
 }
 
+# openresolv rebuilds resolv.conf from its own entries only. When
+# NetworkManager does not register with resolvconf (it keeps its copy in
+# /run/NetworkManager/resolv.conf), removing the VPN's entry leaves
+# resolv.conf without nameservers: DNS is dead, and Tailscale, re-enabled
+# after, would back up that empty file as its upstream. Put NetworkManager's
+# current DNS back in that case; a resolv.conf with nameservers is left alone.
+restore_system_dns() {
+    local resolv="${VPN_RESOLV_CONF:-/etc/resolv.conf}"
+    local nm="${VPN_NM_RESOLV_CONF:-/run/NetworkManager/resolv.conf}"
+    grep -q '^nameserver' "$resolv" 2> /dev/null && return 0
+    [[ -f $nm && ! -L $nm ]] && grep -q '^nameserver' "$nm" 2> /dev/null || return 0
+    sudo install -m 644 "$nm" "$resolv"
+}
+
 # Tailscale with MagicDNS owns /etc/resolv.conf (100.100.100.100) and sends
 # lookups to the ISP's resolver outside the tunnel: a DNS leak, and with the
 # kill switch on nothing resolves at all. While a VPN is connected its DNS is
@@ -169,6 +183,8 @@ restore_tailscale_dns() {
 # Uses $VPN_DIR of the calling script.
 release_vpn_network_state() {
     clear_vpn_dns
+    # Before Tailscale takes resolv.conf back, so it keeps a working upstream
+    restore_system_dns || true
     restore_tailscale_dns || true
     local kill_switch="${VPN_DIR:-/usr/local/bin}/vpn-kill-switch"
     [[ -x $kill_switch ]] || return 0
@@ -186,6 +202,7 @@ export -f detect_real_user
 export -f secure_user_dir
 export -f clear_vpn_dns
 export -f release_vpn_network_state
+export -f restore_system_dns
 export -f tailscale_dns_record
 export -f pause_tailscale_dns
 export -f restore_tailscale_dns
