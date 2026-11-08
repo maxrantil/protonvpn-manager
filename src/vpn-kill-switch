@@ -324,10 +324,11 @@ disable_kill_switch() {
         return 1
     fi
 
-    # Remove IPv4 chain from OUTPUT
-    if run_iptables -C OUTPUT -j "$CHAIN_NAME" 2> /dev/null; then
-        run_iptables -D OUTPUT -j "$CHAIN_NAME"
-    fi
+    # Remove IPv4 chain from OUTPUT (every jump: an interrupted run can leave
+    # duplicates, and the chain cannot be deleted while one remains)
+    while run_iptables -C OUTPUT -j "$CHAIN_NAME" 2> /dev/null; do
+        run_iptables -D OUTPUT -j "$CHAIN_NAME" || break
+    done
 
     # Flush and delete IPv4 chain
     if chain_exists; then
@@ -335,10 +336,10 @@ disable_kill_switch() {
         run_iptables -X "$CHAIN_NAME"
     fi
 
-    # Remove IPv6 chain from OUTPUT
-    if run_ip6tables -C OUTPUT -j "$CHAIN_NAME_V6" 2> /dev/null; then
-        run_ip6tables -D OUTPUT -j "$CHAIN_NAME_V6"
-    fi
+    # Remove IPv6 chain from OUTPUT (every jump, see above)
+    while run_ip6tables -C OUTPUT -j "$CHAIN_NAME_V6" 2> /dev/null; do
+        run_ip6tables -D OUTPUT -j "$CHAIN_NAME_V6" || break
+    done
 
     # Flush and delete IPv6 chain
     if chain_exists_v6; then
@@ -375,10 +376,14 @@ emergency_disable() {
     return 0
 }
 
-# Check if kill switch is enabled
+# Check if kill switch is enabled: either half blocks traffic on its own
+# (a leftover IPv6 jump without the IPv4 one still needs disabling)
 is_enabled() {
     if chain_exists && run_iptables -C OUTPUT -j "$CHAIN_NAME" 2> /dev/null; then
         return 0 # Enabled
+    fi
+    if chain_exists_v6 && run_ip6tables -C OUTPUT -j "$CHAIN_NAME_V6" 2> /dev/null; then
+        return 0 # Enabled (IPv6 only)
     fi
     return 1 # Disabled
 }

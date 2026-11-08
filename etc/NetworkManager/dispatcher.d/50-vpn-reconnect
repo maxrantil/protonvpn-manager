@@ -272,7 +272,7 @@ attempt_reconnect() {
     # Attempt connection
     if [[ -x "$VPN_CONNECTOR" ]]; then
         # `custom` takes a profile path (`connect` expects a country code)
-        if HOME="$REAL_HOME" "$VPN_CONNECTOR" custom "$profile" >/dev/null 2>&1; then
+        if HOME="$REAL_HOME" VPN_KEEP_KILL_SWITCH=1 "$VPN_CONNECTOR" custom "$profile" >/dev/null 2>&1; then
             echo "${now}:success" >> "$ATTEMPTS_FILE"
             log_event "INFO" "Reconnect successful"
             return 0
