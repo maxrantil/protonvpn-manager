@@ -325,6 +325,45 @@ test_openvpn_invocation() {
 # ---------------------------------------------------------------------------
 # 6b. DNS helper is only handed to root OpenVPN when it is root-owned and safe
 # ---------------------------------------------------------------------------
+# A failed `sudo openvpn` (sudo denied, invalid profile) used to go unnoticed:
+# the connector then waited the whole connect timeout, on every attempt.
+test_openvpn_start_failure_detected() {
+	local loc="$HOME/.config/vpn/locations"
+	mkdir -p "$loc"
+	printf 'client\ndev tun\nremote 10.0.0.1 1194\n' > "$loc/se-1.ovpn"
+	printf 'user\npass\n' > "$HOME/.config/vpn/vpn-credentials.txt"
+	chmod 600 "$HOME/.config/vpn/vpn-credentials.txt"
+	local out
+	out=$(
+		source_connector
+		eval "$fake_sudo_body"
+		# The privileged start itself fails
+		eval "$(declare -f sudo | sed '1s/sudo/real_fake_sudo/')"
+		sudo() { [[ $1 == "$OPENVPN_BINARY" ]] && return 1; real_fake_sudo "$@"; }
+		notify_event() { :; }
+		cleanup_failed_connection_processes() { :; }
+		validate_connection_prerequisites() { return 0; }
+		initialize_connection_attempt() { echo "se-1"; }
+		monitor_connection_establishment_with_backoff() { echo "MONITORED"; return 2; }
+		start_openvpn_daemon "$loc/se-1.ovpn" > /dev/null 2>&1
+		echo "start_rc=$?"
+		rc=0
+		connect_openvpn_profile "$loc/se-1.ovpn" 3 > "$WORK_DIR/connect.out" 2>&1 || rc=$?
+		echo "connect_rc=$rc"
+		grep -c MONITORED "$WORK_DIR/connect.out"
+	)
+	if grep -q "^start_rc=[1-9]" <<< "$out"; then
+		test_pass "a failed sudo openvpn start is reported (non-zero)"
+	else
+		test_fail "a failed sudo openvpn start is reported (non-zero)" "$out"
+	fi
+	if grep -q "^connect_rc=1$" <<< "$out" && [[ $(tail -1 <<< "$out") == 0 ]]; then
+		test_pass "connect stops at once instead of waiting for a daemon that never started"
+	else
+		test_fail "connect stops at once instead of waiting for a daemon that never started" "$out"
+	fi
+}
+
 test_dns_helper_trust() {
 	local loc="$HOME/.config/vpn/locations" args
 	mkdir -p "$WORK_DIR/rcbin"
@@ -752,6 +791,7 @@ test_tmp_log_cannot_spoof_success
 test_progress_stage_transitions
 test_profile_content_validation
 test_openvpn_invocation
+test_openvpn_start_failure_detected
 test_dns_helper_trust
 test_dns_helper_script
 test_cleanup_keeps_held_lock
