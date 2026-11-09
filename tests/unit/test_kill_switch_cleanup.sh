@@ -232,6 +232,16 @@ test_disconnect_survives_signal() {
     report $? "disconnect interrupted by SIG$sig still removes the kill switch" "$(cat "$CALLS")"
 }
 
+# Disconnect restores DNS now (release_vpn_network_state), so it must not
+# claim to skip DNS operations
+test_disconnect_does_not_claim_skipping_dns() {
+    local out
+    out=$(bash -c "$(stubbed_source vpn-manager)
+        cleanup_routes_light" 2>&1)
+    ! grep -qi "skipping dns" <<< "$out"
+    report $? "disconnect output does not claim DNS is skipped" "$out"
+}
+
 # ---------------------------------------------------------------------------
 # Connect
 # ---------------------------------------------------------------------------
@@ -440,6 +450,7 @@ test_disconnect_with_auto_reconnect
 test_disconnect_keep_kill_switch
 test_disconnect_survives_signal TERM
 test_disconnect_survives_signal INT
+test_disconnect_does_not_claim_skipping_dns
 test_connect_clears_stale_state
 test_connect_keeps_live_vpn_state
 test_connect_keep_kill_switch
