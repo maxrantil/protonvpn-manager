@@ -120,15 +120,97 @@ clear_vpn_dns() {
     return 0
 }
 
+# openresolv rebuilds resolv.conf from its own entries only. When
+# NetworkManager does not register with resolvconf (it keeps its copy in
+# /run/NetworkManager/resolv.conf), removing the VPN's entry leaves
+# resolv.conf without nameservers: DNS is dead, and Tailscale, re-enabled
+# after, would back up that empty file as its upstream. Put NetworkManager's
+# current DNS back in that case; a resolv.conf with nameservers is left alone.
+restore_system_dns() {
+    local resolv="${VPN_RESOLV_CONF:-/etc/resolv.conf}"
+    local nm="${VPN_NM_RESOLV_CONF:-/run/NetworkManager/resolv.conf}"
+    local record
+    record=$(tailscale_dns_record)
+    # Tailscale in resolvconf mode registers with openresolv, which only
+    # rewrites a resolv.conf carrying its own signature: never copy a foreign
+    # file in then, rebuild it with resolvconf instead
+    if [[ -f $record ]] && grep -qx 'mode=resolvconf' "$record"; then
+        sudo resolvconf -u 2> /dev/null || true
+        return 0
+    fi
+    grep -q '^nameserver' "$resolv" 2> /dev/null && return 0
+    [[ -f $nm && ! -L $nm ]] && grep -q '^nameserver' "$nm" 2> /dev/null || return 0
+    sudo install -m 644 "$nm" "$resolv"
+}
+
+# Tailscale with MagicDNS owns /etc/resolv.conf (100.100.100.100) and sends
+# lookups to the ISP's resolver outside the tunnel: a DNS leak, and with the
+# kill switch on nothing resolves at all. While a VPN is connected its DNS is
+# paused, so resolv.conf comes from resolvconf (the VPN's exclusive entry).
+# The record file means "we paused it": a setting the user turned off
+# themselves is never turned back on.
+tailscale_dns_record() {
+    echo "${XDG_STATE_HOME:-$HOME/.local/state}/vpn/tailscale-dns-paused"
+}
+
+pause_tailscale_dns() {
+    command -v tailscale > /dev/null 2>&1 || return 0
+    # Only when tailscaled runs and manages DNS
+    tailscale debug prefs 2> /dev/null | grep -q '"CorpDNS": true' || return 0
+    local record
+    record=$(tailscale_dns_record)
+    secure_user_dir "$(dirname "$record")" || return 1
+    # Record first (with how Tailscale manages DNS: its own resolv.conf, or
+    # an entry in resolvconf): a crash after the change must still restore
+    local mode=direct
+    resolvconf -i 2> /dev/null | tr ' ' '\n' | grep -qx tailscale && mode=resolvconf
+    echo "mode=$mode" > "$record"
+    if ! sudo tailscale set --accept-dns=false > /dev/null 2>&1; then
+        rm -f "$record"
+        echo "WARNING: Could not pause Tailscale DNS; DNS may bypass the VPN" >&2
+        return 1
+    fi
+    # Tailscale put back its pre-Tailscale resolv.conf (router/ISP DNS);
+    # rebuild it from resolvconf, where the VPN's entry is exclusive
+    sudo resolvconf -u 2> /dev/null || true
+    echo "DNS goes through the VPN (Tailscale DNS paused until disconnect)"
+}
+
+restore_tailscale_dns() {
+    local record
+    record=$(tailscale_dns_record)
+    [[ -f $record ]] || return 0
+    if command -v tailscale > /dev/null 2>&1 && sudo tailscale set --accept-dns=true > /dev/null 2>&1; then
+        rm -f "$record"
+        # Switching DNS back on is no proof Tailscale took resolv.conf back
+        local resolv="${VPN_RESOLV_CONF:-/etc/resolv.conf}" i
+        for ((i = 0; i < ${VPN_TAILSCALE_TAKEOVER_WAIT:-5} * 2; i++)); do
+            grep -q '^nameserver 100\.100\.100\.100' "$resolv" 2> /dev/null && return 0
+            sleep 0.5
+        done
+        echo "WARNING: Tailscale DNS is on again, but Tailscale has not taken over resolv.conf:" >&2
+        echo "  MagicDNS names (*.ts.net) won't resolve. If it persists, restart tailscaled" >&2
+        echo "  (e.g. sudo sv restart tailscaled)." >&2
+        return 0
+    fi
+    echo "WARNING: Could not restore Tailscale DNS; run: sudo tailscale set --accept-dns=true" >&2
+    return 1
+}
+
 # Undo what a VPN session leaves in the network config once no VPN runs:
-# the VPN's DNS entry and the kill switch. Callers that keep the kill switch
-# on purpose (sleep/reconnect hooks) set VPN_KEEP_KILL_SWITCH=1.
+# the VPN's DNS entry, paused Tailscale DNS, the IPv6 block and the kill
+# switch. Callers that keep the kill switch on purpose (sleep/reconnect
+# hooks) set VPN_KEEP_KILL_SWITCH=1; it blocks IPv6 and DNS leaks itself.
 # Uses $VPN_DIR of the calling script.
 release_vpn_network_state() {
     clear_vpn_dns
-    [[ ${VPN_KEEP_KILL_SWITCH:-} == 1 ]] && return 0
+    # Before Tailscale takes resolv.conf back, so it keeps a working upstream
+    restore_system_dns || true
+    restore_tailscale_dns || true
     local kill_switch="${VPN_DIR:-/usr/local/bin}/vpn-kill-switch"
     [[ -x $kill_switch ]] || return 0
+    "$kill_switch" ipv6-guard off > /dev/null 2>&1 || true
+    [[ ${VPN_KEEP_KILL_SWITCH:-} == 1 ]] && return 0
     "$kill_switch" is-enabled 2> /dev/null || return 0
     echo "Disabling kill switch..."
     "$kill_switch" disable
@@ -141,3 +223,7 @@ export -f detect_real_user
 export -f secure_user_dir
 export -f clear_vpn_dns
 export -f release_vpn_network_state
+export -f restore_system_dns
+export -f tailscale_dns_record
+export -f pause_tailscale_dns
+export -f restore_tailscale_dns

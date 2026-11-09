@@ -801,7 +801,8 @@ cleanup_routes_light() {
     # WireGuard interfaces will only be cleaned in emergency full cleanup
 
     # Skip potentially disruptive DNS operations during regular disconnect
-    echo "Skipping DNS operations to prevent network disruption..."
+    # (no NetworkManager restart); the VPN's DNS entries are removed by
+    # release_vpn_network_state after stop_vpn
 }
 
 full_cleanup() {

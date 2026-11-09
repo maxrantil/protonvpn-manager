@@ -569,6 +569,20 @@ clear_stale_vpn_state() {
     release_vpn_network_state > /dev/null 2>&1 || true
 }
 
+# While connected nothing may leave outside the tunnel: block IPv6 (the
+# tunnel carries none) and send DNS to the VPN even when Tailscale manages
+# DNS. Opt-outs in ~/.config/vpn/config: BLOCK_IPV6=false, TAILSCALE_DNS=keep.
+# Undone by release_vpn_network_state (disconnect, stale state, interrupt).
+apply_leak_protection() {
+    local kill_switch="$VPN_DIR/vpn-kill-switch"
+    if [[ "$(connector_config_value BLOCK_IPV6 true)" != "false" && -x $kill_switch ]]; then
+        "$kill_switch" ipv6-guard on || echo "WARNING: IPv6 may leak outside the tunnel" >&2
+    fi
+    if [[ "$(connector_config_value TAILSCALE_DNS pause)" != "keep" ]]; then
+        pause_tailscale_dns || true
+    fi
+}
+
 # Common start of every connect command
 # Returns: 0 when the connect may proceed
 begin_connect() {
@@ -1278,6 +1292,8 @@ handle_connection_success() {
     if [[ -n "$profile_path" ]] && [[ -f "$profile_path" ]]; then
         save_reconnect_state "$profile_path"
     fi
+
+    apply_leak_protection
 
     # Enable kill switch if explicitly requested (via environment variable or config)
     local kill_switch_script="$VPN_DIR/vpn-kill-switch"

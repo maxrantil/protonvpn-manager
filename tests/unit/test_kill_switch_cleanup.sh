@@ -54,7 +54,10 @@ export XDG_CONFIG_HOME="$HOME/.config"
 export VPN_SESSION_DIR="$WORK_DIR/session"
 export VPN_DNS_HELPER="$WORK_DIR/no-dns-helper"
 export VPN_LOG_DIR="$XDG_STATE_HOME/vpn"
+export VPN_RESOLV_CONF="$WORK_DIR/resolv.conf"
+export VPN_NM_RESOLV_CONF="$WORK_DIR/nm-resolv.conf"
 mkdir -p "$HOME/.config/vpn/locations" "$XDG_RUNTIME_DIR" "$VPN_LOG_DIR"
+printf 'nameserver 192.0.2.53\n' > "$VPN_RESOLV_CONF"
 chmod 700 "$XDG_RUNTIME_DIR"
 
 STUB_DIR="$WORK_DIR/stub"    # replaces VPN_DIR (vpn-kill-switch, vpn-manager)
@@ -227,6 +230,16 @@ test_disconnect_survives_signal() {
 
     [[ ! -f $KS_ON ]]
     report $? "disconnect interrupted by SIG$sig still removes the kill switch" "$(cat "$CALLS")"
+}
+
+# Disconnect restores DNS now (release_vpn_network_state), so it must not
+# claim to skip DNS operations
+test_disconnect_does_not_claim_skipping_dns() {
+    local out
+    out=$(bash -c "$(stubbed_source vpn-manager)
+        cleanup_routes_light" 2>&1)
+    ! grep -qi "skipping dns" <<< "$out"
+    report $? "disconnect output does not claim DNS is skipped" "$out"
 }
 
 # ---------------------------------------------------------------------------
@@ -437,6 +450,7 @@ test_disconnect_with_auto_reconnect
 test_disconnect_keep_kill_switch
 test_disconnect_survives_signal TERM
 test_disconnect_survives_signal INT
+test_disconnect_does_not_claim_skipping_dns
 test_connect_clears_stale_state
 test_connect_keeps_live_vpn_state
 test_connect_keep_kill_switch
