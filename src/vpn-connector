@@ -527,6 +527,70 @@ fi
 
 trap cleanup_on_exit EXIT
 
+# Set once this run has started an OpenVPN daemon / once its tunnel is up
+VPN_DAEMON_STARTED=""
+CONNECTION_ESTABLISHED=""
+
+# Ctrl+C, SIGTERM or SIGHUP while connecting: undo the unfinished connection
+# (daemon, DNS entry, kill switch) instead of leaving it behind. A connection
+# that is already up, or a VPN this run did not start, is left alone.
+# Args: $1 = signal name
+handle_connect_signal() {
+    local sig="$1"
+    trap '' INT TERM HUP
+    if [[ -n $VPN_DAEMON_STARTED && -z $CONNECTION_ESTABLISHED ]]; then
+        echo "" >&2
+        echo "Interrupted; undoing the unfinished connection..." >&2
+        "$VPN_DIR/vpn-manager" stop > /dev/null 2>&1 || true
+    fi
+    cleanup_on_exit
+    # Die from the same signal, so callers (the vpn wrapper, a shell) see it
+    trap - "$sig" EXIT
+    kill -"$sig" $$
+}
+trap 'handle_connect_signal INT' INT
+trap 'handle_connect_signal TERM' TERM
+trap 'handle_connect_signal HUP' HUP
+
+# A kill switch with no VPN behind it (OpenVPN crashed or was killed, or an
+# earlier run was interrupted) blocks all traffic including the latency checks,
+# and only lets the previous server through, so a new connect cannot succeed.
+# Remove it, and the DNS entry OpenVPN could not remove itself. Leaves
+# everything alone while a VPN runs; hooks that hold the kill switch across
+# a reconnect set VPN_KEEP_KILL_SWITCH=1.
+clear_stale_vpn_state() {
+    if pgrep -x openvpn > /dev/null 2>&1 || ip -o link show type wireguard 2> /dev/null | grep -q .; then
+        return 0
+    fi
+    local kill_switch="$VPN_DIR/vpn-kill-switch"
+    if [[ ${VPN_KEEP_KILL_SWITCH:-} != 1 && -x $kill_switch ]] && "$kill_switch" is-enabled 2> /dev/null; then
+        echo -e "\033[1;33mRemoving a kill switch left from an earlier connection (no VPN is running)\033[0m"
+    fi
+    release_vpn_network_state > /dev/null 2>&1 || true
+}
+
+# While connected nothing may leave outside the tunnel: block IPv6 (the
+# tunnel carries none) and send DNS to the VPN even when Tailscale manages
+# DNS. Opt-outs in ~/.config/vpn/config: BLOCK_IPV6=false, TAILSCALE_DNS=keep.
+# Undone by release_vpn_network_state (disconnect, stale state, interrupt).
+apply_leak_protection() {
+    local kill_switch="$VPN_DIR/vpn-kill-switch"
+    if [[ "$(connector_config_value BLOCK_IPV6 true)" != "false" && -x $kill_switch ]]; then
+        "$kill_switch" ipv6-guard on || echo "WARNING: IPv6 may leak outside the tunnel" >&2
+    fi
+    if [[ "$(connector_config_value TAILSCALE_DNS pause)" != "keep" ]]; then
+        pause_tailscale_dns || true
+    fi
+}
+
+# Common start of every connect command
+# Returns: 0 when the connect may proceed
+begin_connect() {
+    check_dependencies || return 1
+    acquire_lock || return 1
+    clear_stale_vpn_state
+}
+
 list_profiles() {
     local filter="${1:-}"
     local show_details="${2:-}"
@@ -1041,6 +1105,9 @@ start_openvpn_daemon() {
         warn_dns_not_managed
     fi
 
+    # From here on an interrupted connect has a daemon to undo
+    VPN_DAEMON_STARTED=1
+
     # Security: Use hardcoded trusted path (Issue #165)
     sudo "$OPENVPN_BINARY" \
         --config "$SESSION_DIR/profile.ovpn" \
@@ -1213,6 +1280,9 @@ handle_connection_success() {
     local max_attempts="$3"
     local profile_path="${4:-}"
 
+    # The tunnel is up: an interrupt from here on must not tear it down
+    CONNECTION_ESTABLISHED=1
+
     log_message "Successfully connected to OpenVPN $profile_name on attempt $attempt" "$CONNECTION_LOG"
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] Connected successfully: $profile_name (attempt $attempt/$max_attempts)" >> "$CONNECTION_LOG" 2> /dev/null || true
 
@@ -1220,6 +1290,8 @@ handle_connection_success() {
     if [[ -n "$profile_path" ]] && [[ -f "$profile_path" ]]; then
         save_reconnect_state "$profile_path"
     fi
+
+    apply_leak_protection
 
     # Enable kill switch if explicitly requested (via environment variable or config)
     local kill_switch_script="$VPN_DIR/vpn-kill-switch"
@@ -1708,71 +1780,35 @@ if [[ ${BASH_SOURCE[0]} == "${0}" ]]; then
 
     case "${1:-}" in
         "connect" | "c")
-            if ! check_dependencies; then
-                exit 1
-            fi
-
-            if ! acquire_lock; then
-                exit 1
-            fi
+            begin_connect || exit 1
 
             connect_by_country "${2:-}"
             ;;
         "best" | "b")
-            if ! check_dependencies; then
-                exit 1
-            fi
-
-            if ! acquire_lock; then
-                exit 1
-            fi
+            begin_connect || exit 1
 
             # For TDD GREEN phase: make best command actually perform connection
             echo -e "\033[1;36mFinding best server and connecting...\033[0m"
             best_server_connect "full" "${2:-}"
             ;;
         "fast" | "f")
-            if ! check_dependencies; then
-                exit 1
-            fi
-
-            if ! acquire_lock; then
-                exit 1
-            fi
+            begin_connect || exit 1
 
             echo -e "\033[1;33mFast connect mode (using cached results if available)\033[0m"
             best_server_connect "fast" "${2:-}"
             ;;
         "secure")
-            if ! check_dependencies; then
-                exit 1
-            fi
-
-            if ! acquire_lock; then
-                exit 1
-            fi
+            begin_connect || exit 1
 
             secure_core_connect
             ;;
         "custom")
-            if ! check_dependencies; then
-                exit 1
-            fi
-
-            if ! acquire_lock; then
-                exit 1
-            fi
+            begin_connect || exit 1
 
             connect_custom_profile "${2:-}"
             ;;
         "interactive" | "i")
-            if ! check_dependencies; then
-                exit 1
-            fi
-
-            if ! acquire_lock; then
-                exit 1
-            fi
+            begin_connect || exit 1
 
             interactive_profile_selection "${2:-}"
             ;;

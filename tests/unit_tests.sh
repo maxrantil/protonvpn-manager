@@ -234,6 +234,8 @@ run_unit_tests() {
         unit/test_auto_reconnect.sh
         unit/test_connection_feedback.sh
         unit/test_kill_switch.sh
+        unit/test_kill_switch_cleanup.sh
+        unit/test_leak_protection.sh
         unit/test_process_detection.sh
         unit/test_profile_resolution.sh
         unit/test_country_selection.sh

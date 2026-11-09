@@ -410,7 +410,24 @@ show_status() {
     fi
 }
 
+# Disconnect: stop the VPN, then always remove the kill switch and VPN DNS,
+# also when the tunnel had already died. An interrupted disconnect used to
+# leave the kill switch blocking all traffic, so INT/TERM/HUP are ignored
+# until it is done (children inherit this, e.g. iptables). Every step is
+# bounded (at most ~7s waiting for OpenVPN to exit).
 stop_vpn() {
+    trap '' INT TERM HUP
+    local rc=0
+    stop_vpn_process || rc=$?
+    # A VPN that refused to stop keeps its kill switch: traffic stays protected
+    if [[ $rc -eq 0 ]]; then
+        release_vpn_network_state
+    fi
+    trap - INT TERM HUP
+    return "$rc"
+}
+
+stop_vpn_process() {
     echo -e "\033[1;33mStopping VPN connection...\033[0m"
     log_message "VPN stop requested" "$VPN_LOG_FILE"
     log_vpn_event "INFO" "VPN disconnect requested by user"
@@ -460,24 +477,7 @@ stop_vpn() {
     cleanup_files
     cleanup_routes_light
 
-    # Disable kill switch on intentional disconnect (unless auto-reconnect is enabled)
-    local kill_switch_script="$VPN_DIR/vpn-kill-switch"
-    if [[ -x "$kill_switch_script" ]]; then
-        if "$kill_switch_script" is-enabled 2> /dev/null; then
-            # Check if auto-reconnect is enabled - if so, preserve kill switch for security
-            local config_file="${XDG_CONFIG_HOME:-$HOME/.config}/vpn/config"
-            local auto_reconnect
-            auto_reconnect=$(grep "^AUTO_RECONNECT=" "$config_file" 2> /dev/null | cut -d= -f2)
-
-            if [[ "$auto_reconnect" == "true" ]]; then
-                echo "Kill switch preserved (auto-reconnect is enabled)"
-                echo "  Use 'vpn kill-switch off' to manually disable if needed"
-            else
-                echo "Disabling kill switch (intentional disconnect)..."
-                "$kill_switch_script" disable
-            fi
-        fi
-    fi
+    # The kill switch and VPN DNS are released by stop_vpn
 
     notify_event "status_check" "DISCONNECTED"
 
@@ -801,7 +801,8 @@ cleanup_routes_light() {
     # WireGuard interfaces will only be cleaned in emergency full cleanup
 
     # Skip potentially disruptive DNS operations during regular disconnect
-    echo "Skipping DNS operations to prevent network disruption..."
+    # (no NetworkManager restart); the VPN's DNS entries are removed by
+    # release_vpn_network_state after stop_vpn
 }
 
 full_cleanup() {

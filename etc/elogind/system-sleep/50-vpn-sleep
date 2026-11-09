@@ -75,8 +75,8 @@ case "${1-}" in
         # The connector saves last_profile (+ integrity hash) on every
         # successful connect, so nothing needs to be written here.
 
-        # Clean disconnect before sleep (kill switch state is preserved)
-        HOME="$REAL_HOME" /usr/local/bin/vpn disconnect >/dev/null 2>&1 || true
+        # Clean disconnect before sleep; the kill switch stays on (VPN_KEEP_KILL_SWITCH)
+        HOME="$REAL_HOME" VPN_KEEP_KILL_SWITCH=1 /usr/local/bin/vpn disconnect >/dev/null 2>&1 || true
         log_msg "PRE-SLEEP: VPN disconnected"
         ;;
 
@@ -152,7 +152,7 @@ case "${1-}" in
 
         # Attempt reconnection (`custom` takes a profile path; `connect` takes a country)
         log_msg "POST-WAKE: Reconnecting to $PROFILE"
-        if HOME="$REAL_HOME" /usr/local/bin/vpn-connector custom "$PROFILE" >/dev/null 2>&1; then
+        if HOME="$REAL_HOME" VPN_KEEP_KILL_SWITCH=1 /usr/local/bin/vpn-connector custom "$PROFILE" >/dev/null 2>&1; then
             log_msg "POST-WAKE: Reconnection successful"
         else
             log_msg "POST-WAKE: Reconnection failed"

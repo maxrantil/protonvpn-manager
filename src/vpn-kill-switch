@@ -55,6 +55,7 @@ config_value() {
 # Chain names for iptables rules
 CHAIN_NAME="VPN_KILL_SWITCH"
 CHAIN_NAME_V6="VPN_KILL_SWITCH_V6"
+IPV6_GUARD_CHAIN="VPN_IPV6_GUARD"
 
 # VPN interface (OpenVPN typically uses tun0)
 VPN_INTERFACE="${VPN_INTERFACE:-tun0}"
@@ -324,10 +325,11 @@ disable_kill_switch() {
         return 1
     fi
 
-    # Remove IPv4 chain from OUTPUT
-    if run_iptables -C OUTPUT -j "$CHAIN_NAME" 2> /dev/null; then
-        run_iptables -D OUTPUT -j "$CHAIN_NAME"
-    fi
+    # Remove IPv4 chain from OUTPUT (every jump: an interrupted run can leave
+    # duplicates, and the chain cannot be deleted while one remains)
+    while run_iptables -C OUTPUT -j "$CHAIN_NAME" 2> /dev/null; do
+        run_iptables -D OUTPUT -j "$CHAIN_NAME" || break
+    done
 
     # Flush and delete IPv4 chain
     if chain_exists; then
@@ -335,10 +337,10 @@ disable_kill_switch() {
         run_iptables -X "$CHAIN_NAME"
     fi
 
-    # Remove IPv6 chain from OUTPUT
-    if run_ip6tables -C OUTPUT -j "$CHAIN_NAME_V6" 2> /dev/null; then
-        run_ip6tables -D OUTPUT -j "$CHAIN_NAME_V6"
-    fi
+    # Remove IPv6 chain from OUTPUT (every jump, see above)
+    while run_ip6tables -C OUTPUT -j "$CHAIN_NAME_V6" 2> /dev/null; do
+        run_ip6tables -D OUTPUT -j "$CHAIN_NAME_V6" || break
+    done
 
     # Flush and delete IPv6 chain
     if chain_exists_v6; then
@@ -355,6 +357,64 @@ disable_kill_switch() {
     return 0
 }
 
+# IPv6 guard: while a VPN is connected, block outgoing IPv6 outside the
+# tunnel. ProtonVPN's OpenVPN tunnels carry only IPv4, so without this IPv6
+# leaves over the physical interface with the ISP's address. Independent of
+# the kill switch. Allowed: loopback, link-local and multicast (neighbour
+# discovery), tunnels, Tailscale and libvirt. Established flows are NOT
+# allowed: an IPv6 connection opened before the VPN came up would keep
+# leaking. REJECT so applications fall back to IPv4 at once; DROP when the
+# REJECT module cannot load (e.g. kernel upgraded but not rebooted yet).
+ipv6_guard_on() {
+    check_privileges || return 1
+    if ! command -v ip6tables &> /dev/null; then
+        echo -e "${YELLOW}Warning: ip6tables not found; IPv6 is not blocked${NC}" >&2
+        return 1
+    fi
+    local jump="" final
+    if ! run_ip6tables -C OUTPUT -j "$IPV6_GUARD_CHAIN" 2> /dev/null; then
+        jump="
+-I OUTPUT 1 -j $IPV6_GUARD_CHAIN"
+    fi
+    for final in "REJECT --reject-with icmp6-adm-prohibited" "DROP"; do
+        if run_ip6tables_restore 2> /dev/null << EOF; then
+*filter
+:$IPV6_GUARD_CHAIN - [0:0]
+-A $IPV6_GUARD_CHAIN -o lo -j ACCEPT
+-A $IPV6_GUARD_CHAIN -d fe80::/10 -j ACCEPT
+-A $IPV6_GUARD_CHAIN -d ff00::/8 -j ACCEPT
+-A $IPV6_GUARD_CHAIN -o tun+ -j ACCEPT
+-A $IPV6_GUARD_CHAIN -o tailscale0 -j ACCEPT
+-A $IPV6_GUARD_CHAIN -o virbr+ -j ACCEPT
+-A $IPV6_GUARD_CHAIN -j $final$jump
+COMMIT
+EOF
+            echo "IPv6 blocked outside the tunnel"
+            return 0
+        fi
+    done
+    echo -e "${RED}Error: Failed to block IPv6${NC}" >&2
+    return 1
+}
+
+# Remove the IPv6 guard (every jump, then the chain); no-op when absent
+ipv6_guard_off() {
+    command -v ip6tables &> /dev/null || return 0
+    check_privileges || return 1
+    while run_ip6tables -C OUTPUT -j "$IPV6_GUARD_CHAIN" 2> /dev/null; do
+        run_ip6tables -D OUTPUT -j "$IPV6_GUARD_CHAIN" || break
+    done
+    if run_ip6tables -L "$IPV6_GUARD_CHAIN" -n &> /dev/null; then
+        run_ip6tables -F "$IPV6_GUARD_CHAIN"
+        run_ip6tables -X "$IPV6_GUARD_CHAIN"
+    fi
+    return 0
+}
+
+ipv6_guard_is_on() {
+    run_ip6tables -C OUTPUT -j "$IPV6_GUARD_CHAIN" 2> /dev/null
+}
+
 # Emergency disable - removes all rules immediately
 emergency_disable() {
     echo -e "${RED}Emergency kill switch disable...${NC}"
@@ -368,6 +428,8 @@ emergency_disable() {
     sudo ip6tables -F "$CHAIN_NAME_V6" 2> /dev/null || true
     sudo ip6tables -X "$CHAIN_NAME_V6" 2> /dev/null || true
 
+    ipv6_guard_off 2> /dev/null || true
+
     # Clear state
     rm -f "$STATE_FILE" 2> /dev/null || true
 
@@ -375,10 +437,14 @@ emergency_disable() {
     return 0
 }
 
-# Check if kill switch is enabled
+# Check if kill switch is enabled: either half blocks traffic on its own
+# (a leftover IPv6 jump without the IPv4 one still needs disabling)
 is_enabled() {
     if chain_exists && run_iptables -C OUTPUT -j "$CHAIN_NAME" 2> /dev/null; then
         return 0 # Enabled
+    fi
+    if chain_exists_v6 && run_ip6tables -C OUTPUT -j "$CHAIN_NAME_V6" 2> /dev/null; then
+        return 0 # Enabled (IPv6 only)
     fi
     return 1 # Disabled
 }
@@ -473,6 +539,7 @@ show_help() {
     echo "  emergency           - Emergency disable (force remove all rules)"
     echo "  status              - Show current kill switch status"
     echo "  is-enabled          - Check if enabled (exit code: 0=yes, 1=no)"
+    echo "  ipv6-guard on|off|status - Block IPv6 outside the tunnel (used while connected)"
     echo "  help                - Show this help message"
     echo ""
     echo "The kill switch blocks all network traffic except:"
@@ -517,6 +584,18 @@ case "${1:-}" in
         ;;
     "status" | "s")
         show_status
+        ;;
+    "ipv6-guard")
+        case "${2:-}" in
+            on) ipv6_guard_on ;;
+            off) ipv6_guard_off ;;
+            status) ipv6_guard_is_on ;;
+            *)
+                echo "Usage: vpn-kill-switch ipv6-guard {on|off|status}" >&2
+                exit 1
+                ;;
+        esac
+        exit $?
         ;;
     "is-enabled" | "check")
         is_enabled

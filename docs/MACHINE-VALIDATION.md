@@ -82,7 +82,7 @@ resolvconf -l | grep -A3 protonvpn
 ```
 
 - [ ] The nameserver is the VPN's (usually `10.2.0.1`), not your router.
-- [ ] A DNS leak test (e.g. https://dnsleaktest.com, extended test) shows
+- [ ] A DNS leak test (e.g. <https://dnsleaktest.com>, extended test) shows
       **only** ProtonVPN servers.
 
 Root-owned session files:
@@ -211,6 +211,8 @@ These go in `~/.config/vpn/config`, one per line.
 | `FAILOVER_SERVERS=1` | No failover: retry the same server |
 | `CONNECT_TIMEOUT=35` | Seconds to wait per server (5-300) |
 | `ALLOW_PROFILE_SCRIPTS=true` | Allow `up`/`down`/… in profiles you trust |
+| `BLOCK_IPV6=false` | Don't block IPv6 outside the tunnel while connected (leaks IPv6) |
+| `TAILSCALE_DNS=keep` | Keep Tailscale's DNS while connected (leaks DNS; with the kill switch, no names resolve) |
 
 To go back to the version from before these changes:
 
