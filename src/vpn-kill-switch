@@ -317,6 +317,18 @@ COMMIT"
     return 0
 }
 
+# Remove every jump from OUTPUT to a chain (duplicates included). Bounded: an
+# iptables (or wrapper) that keeps reporting the jump must not hang disconnect.
+# Args: $1 = run_iptables | run_ip6tables, $2 = chain
+remove_output_jumps() {
+    local i
+    for ((i = 0; i < 32; i++)); do
+        "$1" -C OUTPUT -j "$2" 2> /dev/null || return 0
+        "$1" -D OUTPUT -j "$2" || return 1
+    done
+    return 1
+}
+
 # Disable the kill switch (intentional disconnect)
 disable_kill_switch() {
     echo -e "${YELLOW}Disabling VPN kill switch...${NC}"
@@ -327,9 +339,7 @@ disable_kill_switch() {
 
     # Remove IPv4 chain from OUTPUT (every jump: an interrupted run can leave
     # duplicates, and the chain cannot be deleted while one remains)
-    while run_iptables -C OUTPUT -j "$CHAIN_NAME" 2> /dev/null; do
-        run_iptables -D OUTPUT -j "$CHAIN_NAME" || break
-    done
+    remove_output_jumps run_iptables "$CHAIN_NAME" || true
 
     # Flush and delete IPv4 chain
     if chain_exists; then
@@ -338,9 +348,7 @@ disable_kill_switch() {
     fi
 
     # Remove IPv6 chain from OUTPUT (every jump, see above)
-    while run_ip6tables -C OUTPUT -j "$CHAIN_NAME_V6" 2> /dev/null; do
-        run_ip6tables -D OUTPUT -j "$CHAIN_NAME_V6" || break
-    done
+    remove_output_jumps run_ip6tables "$CHAIN_NAME_V6" || true
 
     # Flush and delete IPv6 chain
     if chain_exists_v6; then
@@ -401,9 +409,7 @@ EOF
 ipv6_guard_off() {
     command -v ip6tables &> /dev/null || return 0
     check_privileges || return 1
-    while run_ip6tables -C OUTPUT -j "$IPV6_GUARD_CHAIN" 2> /dev/null; do
-        run_ip6tables -D OUTPUT -j "$IPV6_GUARD_CHAIN" || break
-    done
+    remove_output_jumps run_ip6tables "$IPV6_GUARD_CHAIN" || true
     if run_ip6tables -L "$IPV6_GUARD_CHAIN" -n &> /dev/null; then
         run_ip6tables -F "$IPV6_GUARD_CHAIN"
         run_ip6tables -X "$IPV6_GUARD_CHAIN"

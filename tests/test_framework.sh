@@ -187,28 +187,46 @@ assert_command_fails() {
     fi
 }
 
+# Mocks live in a private directory, each under the real command name, first
+# on PATH (putting all of /tmp on PATH would let any user plant commands).
+# The PATH from before the first mock is restored by cleanup_mocks.
+ensure_mock_dir() {
+    if [[ -z ${MOCK_DIR:-} || ! -d $MOCK_DIR ]]; then
+        MOCK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/vpn-test-mocks.XXXXXX")
+    fi
+    [[ -n ${ORIGINAL_PATH:-} ]] || ORIGINAL_PATH=$PATH
+    case ":$PATH:" in
+        *":$MOCK_DIR:"*) ;;
+        *) export PATH="$MOCK_DIR:$PATH" ;;
+    esac
+}
+
 mock_command() {
     local command_name="$1"
     local mock_output="$2"
     local mock_exit_code="${3:-0}"
 
-    # Create mock script
-    local mock_script="/tmp/mock_$command_name"
-    cat > "$mock_script" << EOF
-#!/bin/bash
-echo "$mock_output"
-exit $mock_exit_code
-EOF
-    chmod +x "$mock_script"
-
-    # Add to PATH
-    export PATH="/tmp:$PATH"
+    ensure_mock_dir
+    # %q keeps the output exactly as given (quotes, $, no expansion)
+    {
+        echo '#!/bin/bash'
+        printf 'printf "%%s\\n" %q\n' "$mock_output"
+        printf 'exit %d\n' "$mock_exit_code"
+    } > "$MOCK_DIR/$command_name"
+    chmod +x "$MOCK_DIR/$command_name"
 
     log_test "INFO" "Mocked command '$command_name' to return: '$mock_output' (exit: $mock_exit_code)"
 }
 
 cleanup_mocks() {
-    rm -f /tmp/mock_* 2> /dev/null || true
+    if [[ -n ${MOCK_DIR:-} && -d $MOCK_DIR ]]; then
+        rm -rf "$MOCK_DIR"
+    fi
+    MOCK_DIR=""
+    if [[ -n ${ORIGINAL_PATH:-} ]]; then
+        export PATH="$ORIGINAL_PATH"
+        ORIGINAL_PATH=""
+    fi
     log_test "INFO" "Cleaned up mock commands"
 }
 
@@ -216,9 +234,39 @@ setup_test_env() {
     # Clean up any mocks from previous tests first
     cleanup_mocks
 
+    # One test directory at a time: remove the one of a previous call
+    if [[ -n ${TEST_TEMP_DIR:-} && -d $TEST_TEMP_DIR && $TEST_TEMP_DIR == "${TMPDIR:-/tmp}"/vpn_test.* ]]; then
+        rm -rf "$TEST_TEMP_DIR"
+    fi
+
     # Create temporary test directories
-    TEST_TEMP_DIR="/tmp/vpn_test_$$"
-    mkdir -p "$TEST_TEMP_DIR"
+    TEST_TEMP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/vpn_test.XXXXXX")
+
+    # Never the real configuration, credentials, logs or locks: HOME and the
+    # XDG directories point into the test directory (restored by cleanup_test_env)
+    if [[ -z ${ORIGINAL_HOME:-} ]]; then
+        ORIGINAL_HOME=$HOME
+        ORIGINAL_XDG="${XDG_CONFIG_HOME-}|${XDG_STATE_HOME-}|${XDG_CACHE_HOME-}|${XDG_RUNTIME_DIR-}"
+    fi
+    export HOME="$TEST_TEMP_DIR/home"
+    export XDG_CONFIG_HOME="$HOME/.config"
+    export XDG_STATE_HOME="$HOME/.local/state"
+    export XDG_CACHE_HOME="$HOME/.cache"
+    export XDG_RUNTIME_DIR="$TEST_TEMP_DIR/run"
+    mkdir -p "$XDG_CONFIG_HOME/vpn" "$XDG_STATE_HOME/vpn" "$XDG_CACHE_HOME" "$XDG_RUNTIME_DIR/vpn"
+    # As on a real system, where the connector created its lock directory 700
+    chmod 700 "$XDG_RUNTIME_DIR" "$XDG_RUNTIME_DIR/vpn"
+
+    # Never real privileged commands: sudo refuses (and logs the attempt in
+    # $MOCK_DIR/blocked.log) unless a test mocks it with mock_command
+    ensure_mock_dir
+    cat > "$MOCK_DIR/sudo" << 'EOF'
+#!/bin/bash
+echo "$*" >> "$(dirname "$0")/blocked.log"
+echo "sudo blocked in tests: $*" >&2
+exit 1
+EOF
+    chmod +x "$MOCK_DIR/sudo"
 
     # Set up test locations
     TEST_LOCATIONS_DIR="$TEST_TEMP_DIR/locations"
@@ -279,6 +327,12 @@ cleanup_test_env() {
     if [[ -n "${TEST_TEMP_DIR:-}" ]] && [[ -d "$TEST_TEMP_DIR" ]]; then
         rm -rf "$TEST_TEMP_DIR"
         log_test "INFO" "Test environment cleaned up"
+    fi
+    if [[ -n ${ORIGINAL_HOME:-} ]]; then
+        export HOME="$ORIGINAL_HOME"
+        IFS='|' read -r XDG_CONFIG_HOME XDG_STATE_HOME XDG_CACHE_HOME XDG_RUNTIME_DIR <<< "$ORIGINAL_XDG"
+        export XDG_CONFIG_HOME XDG_STATE_HOME XDG_CACHE_HOME XDG_RUNTIME_DIR
+        ORIGINAL_HOME=""
     fi
     if [[ -n "${LATENCY_FIXTURE_HOME:-}" ]] && [[ -d "$LATENCY_FIXTURE_HOME" ]]; then
         rm -rf "$LATENCY_FIXTURE_HOME"

@@ -427,6 +427,27 @@ test_kill_switch_netns_leftovers() {
     report $? "disable removes an IPv6-only leftover" "$out"
 }
 
+# Removing jumps loops "while -C finds one: -D it". If iptables (or a wrapper)
+# keeps reporting success without removing anything, that loop never ended:
+# disconnect must always finish
+test_jump_removal_is_bounded() {
+    local always="$WORK_DIR/always_ok"
+    mkdir -p "$always"
+    printf '#!/bin/bash\nexit 0\n' > "$always/sudo"
+    cp "$always/sudo" "$always/iptables"
+    cp "$always/sudo" "$always/ip6tables"
+    chmod +x "$always"/*
+    local cmd rc bad=""
+    for cmd in "disable" "ipv6-guard off"; do
+        rc=0
+        # shellcheck disable=SC2086  # $cmd is two words on purpose
+        PATH="$always:$PATH" timeout 15 bash "$SRC_DIR/vpn-kill-switch" $cmd > /dev/null 2>&1 || rc=$?
+        [[ $rc -eq 124 ]] && bad+=" [$cmd: still looping after 15s]"
+    done
+    [[ -z $bad ]]
+    report $? "removing kill switch / IPv6 guard jumps always terminates" "$bad"
+}
+
 # ---------------------------------------------------------------------------
 # Hooks keep the kill switch on purpose and must say so
 # ---------------------------------------------------------------------------
@@ -459,6 +480,7 @@ test_all_connect_commands_use_begin_connect
 test_connect_signals
 test_connect_flags_set
 test_kill_switch_netns_leftovers
+test_jump_removal_is_bounded
 test_hooks_keep_kill_switch
 
 echo ""

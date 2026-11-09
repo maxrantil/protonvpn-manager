@@ -168,6 +168,10 @@ run_test_suite() {
         fi
         local suite_exit_code=$?
 
+        # Suites share this shell: never let one suite's isolated HOME, sudo
+        # guard or mocks change the next suite's results
+        cleanup_test_env > /dev/null 2>&1 || true
+
         # Calculate suite statistics (now accurate since variables accumulated)
         local suite_end_time
         suite_end_time=$(date +%s)

@@ -1109,14 +1109,20 @@ start_openvpn_daemon() {
     VPN_DAEMON_STARTED=1
 
     # Security: Use hardcoded trusted path (Issue #165)
-    sudo "$OPENVPN_BINARY" \
+    # With --daemon, OpenVPN exits non-zero when it cannot start at all (sudo
+    # denied, invalid options); waiting for such a daemon would only time out.
+    if ! sudo "$OPENVPN_BINARY" \
         --config "$SESSION_DIR/profile.ovpn" \
         --auth-user-pass "$SESSION_DIR/credentials" \
         "${script_args[@]}" \
         --daemon \
         --writepid /var/run/openvpn.pid \
         --log "$OPENVPN_LOG" \
-        --verb 3
+        --verb 3; then
+        echo "ERROR: OpenVPN could not be started (sudo denied, or the profile/options are invalid); see $OPENVPN_LOG" >&2
+        log_message "OpenVPN failed to start for $profile_path" "$CONNECTION_LOG"
+        return 1
+    fi
 
     return 0
 }
