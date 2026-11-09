@@ -12,6 +12,20 @@ readonly PROJECT_ROOT
 readonly VPN_SCRIPT="$PROJECT_ROOT/src/vpn"
 readonly VPN_MANAGER="$PROJECT_ROOT/src/vpn-manager"
 readonly VPN_CONNECTOR="$PROJECT_ROOT/src/vpn-connector"
+
+# These tests make real VPN connections with your profiles and credentials
+# and stop the VPN between cases (vpn-manager stop, pkill openvpn). Run them
+# only when asked for, and never on top of a running session.
+if [[ ${VPN_LIVE_TESTS:-} != 1 ]]; then
+    echo "SKIP: exit code tests make real VPN connections with your profiles and credentials."
+    echo "      Run them with: VPN_LIVE_TESTS=1 $0  (disconnect first)"
+    exit 0
+fi
+if pgrep -x openvpn > /dev/null 2>&1; then
+    echo "REFUSED: a VPN is running; these tests stop it between cases." >&2
+    echo "         Disconnect first (vpn disconnect), then run them again." >&2
+    exit 1
+fi
 readonly TEST_LOG="/tmp/exit_code_tests.log"
 
 # Colors for output

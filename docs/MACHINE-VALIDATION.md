@@ -183,6 +183,18 @@ vpn-manager config auto-reconnect on      # requires the kill switch to be enabl
 
 ---
 
+## Running the test suite on this machine
+
+`cd tests && ./run_tests.sh` is safe while you work: it never starts OpenVPN,
+runs `sudo`, or reads `~/.config/vpn` (HOME is a temporary directory and `sudo`
+is blocked unless a test mocks it). Two parts touch the real VPN on purpose:
+
+- `tests/test_exit_codes.sh` connects with your real profiles and credentials.
+  It is skipped unless you ask for it:
+  `vpn disconnect && VPN_LIVE_TESTS=1 ./tests/test_exit_codes.sh`
+- The process safety tests run the real `vpn cleanup`. They are skipped while
+  a VPN is running.
+
 ## If something fails
 
 Collect these and paste them into a new Claude session:

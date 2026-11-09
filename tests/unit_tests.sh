@@ -239,6 +239,7 @@ run_unit_tests() {
         unit/test_process_detection.sh
         unit/test_profile_resolution.sh
         unit/test_country_selection.sh
+        unit/test_suite_safety.sh
         unit/test_temp_file_manager.sh
         integration/test_best_fast_connection.sh
         security/test_credentials_security.sh
