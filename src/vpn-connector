@@ -797,35 +797,33 @@ find_profiles_by_country() {
     fi
 
     country_code=$(echo "$country_code" | tr '[:upper:]' '[:lower:]')
-    local results
 
-    # Use cached profile list and filter by country code (Issue #63)
-    results=$(get_cached_profiles | grep -E "/${country_code}-[0-9]+\.(ovpn|conf)$")
-
-    # Secondary pattern: try variations like *_se_*, *SE*, etc.
-    if [[ -z $results ]]; then
-        local country_upper
-        country_upper=$(echo "$country_code" | tr '[:lower:]' '[:upper:]')
-
-        # Try different naming patterns using cached profiles
-        local cached_profiles
-        cached_profiles=$(get_cached_profiles)
-
-        # Try patterns in order of preference
-        for pattern in "_${country_code}_" "${country_upper}" "-${country_code}" "${country_code}[0-9]"; do
-            results=$(echo "$cached_profiles" | grep -i "$pattern")
-            if [[ -n $results ]]; then
+    # A profile's country is the first two-letter token of its file name
+    # (after an optional wg- prefix): se-66.protonvpn.udp.ovpn, wg-SE-374.conf,
+    # test-se-2.ovpn -> se; us-ca-11 -> us (ca is the state). Substring
+    # matching picked unrelated profiles: "ca" matched every path through
+    # .../locations/. Secure Core profiles (entry ch/is/se, then the exit
+    # country: se-au-01 exits in Australia) are only used by `vpn secure`.
+    local profile name part country
+    local -a parts
+    get_cached_profiles | while IFS= read -r profile; do
+        name=$(basename "$profile")
+        name=${name,,}
+        name=${name#wg-}
+        [[ $name =~ ^(ch|is|se)-[a-z]{2}-[0-9]+ ]] && continue
+        country=""
+        IFS='-_.' read -ra parts <<< "$name"
+        for part in "${parts[@]}"; do
+            if [[ $part =~ ^[a-z]{2}$ ]]; then
+                country=$part
                 break
             fi
         done
-    fi
-
-    # Fallback: grep cached profiles for country code
-    if [[ -z $results ]]; then
-        results=$(get_cached_profiles | grep -i "$country_code")
-    fi
-
-    echo "$results" | sort
+        # (if, not &&: the loop's status must not depend on the last profile)
+        if [[ $country == "$country_code" ]]; then
+            echo "$profile"
+        fi
+    done | sort
 }
 
 get_available_countries() {
