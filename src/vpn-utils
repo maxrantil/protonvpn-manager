@@ -129,6 +129,15 @@ clear_vpn_dns() {
 restore_system_dns() {
     local resolv="${VPN_RESOLV_CONF:-/etc/resolv.conf}"
     local nm="${VPN_NM_RESOLV_CONF:-/run/NetworkManager/resolv.conf}"
+    local record
+    record=$(tailscale_dns_record)
+    # Tailscale in resolvconf mode registers with openresolv, which only
+    # rewrites a resolv.conf carrying its own signature: never copy a foreign
+    # file in then, rebuild it with resolvconf instead
+    if [[ -f $record ]] && grep -qx 'mode=resolvconf' "$record"; then
+        sudo resolvconf -u 2> /dev/null || true
+        return 0
+    fi
     grep -q '^nameserver' "$resolv" 2> /dev/null && return 0
     [[ -f $nm && ! -L $nm ]] && grep -q '^nameserver' "$nm" 2> /dev/null || return 0
     sudo install -m 644 "$nm" "$resolv"
@@ -151,8 +160,11 @@ pause_tailscale_dns() {
     local record
     record=$(tailscale_dns_record)
     secure_user_dir "$(dirname "$record")" || return 1
-    # Record first: a crash after the change must still lead to a restore
-    : > "$record"
+    # Record first (with how Tailscale manages DNS: its own resolv.conf, or
+    # an entry in resolvconf): a crash after the change must still restore
+    local mode=direct
+    resolvconf -i 2> /dev/null | tr ' ' '\n' | grep -qx tailscale && mode=resolvconf
+    echo "mode=$mode" > "$record"
     if ! sudo tailscale set --accept-dns=false > /dev/null 2>&1; then
         rm -f "$record"
         echo "WARNING: Could not pause Tailscale DNS; DNS may bypass the VPN" >&2
@@ -170,6 +182,15 @@ restore_tailscale_dns() {
     [[ -f $record ]] || return 0
     if command -v tailscale > /dev/null 2>&1 && sudo tailscale set --accept-dns=true > /dev/null 2>&1; then
         rm -f "$record"
+        # Switching DNS back on is no proof Tailscale took resolv.conf back
+        local resolv="${VPN_RESOLV_CONF:-/etc/resolv.conf}" i
+        for ((i = 0; i < ${VPN_TAILSCALE_TAKEOVER_WAIT:-5} * 2; i++)); do
+            grep -q '^nameserver 100\.100\.100\.100' "$resolv" 2> /dev/null && return 0
+            sleep 0.5
+        done
+        echo "WARNING: Tailscale DNS is on again, but Tailscale has not taken over resolv.conf:" >&2
+        echo "  MagicDNS names (*.ts.net) won't resolve. If it persists, restart tailscaled" >&2
+        echo "  (e.g. sudo sv restart tailscaled)." >&2
         return 0
     fi
     echo "WARNING: Could not restore Tailscale DNS; run: sudo tailscale set --accept-dns=true" >&2
