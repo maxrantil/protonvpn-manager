@@ -1240,12 +1240,12 @@ save_reconnect_state() {
         return 1
     fi
 
-    # Create state directory with secure permissions
-    mkdir -p "$state_dir" 2> /dev/null || {
+    # Private, never a symlink, and the user's even when created as root by a
+    # hook (the hooks read the files back as the user)
+    secure_user_dir "$state_dir" || {
         log_message "save_reconnect_state: Cannot create state directory" "$CONNECTION_LOG"
         return 1
     }
-    chmod 700 "$state_dir" 2> /dev/null || true
 
     # Save profile path atomically
     local temp_profile

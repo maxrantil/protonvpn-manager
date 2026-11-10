@@ -202,7 +202,7 @@ run_state_writers() { # $1 = command prefix (empty: run unprivileged)
     local profile="$HOME/.config/vpn/locations/se-1.ovpn"
     echo client > "$profile"
     $1 bash -c "$(stubbed_source vpn-utils)
-        secure_user_dir() { :; }
+        secure_user_dir() { echo \"secure:\$1\" >> \"\$CALLS\"; mkdir -p \"\$1\"; }
         chown() { echo \"chown:\$*\" >> \"\$CALLS\"; }
         REAL_USER=alice REAL_GROUP=staff
         eval \"\$(sed -n '/^save_reconnect_state() {/,/^}/p' '$SRC_DIR/vpn-connector')\"
@@ -217,7 +217,15 @@ test_root_run_leaves_state_to_user() {
         return
     fi
     reset_state
+    # A marker the user replaced with a symlink must not be written through
+    local victim="$WORK_DIR/victim"
+    echo untouched > "$victim"
+    mkdir -p "$state" && ln -sf "$victim" "$state/tailscale-dns-paused"
     run_state_writers "unshare -r"
+    [[ $(grep -cxF "secure:$state" "$CALLS") -eq 2 ]]
+    report $? "save_reconnect_state secures the state directory itself (owner, no symlink)" "$(grep secure: "$CALLS")"
+    [[ $(cat "$victim") == untouched && ! -L $state/tailscale-dns-paused && -f $state/tailscale-dns-paused ]]
+    report $? "the Tailscale marker is never written through a symlink" "victim: $(cat "$victim")"
     for f in last_profile last_profile.sha256 tailscale-dns-paused; do
         called "chown:-h alice:staff $state/$f" || missing+=" $f"
     done

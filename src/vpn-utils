@@ -154,9 +154,9 @@ tailscale_dns_record() {
 }
 
 # Running as root for a user (sleep/network hooks, sudo): files written into
-# their home stay theirs. The hooks read them back as the user, so a
-# root-owned last_profile made the next auto-reconnect fail.
-# Uses REAL_USER/REAL_GROUP of the calling script; no-op otherwise.
+# their home stay theirs, because the hooks read them back as the user.
+# Uses REAL_USER/REAL_GROUP of the calling script (an empty group means the
+# user's login group); no-op otherwise.
 give_to_real_user() {
     [[ $EUID -eq 0 && -n ${REAL_USER:-} && $REAL_USER != root ]] || return 0
     chown -h "$REAL_USER:${REAL_GROUP:-}" "$@" 2> /dev/null || true
@@ -173,6 +173,8 @@ pause_tailscale_dns() {
     # an entry in resolvconf): a crash after the change must still restore
     local mode=direct
     resolvconf -i 2> /dev/null | tr ' ' '\n' | grep -qx tailscale && mode=resolvconf
+    # Never write through a symlink the user put in its place
+    rm -f "$record"
     echo "mode=$mode" > "$record"
     give_to_real_user "$record"
     if ! sudo tailscale set --accept-dns=false > /dev/null 2>&1; then
