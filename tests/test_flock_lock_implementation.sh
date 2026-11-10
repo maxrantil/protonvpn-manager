@@ -745,16 +745,29 @@ test_t2_4_stress_test() {
 
     log_test "INFO" "Starting stress test: $num_processes processes × $iterations_per_process iterations"
 
+    # What must hold under contention, whatever the scheduling: never two
+    # holders at once (mutual exclusion), and at least one acquisition
+    # (progress). How many of the non-blocking attempts succeed depends only
+    # on scheduling, so it is reported, never asserted. A holder that finds
+    # the occupancy marker already present has caught an overlap.
+    local holder_mark="$TEST_LOCK_DIR/stress_holder"
+    local overlap_file="$TEST_LOCK_DIR/stress_overlaps.txt"
+    rm -f "$holder_mark" "$overlap_file"
+
     # Launch processes
     for p in $(seq 1 $num_processes); do
         (
             for _i in $(seq 1 $iterations_per_process); do
                 exec 200> "$LOCK_FILE"
                 if flock -n 200; then
-                    # Record timestamp and PID
+                    # Inside the critical section: nobody else may be here
+                    if ! (set -o noclobber && : > "$holder_mark") 2> /dev/null; then
+                        echo "$p $_i" >> "$overlap_file"
+                    fi
                     echo "$(date +%s%N) $$ $p $_i" >> "$result_file"
                     # Hold lock very briefly
                     usleep 100 2> /dev/null || sleep 0.001
+                    rm -f "$holder_mark"
                     flock -u 200
                 fi
             done
@@ -765,26 +778,23 @@ test_t2_4_stress_test() {
     wait
 
     # Analyze results
-    local total_acquisitions=0
+    local total_acquisitions=0 overlaps=0
     if [[ -f "$result_file" ]]; then
         total_acquisitions=$(wc -l < "$result_file")
     fi
-
-    # Under high contention, expect at least 1% success rate (very conservative)
-    # This validates lock works correctly under stress without being too strict
-    # Note: With 20 concurrent processes, most acquisition attempts will fail
+    if [[ -f "$overlap_file" ]]; then
+        overlaps=$(wc -l < "$overlap_file")
+    fi
     local total_attempts
     total_attempts=$((num_processes * iterations_per_process))
-    local expected_min
-    expected_min=$((total_attempts / 100)) # 1% success rate minimum (10 acquisitions for 1000 attempts)
 
-    if [[ $total_acquisitions -ge $expected_min ]]; then
-        log_test "PASS" "Stress test completed: $total_acquisitions acquisitions (≥$expected_min expected)"
-        log_test "INFO" "Success rate: $((total_acquisitions * 100 / total_attempts))% ($total_acquisitions/$total_attempts)"
+    if [[ $overlaps -eq 0 && $total_acquisitions -ge 1 ]]; then
+        log_test "PASS" "Stress test completed: $total_acquisitions acquisitions, never two holders at once"
+        log_test "INFO" "Success rate: $((total_acquisitions * 100 / total_attempts))% ($total_acquisitions/$total_attempts, scheduling-dependent)"
         ((TESTS_PASSED++))
         return 0
     else
-        log_test "FAIL" "Stress test: only $total_acquisitions acquisitions (expected ≥$expected_min)"
+        log_test "FAIL" "Stress test: $overlaps overlapping holders, $total_acquisitions acquisitions (expected 0 overlaps, ≥1 acquisition)"
         ((TESTS_FAILED++))
         return 1
     fi
