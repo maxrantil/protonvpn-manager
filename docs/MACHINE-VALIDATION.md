@@ -9,7 +9,9 @@ doesn't match, stop and collect the logs listed in
 [If something fails](#if-something-fails).
 
 Changes covered: #231 hardening, #233 fastest server, #234 DNS and session
-files, #235 clean-up, #236 faster connect, #237 tests/CI.
+files, #235 clean-up, #236 faster connect, #237 tests/CI, #241 kill switch
+clean-up, #243 IPv6/DNS leaks, #245 country selection, #247 and #255 test-suite
+safety.
 
 ---
 
@@ -181,18 +183,21 @@ vpn-manager config auto-reconnect on      # requires the kill switch to be enabl
 
 - [ ] Suspend and resume while connected with `--kill-switch`: it reconnects.
       Check `~/.local/state/vpn/sleep-hook.log` and `journalctl -t vpn-sleep`.
-- [ ] Network hook: simulate a dropped tunnel, then bring Wi-Fi back. It
-      reconnects with the kill switch still on, and nothing leaks in between.
+- [ ] Network hook (auto-reconnect must be on, see above; start disconnected):
+      simulate a dropped tunnel, then bring the network back. It reconnects with
+      the kill switch still on, and nothing leaks in between.
       (`nmcli device reconnect` doesn't exist in nmcli 1.58; use disconnect + connect.)
       ```bash
+      dev=$(nmcli -t -f DEVICE,STATE device | awk -F: '$2=="connected"{print $1; exit}')
       vpn connect se --kill-switch
       sudo pkill -x openvpn            # traffic is now blocked, not leaked
-      nmcli device disconnect wlan0 && nmcli device connect wlan0
+      nmcli device disconnect "$dev" && nmcli device connect "$dev"
       ip link show tun0                # back within a few seconds
-      sudo cat /run/protonvpn-manager/reconnect.attempts   # "<time>:success"
+      sudo tail -1 /run/protonvpn-manager/reconnect.attempts   # "<epoch seconds>:success"
       ```
-- [ ] Do it **twice** in a row: the second drop must reconnect too (#248).
-      Afterwards no file in `~/.local/state/vpn` may be owned by root.
+- [ ] Wait out the cooldown (30 s by default), then repeat the `pkill` and the
+      nmcli pair: the second drop must reconnect too (#248). Afterwards
+      `find ~/.local/state/vpn ! -user "$USER"` prints nothing.
 
 ---
 
@@ -201,8 +206,8 @@ vpn-manager config auto-reconnect on      # requires the kill switch to be enabl
 `cd tests && ./run_tests.sh` is safe while you work, also next to a running VPN:
 every suite runs with a temporary HOME and a `sudo` that refuses, `cleanup` and
 `kill` are skipped while a session runs, and `tests/unit/test_suite_safety.sh`
-checks all of this with a fake OpenVPN (#250). Two parts touch the real VPN on
-purpose:
+checks all of this with a fake OpenVPN (#250). Two parts can still use the real
+VPN:
 
 - `tests/test_exit_codes.sh` connects with your real profiles and credentials.
   It is skipped unless you ask for it:
@@ -210,9 +215,10 @@ purpose:
 - The process safety tests run the real `vpn cleanup`. They are skipped while
   a VPN is running.
 
-Four files nothing runs (`tests/cleanup_tests.sh`, `health_command_functionality_tests.sh`,
-`command_completion_tests.sh`, `emergency_reset_vs_cleanup_tests.sh`) call the real
-`vpn cleanup`, `kill` and `emergency-reset` with your HOME: don't run them by hand while connected.
+Four test files are run by nothing: `tests/cleanup_tests.sh`,
+`health_command_functionality_tests.sh`, `command_completion_tests.sh` and
+`emergency_reset_vs_cleanup_tests.sh`. They call the real `vpn cleanup`, `kill`
+and `emergency-reset` against your real HOME. Never run them by hand while connected.
 
 ## If something fails
 
