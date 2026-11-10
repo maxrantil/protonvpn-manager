@@ -115,15 +115,20 @@ test_process_safety_skipped_with_running_vpn() {
 # "openvpn", "--config" in the command line). It is ours, so a plain kill
 # ends it: a suite that runs an unguarded `vpn cleanup` or `vpn kill` kills
 # it, where a real root OpenVPN would only survive thanks to the blocked sudo.
+# The pattern the scripts use to find a running OpenVPN (src/vpn-validators);
+# empty if that definition changed shape, which the test reports
+OPENVPN_PATTERN=$(sed -n "s/^OPENVPN_PGREP_PATTERN='\(.*\)'$/\1/p" "$PROJECT_ROOT/src/vpn-validators")
+
 start_fake_openvpn() {
     local dir="$WORK_DIR/fake-vpn" i
+    [[ -n $OPENVPN_PATTERN ]] || return 1
     mkdir -p "$dir" && : > "$dir/profile.ovpn"
     bash -c 'exec -a "$0 --config $1" sleep 120' "$dir/openvpn" "$dir/profile.ovpn" &
     FAKE_VPN_PID=$!
     # Ready once the scripts' own pattern finds it (before the exec, the
     # command line is bash's and does not match)
     for ((i = 0; i < 50; i++)); do
-        pgrep -f '(^|/)openvpn .*--config' | grep -qx "$FAKE_VPN_PID" && return 0
+        pgrep -f "$OPENVPN_PATTERN" | grep -qx "$FAKE_VPN_PID" && return 0
         sleep 0.1
     done
     return 1
@@ -172,7 +177,12 @@ check_suite_left_alone() { # $1 = suite file, $2 = situation
 }
 
 test_suites_leave_running_vpn_and_home_alone() {
-    local suite
+    local suite real_vpn=""
+    [[ -n $OPENVPN_PATTERN ]]
+    report $? "the OpenVPN pattern is read from src/vpn-validators" "OPENVPN_PGREP_PATTERN not found in the expected shape"
+    # A real session on this machine would turn the no-VPN pass into another
+    # VPN-running one; that pass is then skipped instead of proving nothing
+    [[ -n $OPENVPN_PATTERN ]] && pgrep -f "$OPENVPN_PATTERN" > /dev/null 2>&1 && real_vpn=1
     mkdir -p "$SUDO_ONLY" && cp "$STUBS/sudo" "$SUDO_ONLY/"
     for suite in simple_regression_tests.sh integration_tests.sh e2e_tests.sh process_safety_tests.sh; do
         # With a VPN running: the guards must hold
@@ -187,6 +197,10 @@ test_suites_leave_running_vpn_and_home_alone() {
             test_fail "$suite: fake OpenVPN did not start"
         fi
         # Without one, the real cleanup and kill run: the isolation alone must hold
+        if [[ -n $real_vpn ]]; then
+            test_pass "$suite (no VPN): skipped, a real VPN session is running on this machine"
+            continue
+        fi
         run_suite_isolated "$suite"
         check_suite_left_alone "$suite" "(no VPN)"
     done
