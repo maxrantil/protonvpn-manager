@@ -6,8 +6,21 @@
 TEST_DIR="$(dirname "$(realpath "$0")")"
 source "$TEST_DIR/test_framework.sh"
 
+# `cleanup` and `kill` end a running OpenVPN. Run on top of a live session they
+# took the machine offline (the kill switch stayed up, #250); with sudo blocked
+# by setup_test_env they could only fail. Skipped while a VPN is running, using
+# the pattern the scripts themselves use to find one.
+vpn_session_running() {
+    pgrep -f '(^|/)openvpn .*--config' > /dev/null 2>&1
+}
+
 test_cleanup_preserves_networkmanager() {
     start_test "Cleanup does not restart NetworkManager"
+
+    if vpn_session_running; then
+        log_test "SKIP" "$CURRENT_TEST: a VPN is running; cleanup would end it"
+        return
+    fi
 
     # Get NetworkManager PID before
     local nm_pid_before
@@ -41,15 +54,24 @@ test_commands_complete_without_hanging() {
     local commands=("cleanup" "kill" "health" "status")
     local timeouts=(30 30 10 15)
 
-    for _i in "${!commands[@]}"; do
+    for i in "${!commands[@]}"; do
         local cmd="${commands[$i]}"
         local timeout_val="${timeouts[$i]}"
 
-        if timeout "${timeout_val}s" "$PROJECT_DIR/src/vpn" "$cmd" > /dev/null 2>&1; then
+        if [[ $cmd == cleanup || $cmd == kill ]] && vpn_session_running; then
+            log_test "SKIP" "$CURRENT_TEST: '$cmd' would end the running VPN"
+            continue
+        fi
+
+        # Only hanging is a failure here; a non-zero exit is the command's
+        # verdict (e.g. status reports a problem), not a hang
+        local rc=0
+        timeout "${timeout_val}s" "$PROJECT_DIR/src/vpn" "$cmd" > /dev/null 2>&1 || rc=$?
+        if [[ $rc -ne 124 ]]; then
             log_test "PASS" "$CURRENT_TEST: '$cmd' completed within ${timeout_val}s"
             ((TESTS_PASSED++))
         else
-            log_test "FAIL" "$CURRENT_TEST: '$cmd' timed out or failed"
+            log_test "FAIL" "$CURRENT_TEST: '$cmd' timed out after ${timeout_val}s"
             FAILED_TESTS+=("$CURRENT_TEST: $cmd")
             ((TESTS_FAILED++))
         fi
@@ -64,7 +86,9 @@ test_health_command_works() {
     health_output=$("$PROJECT_DIR/src/vpn" health 2>&1)
     local exit_code=$?
 
-    if [[ $exit_code -eq 0 ]] && echo "$health_output" | grep -q "PROCESSES RUNNING"; then
+    # The report line reads GOOD, CRITICAL or NO PROCESSES RUNNING depending
+    # on what runs; any of them means the command works
+    if [[ $exit_code -eq 0 ]] && echo "$health_output" | grep -q "Process health:"; then
         log_test "PASS" "$CURRENT_TEST: Health command works correctly"
         ((TESTS_PASSED++))
     else
@@ -149,6 +173,11 @@ test_bash_options_safe() {
 test_cleanup_output_safety_message() {
     start_test "Cleanup output mentions NetworkManager safety"
 
+    if vpn_session_running; then
+        log_test "SKIP" "$CURRENT_TEST: a VPN is running; cleanup would end it"
+        return
+    fi
+
     local cleanup_output
     cleanup_output=$("$PROJECT_DIR/src/vpn" cleanup 2>&1)
 
@@ -164,6 +193,10 @@ test_cleanup_output_safety_message() {
 
 # Run all simple regression tests
 main() {
+    # The real scripts run here: never with the user's HOME (logs, cache,
+    # config) or a working sudo
+    setup_test_env
+
     log_test "INFO" "Starting Simple Regression Prevention Tests"
     echo "================================================="
     echo "      SIMPLE REGRESSION PREVENTION TESTS"

@@ -402,8 +402,8 @@ test_aggressive_cleanup_effectiveness() {
 run_process_safety_tests() {
     # These tests run the real `vpn cleanup`, which stops any running OpenVPN
     # and removes its tunnel (a kill switch would stay on): never on top of a
-    # running session
-    if pgrep -x openvpn > /dev/null 2>&1; then
+    # running session (found the way the scripts themselves find one)
+    if pgrep -f '(^|/)openvpn .*--config' > /dev/null 2>&1; then
         log_test "WARN" "SKIP Process Safety Tests: a VPN is running and these tests run the real 'vpn cleanup'; disconnect first (vpn disconnect)"
         return 0
     fi

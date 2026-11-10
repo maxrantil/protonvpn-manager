@@ -106,16 +106,10 @@ test_cache_management_workflow() {
 
     local connector_script="$PROJECT_DIR/src/vpn-connector"
 
-    # Save the real cache file location (if it exists)
-    local real_cache_dir="${XDG_STATE_HOME:-$HOME/.local/state}/vpn"
-    local real_cache="$real_cache_dir/vpn_performance.cache"
-    local cache_backup="/tmp/vpn_cache_backup_$$"
-
-    # Backup existing cache if it exists
-    if [[ -f "$real_cache" ]]; then
-        cp "$real_cache" "$cache_backup"
-        rm -f "$real_cache"
-    fi
+    # The cache under test lives in the isolated HOME, never the user's
+    setup_test_env
+    local cache_dir="$XDG_STATE_HOME/vpn"
+    local cache_file="$cache_dir/vpn_performance.cache"
 
     # Test cache info when no cache exists
     local cache_info
@@ -131,9 +125,9 @@ test_cache_management_workflow() {
         ((TESTS_FAILED++))
     fi
 
-    # Create a test cache file in the real location
-    mkdir -p "$real_cache_dir"
-    echo "test.ovpn|50|$(date +%s)" > "$real_cache"
+    # Create a test cache file
+    mkdir -p "$cache_dir"
+    echo "test.ovpn|50|$(date +%s)" > "$cache_file"
 
     # Test cache info with existing cache
     cache_info=$("$connector_script" cache info 2> /dev/null)
@@ -148,17 +142,12 @@ test_cache_management_workflow() {
     "$connector_script" cache clear > /dev/null 2>&1 || true
 
     # Check if cache was cleared
-    if [[ ! -f "$real_cache" ]]; then
+    if [[ ! -f "$cache_file" ]]; then
         log_test "PASS" "$CURRENT_TEST: Cache clearing works"
         ((TESTS_PASSED++))
     else
         log_test "FAIL" "$CURRENT_TEST: Cache clearing failed"
         ((TESTS_FAILED++))
-    fi
-
-    # Restore original cache if it existed
-    if [[ -f "$cache_backup" ]]; then
-        mv "$cache_backup" "$real_cache"
     fi
 
     return 0

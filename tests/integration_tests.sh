@@ -34,6 +34,9 @@ run_regression_prevention_tests() {
 test_cli_interface() {
     start_test "CLI Interface Integration"
 
+    # The real script writes logs: never into the user's HOME
+    setup_test_env
+
     local vpn_script="$PROJECT_DIR/src/vpn"
 
     # Test help command
@@ -176,34 +179,32 @@ test_dependency_checking() {
         return 0
     fi
 
-    # Create a temporary PATH that has core utilities but not VPN dependencies
-    # This allows vpn-connector to execute but fail dependency checks
-    mkdir -p /tmp/test_path_$$
+    # Isolated HOME (the connector writes logs on startup) and a place for the
+    # stripped PATH
+    setup_test_env
 
-    # Create symlinks to core utilities (needed for script execution)
-    local core_utils="bash sh realpath dirname cat grep awk sed chmod stat wc head tail sort find"
-    for util in $core_utils; do
-        local util_path
-        util_path=$(command -v "$util" 2> /dev/null)
-        if [[ -n "$util_path" ]]; then
-            ln -sf "$util_path" "/tmp/test_path_$$/$util" 2> /dev/null || true
-        fi
+    # A PATH with everything the connector needs to start, but none of the VPN
+    # dependencies it checks for (openvpn, curl, bc, notify-send, ip, wg-quick)
+    local stripped_path="$TEST_TEMP_DIR/stripped-path" dir util
+    mkdir -p "$stripped_path"
+    local -a path_dirs
+    IFS=':' read -ra path_dirs <<< "$PATH"
+    for dir in "${path_dirs[@]}"; do
+        [[ -d $dir ]] || continue
+        for util in "$dir"/*; do
+            [[ -x $util && ! -d $util ]] || continue
+            case "${util##*/}" in
+                openvpn | curl | bc | notify-send | ip | wg-quick | wg) continue ;;
+            esac
+            [[ -e "$stripped_path/${util##*/}" ]] || ln -s "$util" "$stripped_path/${util##*/}" 2> /dev/null || true
+        done
     done
-
-    # Remove VPN-specific dependencies to simulate missing deps
-    # vpn-connector checks for: openvpn, curl, bc, notify-send, ip, wg-quick
-    local original_path="$PATH"
-    export PATH="/tmp/test_path_$$"
 
     local connector_script="$PROJECT_DIR/src/vpn-connector"
 
     # Test dependency check with missing VPN commands
     local dep_output
-    dep_output=$("$connector_script" test 2>&1)
-
-    # Restore PATH and cleanup
-    export PATH="$original_path"
-    rm -rf "/tmp/test_path_$$"
+    dep_output=$(PATH="$stripped_path" "$connector_script" test 2>&1)
 
     assert_contains "$dep_output" "dependencies" "Should detect missing dependencies"
 }
@@ -261,6 +262,9 @@ test_logging_integration() {
 
 test_error_handling() {
     start_test "Error Handling Integration"
+
+    # The real connector writes logs: never into the user's HOME
+    setup_test_env
 
     # Test handling of missing locations directory
     local connector_script="$PROJECT_DIR/src/vpn-connector"
