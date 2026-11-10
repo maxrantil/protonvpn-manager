@@ -134,9 +134,7 @@ for logfile in "$CONNECTION_LOG" "$PERFORMANCE_CACHE" "$PROFILE_CACHE"; do
     fi
 
     # Running as root for a user (hooks): keep the user's files user-owned
-    if [[ $EUID -eq 0 && -n $REAL_USER && -n $REAL_GROUP ]]; then
-        chown -h "$REAL_USER:$REAL_GROUP" "$logfile" 2> /dev/null || true
-    fi
+    give_to_real_user "$logfile"
 done
 
 # ============================================================================
@@ -1242,12 +1240,12 @@ save_reconnect_state() {
         return 1
     fi
 
-    # Create state directory with secure permissions
-    mkdir -p "$state_dir" 2> /dev/null || {
+    # Private, never a symlink, and the user's even when created as root by a
+    # hook (the hooks read the files back as the user)
+    secure_user_dir "$state_dir" || {
         log_message "save_reconnect_state: Cannot create state directory" "$CONNECTION_LOG"
         return 1
     }
-    chmod 700 "$state_dir" 2> /dev/null || true
 
     # Save profile path atomically
     local temp_profile
@@ -1268,6 +1266,10 @@ save_reconnect_state() {
         rm -f "$temp_hash"
         return 1
     }
+
+    # The hooks read both files back as the user
+    give_to_real_user "$state_dir/last_profile"
+    give_to_real_user "$state_dir/last_profile.sha256"
 
     log_message "Saved reconnect state for: $profile_path" "$CONNECTION_LOG"
     return 0
