@@ -3,14 +3,12 @@ set -euo pipefail
 # ABOUTME: Centralized error handling library for VPN management system
 # ABOUTME: Provides consistent, accessible error formatting, codes, and logging
 
-# Script locations - detect installed vs development mode
+# Libraries come from this script's own directory: /usr/local/bin when
+# installed (install.sh copies every component there), src/ otherwise.
+# Never mix: a src/ script must not load an installed library.
 # Only set VPN_DIR if not already set (when sourced from vpn-connector, it's already set)
 if [[ -z "${VPN_DIR:-}" ]]; then
-    if [[ -f "/usr/local/bin/vpn-colors" ]]; then
-        VPN_DIR="/usr/local/bin"
-    else
-        VPN_DIR="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
-    fi
+    VPN_DIR="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
 fi
 
 # Source color definitions (required for error display)
