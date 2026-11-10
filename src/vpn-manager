@@ -3,14 +3,10 @@ set -euo pipefail
 # ABOUTME: VPN process and connection management script for Artix/Arch Linux
 # ABOUTME: Handles OpenVPN process lifecycle, status checking, and cleanup operations
 
-# Script locations - robust detection for installed vs development mode
-if [[ -f "/usr/local/bin/vpn-manager" ]] && [[ -f "/usr/local/bin/vpn-error-handler" ]]; then
-    # Installed mode - all components in /usr/local/bin
-    VPN_DIR="/usr/local/bin"
-else
-    # Development mode - use local paths relative to script location
-    VPN_DIR="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
-fi
+# Libraries come from this script's own directory: /usr/local/bin when
+# installed (install.sh copies every component there), src/ otherwise.
+# Never mix: a src/ script must not load an installed library.
+VPN_DIR="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
 
 # Detect the real user when running as root (sleep/network hooks, sudo).
 # HOME may be unset or /root there; never guess between several logged-in users.

@@ -4,12 +4,10 @@
 
 set -euo pipefail
 
-# Script locations - robust detection for installed vs development mode
-if [[ -f "/usr/local/bin/vpn-manager" ]] && [[ -f "/usr/local/bin/vpn-error-handler" ]]; then
-    VPN_DIR="/usr/local/bin"
-else
-    VPN_DIR="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
-fi
+# Libraries come from this script's own directory: /usr/local/bin when
+# installed (install.sh copies every component there), src/ otherwise.
+# Never mix: a src/ script must not load an installed library.
+VPN_DIR="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
 
 # Source dependencies
 source "$VPN_DIR/vpn-colors"

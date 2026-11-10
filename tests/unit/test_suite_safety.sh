@@ -333,6 +333,34 @@ test_fixture_connect_never_reaches_real_sudo() {
     report $? "fixture runs do not write to the real ~/.local/state/vpn logs" "real log: $before -> $after lines"
 }
 
+# Scripts in src/ preferred /usr/local/bin whenever the tool was installed,
+# so on a developer machine the suite tested the installed release instead
+# of the branch. Decoy libraries mounted over /usr/local/bin (user + mount +
+# network namespace: nothing on the host changes) record any use.
+test_src_scripts_never_load_installed_copy() {
+    if [[ ! -d /usr/local/bin ]] || ! unshare -rmn true 2> /dev/null; then
+        test_pass "src/ scripts load their own libraries (skipped: no /usr/local/bin or no user namespace)"
+        return
+    fi
+    local decoys="$WORK_DIR/decoys" marker="$WORK_DIR/installed-used.log" f out
+    mkdir -p "$decoys" "$WORK_DIR/home"
+    for f in "$PROJECT_ROOT"/src/*; do
+        printf '#!/bin/bash\necho "%s" >> "%s"\n' "$(basename "$f")" "$marker" > "$decoys/$(basename "$f")"
+        chmod +x "$decoys/$(basename "$f")"
+    done
+    : > "$marker"
+    out=$(HOME="$WORK_DIR/home" PATH="$STUBS:$REAL_PATH" unshare -rmn bash -c '
+        mount -t tmpfs tmpfs /usr/local/bin && cp -a "$1"/. /usr/local/bin/ || exit 1
+        for s in vpn vpn-manager vpn-connector vpn-kill-switch vpn-doctor; do
+            timeout 10 "$2/$s" help > /dev/null 2>&1 < /dev/null
+        done
+        (unset VPN_DIR; source "$2/vpn-error-handler") > /dev/null 2>&1
+        echo ran' _ "$decoys" "$PROJECT_ROOT/src" 2>&1)
+    [[ $out == *ran* && ! -s $marker ]]
+    report $? "src/ scripts load their own libraries, never the installed copy" \
+        "out=$out; installed files used: $(sort -u "$marker" | tr '\n' ' ')"
+}
+
 echo -e "${T_BLUE}========================================${T_NC}"
 echo -e "${T_BLUE}Test Suite Safety Tests${T_NC}"
 echo -e "${T_BLUE}========================================${T_NC}"
@@ -345,6 +373,7 @@ test_mock_command_takes_effect
 test_setup_test_env_isolated
 test_fixture_connect_never_reaches_real_sudo
 test_suites_do_not_leak_environment
+test_src_scripts_never_load_installed_copy
 
 echo ""
 echo -e "${T_BLUE}Results: $TESTS_PASSED/$TESTS_RUN passed${T_NC}"
