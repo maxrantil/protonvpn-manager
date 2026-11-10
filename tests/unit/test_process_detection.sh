@@ -253,6 +253,134 @@ test_get_vpn_pid_exists
 test_is_vpn_running_exists
 
 #############################################
+# Test Suite 4: Status report with and without a tunnel
+#############################################
+echo ""
+echo -e "${T_BLUE}Test Suite 4: Status report with and without a tunnel${T_NC}"
+
+# The real `vpn-manager status` next to a fake OpenVPN (argv[0] .../openvpn,
+# --config in the command line), with `ip` stubbed: $STATUS_NET/tunnel makes
+# tun0 exist, $STATUS_NET/address gives it an address. HOME, the runtime dir
+# and every privileged or network command are stand-ins.
+STATUS_WORK=$(mktemp -d)
+STATUS_NET="$STATUS_WORK/net"
+STATUS_FAKE_PID=""
+trap '[[ -n $STATUS_FAKE_PID ]] && kill "$STATUS_FAKE_PID" 2> /dev/null; rm -rf "$STATUS_WORK"' EXIT
+mkdir -p "$STATUS_NET" "$STATUS_WORK/stubs" "$STATUS_WORK/home" "$STATUS_WORK/run" "$STATUS_WORK/fake"
+chmod 700 "$STATUS_WORK/run"
+cat > "$STATUS_WORK/stubs/ip" << EOF
+#!/bin/bash
+net="$STATUS_NET"
+EOF
+cat >> "$STATUS_WORK/stubs/ip" << 'EOF'
+case "$*" in
+	"link show"*tun0* | "-o link show"*) [[ -f $net/tunnel ]] && echo "5: tun0: <POINTOPOINT,UP> mtu 1500" ;;
+	"link show"*)
+		echo "1: lo: <LOOPBACK,UP> mtu 65536"
+		[[ -f $net/tunnel ]] && echo "5: tun0: <POINTOPOINT,UP> mtu 1500"
+		;;
+	"addr show"*) [[ -f $net/address ]] && echo "    inet 10.2.0.2/32 scope global tun0" ;;
+	route*) [[ -f $net/address ]] && echo "0.0.0.0/1 via 10.2.0.1 dev tun0" ;;
+esac
+exit 0
+EOF
+printf '#!/bin/bash\necho 203.0.113.7\n' > "$STATUS_WORK/stubs/curl"
+printf '#!/bin/bash\nexit 0\n' > "$STATUS_WORK/stubs/notify-send"
+printf '#!/bin/bash\nexit 1\n' > "$STATUS_WORK/stubs/sudo"
+# Only the fake counts as a running OpenVPN, also on a machine with a real session
+cat > "$STATUS_WORK/stubs/pgrep" << EOF
+#!/bin/bash
+if [[ \$* == *openvpn* ]]; then
+	pid=\$(cat "$STATUS_WORK/fake.pid" 2> /dev/null)
+	[[ -n \$pid ]] && { echo "\$pid"; exit 0; }
+	exit 1
+fi
+exec /usr/bin/pgrep "\$@"
+EOF
+chmod +x "$STATUS_WORK/stubs"/*
+: > "$STATUS_WORK/fake/profile.ovpn"
+
+start_status_fake_openvpn() {
+	bash -c 'exec -a "$0 --config $1" sleep 60' "$STATUS_WORK/fake/openvpn" "$STATUS_WORK/fake/profile.ovpn" &
+	STATUS_FAKE_PID=$!
+	local i
+	for ((i = 0; i < 50; i++)); do
+		if pgrep -f '(^|/)openvpn .*--config' | grep -qx "$STATUS_FAKE_PID"; then
+			echo "$STATUS_FAKE_PID" > "$STATUS_WORK/fake.pid"
+			return 0
+		fi
+		sleep 0.1
+	done
+	return 1
+}
+
+STATUS_OUT=""
+STATUS_RC=0
+run_status() { # extra env assignments as arguments
+	STATUS_RC=0
+	STATUS_OUT=$(env -u XDG_CONFIG_HOME -u XDG_STATE_HOME -u XDG_CACHE_HOME "$@" \
+		HOME="$STATUS_WORK/home" XDG_RUNTIME_DIR="$STATUS_WORK/run" NO_COLOR=1 \
+		PATH="$STATUS_WORK/stubs:$PATH" timeout 20 bash "$VPN_DIR/vpn-manager" status 2>&1 < /dev/null) || STATUS_RC=$?
+}
+
+test_status_reports_process_without_tunnel() {
+	rm -f "$STATUS_NET"/*
+	run_status
+	# (the PID may be a real session's: /var/run/openvpn.pid is read first)
+	if [[ $STATUS_RC -eq 0 ]] && grep -qE "Process ID: [0-9]+" <<< "$STATUS_OUT" &&
+		grep -qi "no tunnel" <<< "$STATUS_OUT" && ! grep -q "Status: CONNECTED" <<< "$STATUS_OUT"; then
+		test_pass "status: OpenVPN running without a tunnel is reported as such (exit 0)"
+	else
+		test_fail "status: OpenVPN running without a tunnel is reported as such (exit 0)" "exit $STATUS_RC: $STATUS_OUT"
+	fi
+	run_status VPN_ACCESSIBLE_MODE=1
+	if [[ $STATUS_RC -eq 0 ]] && grep -qi "no tunnel" <<< "$STATUS_OUT" && grep -q "Active Network Tunnels: 0" <<< "$STATUS_OUT"; then
+		test_pass "status (accessible mode): no tunnel reported (exit 0)"
+	else
+		test_fail "status (accessible mode): no tunnel reported (exit 0)" "exit $STATUS_RC: $STATUS_OUT"
+	fi
+}
+
+# While a connection comes up, tun0 exists before it has an address or route
+test_status_tunnel_without_address() {
+	rm -f "$STATUS_NET"/* && touch "$STATUS_NET/tunnel"
+	run_status
+	if [[ $STATUS_RC -eq 0 ]] && grep -q "Status: CONNECTED" <<< "$STATUS_OUT" && grep -q "Interface: tun0" <<< "$STATUS_OUT"; then
+		test_pass "status: tunnel without address or route yet (exit 0)"
+	else
+		test_fail "status: tunnel without address or route yet (exit 0)" "exit $STATUS_RC: $STATUS_OUT"
+	fi
+	touch "$STATUS_NET/address"
+	run_status
+	if [[ $STATUS_RC -eq 0 ]] && grep -q "VPN IP: 10.2.0.2" <<< "$STATUS_OUT" && grep -q "Gateway: 10.2.0.1" <<< "$STATUS_OUT"; then
+		test_pass "status: connected tunnel shows its address and gateway"
+	else
+		test_fail "status: connected tunnel shows its address and gateway" "exit $STATUS_RC: $STATUS_OUT"
+	fi
+}
+
+# `grep -c` prints 0 and exits 1 when nothing matches: the count must appear once
+test_status_counts_tunnels_once() {
+	rm -f "$STATUS_NET"/*
+	run_status
+	if grep -qx "  Active tunnels: 0" <<< "$STATUS_OUT" && ! grep -qx "0" <<< "$STATUS_OUT"; then
+		test_pass "status: 'Active tunnels: 0' printed once, no stray 0 line"
+	else
+		test_fail "status: 'Active tunnels: 0' printed once, no stray 0 line" "$(grep -n -A1 'Active tunnels' <<< "$STATUS_OUT")"
+	fi
+}
+
+if start_status_fake_openvpn; then
+	test_status_reports_process_without_tunnel
+	test_status_tunnel_without_address
+	test_status_counts_tunnels_once
+	kill "$STATUS_FAKE_PID" 2> /dev/null
+	STATUS_FAKE_PID=""
+else
+	test_fail "status tests: fake OpenVPN did not start"
+fi
+
+#############################################
 # Summary
 #############################################
 echo ""
