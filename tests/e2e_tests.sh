@@ -62,41 +62,41 @@ test_profile_management_workflow() {
     local connector_script="$PROJECT_DIR/src/vpn-connector"
 
     # Test profile listing
-    LOCATIONS_DIR="$TEST_LOCATIONS_DIR" "$connector_script" list > /tmp/profile_list 2> /dev/null || true
+    LOCATIONS_DIR="$TEST_LOCATIONS_DIR" "$connector_script" list > "$TEST_TEMP_DIR/profile_list" 2> /dev/null || true
 
-    if [[ -f /tmp/profile_list ]]; then
+    if [[ -f "$TEST_TEMP_DIR/profile_list" ]]; then
         local profile_output
-        profile_output=$(cat /tmp/profile_list)
+        profile_output=$(cat "$TEST_TEMP_DIR/profile_list")
 
         # Should list test profiles
         assert_contains "$profile_output" "se-test" "Should find SE test profile"
         assert_contains "$profile_output" "dk-test" "Should find DK test profile"
 
-        rm -f /tmp/profile_list
+        rm -f "$TEST_TEMP_DIR/profile_list"
     fi
 
     # Test country-specific listing
-    LOCATIONS_DIR="$TEST_LOCATIONS_DIR" "$connector_script" list se > /tmp/se_profiles 2> /dev/null || true
+    LOCATIONS_DIR="$TEST_LOCATIONS_DIR" "$connector_script" list se > "$TEST_TEMP_DIR/se_profiles" 2> /dev/null || true
 
-    if [[ -f /tmp/se_profiles ]]; then
+    if [[ -f "$TEST_TEMP_DIR/se_profiles" ]]; then
         local se_output
-        se_output=$(cat /tmp/se_profiles)
+        se_output=$(cat "$TEST_TEMP_DIR/se_profiles")
 
         assert_contains "$se_output" "se-test" "Country filtering should work"
 
-        rm -f /tmp/se_profiles
+        rm -f "$TEST_TEMP_DIR/se_profiles"
     fi
 
     # Test countries command
-    LOCATIONS_DIR="$TEST_LOCATIONS_DIR" "$connector_script" countries > /tmp/countries 2> /dev/null || true
+    LOCATIONS_DIR="$TEST_LOCATIONS_DIR" "$connector_script" countries > "$TEST_TEMP_DIR/countries" 2> /dev/null || true
 
-    if [[ -f /tmp/countries ]]; then
+    if [[ -f "$TEST_TEMP_DIR/countries" ]]; then
         local countries_output
-        countries_output=$(cat /tmp/countries)
+        countries_output=$(cat "$TEST_TEMP_DIR/countries")
 
         assert_contains "$countries_output" "Available countries" "Should show countries header"
 
-        rm -f /tmp/countries
+        rm -f "$TEST_TEMP_DIR/countries"
     fi
     return 0
 }
@@ -106,16 +106,10 @@ test_cache_management_workflow() {
 
     local connector_script="$PROJECT_DIR/src/vpn-connector"
 
-    # Save the real cache file location (if it exists)
-    local real_cache_dir="${XDG_STATE_HOME:-$HOME/.local/state}/vpn"
-    local real_cache="$real_cache_dir/vpn_performance.cache"
-    local cache_backup="/tmp/vpn_cache_backup_$$"
-
-    # Backup existing cache if it exists
-    if [[ -f "$real_cache" ]]; then
-        cp "$real_cache" "$cache_backup"
-        rm -f "$real_cache"
-    fi
+    # The cache under test lives in the isolated HOME, never the user's
+    setup_test_env
+    local cache_dir="$XDG_STATE_HOME/vpn"
+    local cache_file="$cache_dir/vpn_performance.cache"
 
     # Test cache info when no cache exists
     local cache_info
@@ -131,9 +125,9 @@ test_cache_management_workflow() {
         ((TESTS_FAILED++))
     fi
 
-    # Create a test cache file in the real location
-    mkdir -p "$real_cache_dir"
-    echo "test.ovpn|50|$(date +%s)" > "$real_cache"
+    # Create a test cache file
+    mkdir -p "$cache_dir"
+    echo "test.ovpn|50|$(date +%s)" > "$cache_file"
 
     # Test cache info with existing cache
     cache_info=$("$connector_script" cache info 2> /dev/null)
@@ -148,17 +142,12 @@ test_cache_management_workflow() {
     "$connector_script" cache clear > /dev/null 2>&1 || true
 
     # Check if cache was cleared
-    if [[ ! -f "$real_cache" ]]; then
+    if [[ ! -f "$cache_file" ]]; then
         log_test "PASS" "$CURRENT_TEST: Cache clearing works"
         ((TESTS_PASSED++))
     else
         log_test "FAIL" "$CURRENT_TEST: Cache clearing failed"
         ((TESTS_FAILED++))
-    fi
-
-    # Restore original cache if it existed
-    if [[ -f "$cache_backup" ]]; then
-        mv "$cache_backup" "$real_cache"
     fi
 
     return 0
@@ -167,6 +156,7 @@ test_cache_management_workflow() {
 test_error_recovery_scenarios() {
     start_test "Error Recovery Scenarios"
 
+    setup_test_env
     local connector_script="$PROJECT_DIR/src/vpn-connector"
 
     # Test behavior with missing locations directory - need to export the variable
@@ -176,7 +166,7 @@ test_error_recovery_scenarios() {
     assert_contains "$error_output" "not found" "Should handle missing directory"
 
     # Test behavior with empty locations directory
-    local empty_dir="/tmp/empty_locations_$$"
+    local empty_dir="$TEST_TEMP_DIR/empty_locations"
     mkdir -p "$empty_dir"
 
     local empty_output
@@ -187,7 +177,6 @@ test_error_recovery_scenarios() {
     rmdir "$empty_dir"
 
     # Test invalid country code
-    setup_test_env
     local invalid_output
     invalid_output=$(LOCATIONS_DIR="$TEST_LOCATIONS_DIR" "$connector_script" list xyz 2>&1) || true
 
@@ -206,7 +195,7 @@ test_security_compliance() {
     fi
 
     # Test that credentials are not exposed in process lists
-    local test_script="/tmp/security_test.sh"
+    local test_script="$TEST_TEMP_DIR/security_test.sh"
     cat > "$test_script" << 'EOF'
 #!/bin/bash
 # Simulate a process that might expose credentials
@@ -301,8 +290,10 @@ test_concurrent_operations() {
 
     local connector_script="$PROJECT_DIR/src/vpn-connector"
 
-    # Test that lock files prevent concurrent operations
-    echo "$$" > "/tmp/vpn_connect.lock"
+    # Test that lock files prevent concurrent operations (the connector's lock
+    # lives in the runtime directory, isolated by setup_test_env)
+    local lock_file="$XDG_RUNTIME_DIR/vpn/vpn_connect.lock"
+    echo "$$" > "$lock_file"
 
     # Try to run a command that should be blocked by lock
     LOCATIONS_DIR="$TEST_LOCATIONS_DIR" timeout 5 "$connector_script" connect se > /dev/null 2>&1 &
@@ -316,7 +307,7 @@ test_concurrent_operations() {
     wait $cmd_pid 2> /dev/null || true
 
     # Clean up lock file
-    rm -f "/tmp/vpn_connect.lock"
+    rm -f "$lock_file"
 
     log_test "PASS" "$CURRENT_TEST: Lock file mechanism prevents concurrent operations"
     ((TESTS_PASSED++))

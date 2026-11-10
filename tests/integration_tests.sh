@@ -34,6 +34,9 @@ run_regression_prevention_tests() {
 test_cli_interface() {
     start_test "CLI Interface Integration"
 
+    # The real script writes logs: never into the user's HOME
+    setup_test_env
+
     local vpn_script="$PROJECT_DIR/src/vpn"
 
     # Test help command
@@ -79,16 +82,16 @@ test_profile_listing_integration() {
     local connector_script="$PROJECT_DIR/src/vpn-connector"
 
     # Override LOCATIONS_DIR for testing
-    LOCATIONS_DIR="$TEST_LOCATIONS_DIR" "$connector_script" list > /tmp/list_output 2> /dev/null || true
+    LOCATIONS_DIR="$TEST_LOCATIONS_DIR" "$connector_script" list > "$TEST_TEMP_DIR/list_output" 2> /dev/null || true
 
-    if [[ -f /tmp/list_output ]]; then
+    if [[ -f "$TEST_TEMP_DIR/list_output" ]]; then
         local list_output
-        list_output=$(cat /tmp/list_output)
+        list_output=$(cat "$TEST_TEMP_DIR/list_output")
 
         # Should show available profiles
         assert_contains "$list_output" "Available VPN Profiles" "Should show profiles header"
 
-        rm -f /tmp/list_output
+        rm -f "$TEST_TEMP_DIR/list_output"
     else
         log_test "WARN" "$CURRENT_TEST: Could not test profile listing (no output file)"
     fi
@@ -103,11 +106,11 @@ test_country_filtering_integration() {
     local connector_script="$PROJECT_DIR/src/vpn-connector"
 
     # Test SE filtering
-    LOCATIONS_DIR="$TEST_LOCATIONS_DIR" "$connector_script" list se > /tmp/se_output 2> /dev/null || true
+    LOCATIONS_DIR="$TEST_LOCATIONS_DIR" "$connector_script" list se > "$TEST_TEMP_DIR/se_output" 2> /dev/null || true
 
-    if [[ -f /tmp/se_output ]]; then
+    if [[ -f "$TEST_TEMP_DIR/se_output" ]]; then
         local se_output
-        se_output=$(cat /tmp/se_output)
+        se_output=$(cat "$TEST_TEMP_DIR/se_output")
 
         if echo "$se_output" | command grep -q "se-test"; then
             log_test "PASS" "$CURRENT_TEST: SE filtering works"
@@ -118,15 +121,15 @@ test_country_filtering_integration() {
             ((TESTS_FAILED++))
         fi
 
-        rm -f /tmp/se_output
+        rm -f "$TEST_TEMP_DIR/se_output"
     fi
 
     # Test DK filtering
-    LOCATIONS_DIR="$TEST_LOCATIONS_DIR" "$connector_script" list dk > /tmp/dk_output 2> /dev/null || true
+    LOCATIONS_DIR="$TEST_LOCATIONS_DIR" "$connector_script" list dk > "$TEST_TEMP_DIR/dk_output" 2> /dev/null || true
 
-    if [[ -f /tmp/dk_output ]]; then
+    if [[ -f "$TEST_TEMP_DIR/dk_output" ]]; then
         local dk_output
-        dk_output=$(cat /tmp/dk_output)
+        dk_output=$(cat "$TEST_TEMP_DIR/dk_output")
 
         if echo "$dk_output" | command grep -q "dk-test"; then
             log_test "PASS" "$CURRENT_TEST: DK filtering works"
@@ -137,7 +140,7 @@ test_country_filtering_integration() {
             ((TESTS_FAILED++))
         fi
 
-        rm -f /tmp/dk_output
+        rm -f "$TEST_TEMP_DIR/dk_output"
     fi
 }
 
@@ -176,36 +179,36 @@ test_dependency_checking() {
         return 0
     fi
 
-    # Create a temporary PATH that has core utilities but not VPN dependencies
-    # This allows vpn-connector to execute but fail dependency checks
-    mkdir -p /tmp/test_path_$$
+    # Isolated HOME (the connector writes logs on startup) and a place for the
+    # stripped PATH
+    setup_test_env
 
-    # Create symlinks to core utilities (needed for script execution)
-    local core_utils="bash sh realpath dirname cat grep awk sed chmod stat wc head tail sort find"
-    for util in $core_utils; do
-        local util_path
-        util_path=$(command -v "$util" 2> /dev/null)
-        if [[ -n "$util_path" ]]; then
-            ln -sf "$util_path" "/tmp/test_path_$$/$util" 2> /dev/null || true
-        fi
+    # A PATH with everything the connector needs to start, but none of the VPN
+    # dependencies it checks for (openvpn, curl, bc, notify-send, ip, wg-quick,
+    # wg); no sudo either, so nothing privileged can run from it
+    local stripped_path="$TEST_TEMP_DIR/stripped-path" dir util
+    mkdir -p "$stripped_path"
+    local -a path_dirs
+    IFS=':' read -ra path_dirs <<< "$PATH"
+    for dir in "${path_dirs[@]}"; do
+        [[ -d $dir ]] || continue
+        for util in "$dir"/*; do
+            [[ -x $util && ! -d $util ]] || continue
+            case "${util##*/}" in
+                openvpn | curl | bc | notify-send | ip | wg-quick | wg | sudo) continue ;;
+            esac
+            [[ -e "$stripped_path/${util##*/}" ]] || ln -s "$util" "$stripped_path/${util##*/}" 2> /dev/null || true
+        done
     done
-
-    # Remove VPN-specific dependencies to simulate missing deps
-    # vpn-connector checks for: openvpn, curl, bc, notify-send, ip, wg-quick
-    local original_path="$PATH"
-    export PATH="/tmp/test_path_$$"
 
     local connector_script="$PROJECT_DIR/src/vpn-connector"
 
     # Test dependency check with missing VPN commands
     local dep_output
-    dep_output=$("$connector_script" test 2>&1)
-
-    # Restore PATH and cleanup
-    export PATH="$original_path"
-    rm -rf "/tmp/test_path_$$"
+    dep_output=$(PATH="$stripped_path" "$connector_script" test 2>&1)
 
     assert_contains "$dep_output" "dependencies" "Should detect missing dependencies"
+    assert_contains "$dep_output" "openvpn" "Should name the missing tool"
 }
 
 test_lock_file_mechanism() {
@@ -214,7 +217,7 @@ test_lock_file_mechanism() {
     setup_test_env
 
     # Create a test lock file
-    local test_lock="/tmp/test_vpn.lock"
+    local test_lock="$TEST_TEMP_DIR/test_vpn.lock"
     echo "12345" > "$test_lock"
 
     # Test lock file detection
@@ -243,7 +246,7 @@ test_logging_integration() {
 
     setup_test_env
 
-    local test_log="/tmp/test_vpn_$$.log"
+    local test_log="$TEST_TEMP_DIR/test_vpn.log"
 
     # Test log message function (simulate)
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] Test log message" > "$test_log"
@@ -262,28 +265,31 @@ test_logging_integration() {
 test_error_handling() {
     start_test "Error Handling Integration"
 
+    # The real connector writes logs: never into the user's HOME
+    setup_test_env
+
     # Test handling of missing locations directory
     local connector_script="$PROJECT_DIR/src/vpn-connector"
 
-    LOCATIONS_DIR="/nonexistent/path" "$connector_script" list > /tmp/error_output 2>&1 || true
+    LOCATIONS_DIR="/nonexistent/path" "$connector_script" list > "$TEST_TEMP_DIR/error_output" 2>&1 || true
 
-    if [[ -f /tmp/error_output ]]; then
+    if [[ -f "$TEST_TEMP_DIR/error_output" ]]; then
         local error_output
-        error_output=$(cat /tmp/error_output)
+        error_output=$(cat "$TEST_TEMP_DIR/error_output")
 
         assert_contains "$error_output" "FILE_ACCESS" "Should handle missing directory gracefully"
 
-        rm -f /tmp/error_output
+        rm -f "$TEST_TEMP_DIR/error_output"
     fi
 
     # Test handling of missing credentials
     # Note: vpn-connector test checks internet connectivity before credentials
     # In CI without internet, network error is expected before credentials check
-    CREDENTIALS_FILE="/nonexistent/creds.txt" "$connector_script" test > /tmp/cred_error 2>&1 || true
+    CREDENTIALS_FILE="/nonexistent/creds.txt" "$connector_script" test > "$TEST_TEMP_DIR/cred_error" 2>&1 || true
 
-    if [[ -f /tmp/cred_error ]]; then
+    if [[ -f "$TEST_TEMP_DIR/cred_error" ]]; then
         local cred_error
-        cred_error=$(cat /tmp/cred_error)
+        cred_error=$(cat "$TEST_TEMP_DIR/cred_error")
 
         # Accept either credentials error (local) or network error (CI)
         if echo "$cred_error" | command grep -q -E "missing|NETWORK|connectivity"; then
@@ -295,7 +301,7 @@ test_error_handling() {
             ((TESTS_FAILED++))
         fi
 
-        rm -f /tmp/cred_error
+        rm -f "$TEST_TEMP_DIR/cred_error"
     fi
 }
 

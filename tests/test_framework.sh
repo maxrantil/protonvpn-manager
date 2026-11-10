@@ -230,6 +230,14 @@ cleanup_mocks() {
     log_test "INFO" "Cleaned up mock commands"
 }
 
+# A running VPN session, found the way the scripts find one: the pattern is
+# read from src/vpn-validators, so the tests cannot drift from it
+vpn_session_running() {
+    local pattern
+    pattern=$(sed -n "s/^OPENVPN_PGREP_PATTERN='\(.*\)'$/\1/p" "$PROJECT_DIR/src/vpn-validators" 2> /dev/null)
+    pgrep -f "${pattern:-(^|/)openvpn .*--config}" > /dev/null 2>&1
+}
+
 setup_test_env() {
     # Clean up any mocks from previous tests first
     cleanup_mocks
@@ -324,7 +332,8 @@ EOF
 }
 
 cleanup_test_env() {
-    if [[ -n "${TEST_TEMP_DIR:-}" ]] && [[ -d "$TEST_TEMP_DIR" ]]; then
+    # Only a directory setup_test_env made (never an inherited TEST_TEMP_DIR)
+    if [[ -n "${TEST_TEMP_DIR:-}" && -d "$TEST_TEMP_DIR" && $TEST_TEMP_DIR == "${TMPDIR:-/tmp}"/vpn_test.* ]]; then
         rm -rf "$TEST_TEMP_DIR"
         log_test "INFO" "Test environment cleaned up"
     fi

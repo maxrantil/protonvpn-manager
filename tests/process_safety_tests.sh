@@ -1,8 +1,10 @@
 #!/bin/bash
 # ABOUTME: Process safety and cleanup tests for VPN management system
-# ABOUTME: Tests using REAL system interactions - no mocking per CLAUDE.md
+# ABOUTME: Runs the real scripts and processes; HOME isolated and sudo blocked by setup_test_env
 
-set -euo pipefail
+# No strict mode: the tests count with ((x++)) and read pgrep through pipes,
+# where a miss is a result, not an error; and run_tests.sh sources this file,
+# so the options would leak into the runner
 
 # Source the test framework
 TEST_DIR="$(dirname "$(realpath "$0")")"
@@ -403,12 +405,16 @@ run_process_safety_tests() {
     # These tests run the real `vpn cleanup`, which stops any running OpenVPN
     # and removes its tunnel (a kill switch would stay on): never on top of a
     # running session
-    if pgrep -x openvpn > /dev/null 2>&1; then
+    if vpn_session_running; then
         log_test "WARN" "SKIP Process Safety Tests: a VPN is running and these tests run the real 'vpn cleanup'; disconnect first (vpn disconnect)"
         return 0
     fi
 
-    log_test "INFO" "Starting Process Safety Tests (Real System - No Mocking)"
+    # Never the user's HOME, locks or sudo: a session that starts during the
+    # run (the reconnect hook) cannot be stopped from here
+    setup_test_env
+
+    log_test "INFO" "Starting Process Safety Tests (real scripts and processes; isolated HOME, sudo blocked)"
     echo "======================================="
     echo "    PROCESS SAFETY TESTS"
     echo "======================================="
