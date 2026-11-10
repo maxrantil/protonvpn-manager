@@ -124,8 +124,9 @@ vpn kill-switch status
       ip route show default        # note the gateway IP, e.g. 192.168.1.1
       dig +time=2 +tries=1 @192.168.1.1 example.com   # should time out
       ```
-- [ ] `vpn disconnect` turns the kill switch off (unless auto-reconnect is
-      enabled), and normal browsing works again.
+- [ ] `vpn disconnect` turns the kill switch off (also with auto-reconnect
+      enabled: only the sleep and network hooks keep it), and normal browsing
+      works again.
 
 Not yet verified anywhere, so worth trying: with the kill switch on, disconnect
 and connect to a **different** country (`vpn connect nl --kill-switch`). If
@@ -180,12 +181,30 @@ vpn-manager config auto-reconnect on      # requires the kill switch to be enabl
 
 - [ ] Suspend and resume while connected with `--kill-switch`: it reconnects.
       Check `~/.local/state/vpn/sleep-hook.log` and `journalctl -t vpn-sleep`.
+- [ ] Network hook: simulate a dropped tunnel, then bring Wi-Fi back. It
+      reconnects with the kill switch still on, and nothing leaks in between.
+      (`nmcli device reconnect` doesn't exist in nmcli 1.58; use disconnect + connect.)
+      ```bash
+      vpn connect se --kill-switch
+      sudo pkill -x openvpn            # traffic is now blocked, not leaked
+      nmcli device disconnect wlan0 && nmcli device connect wlan0
+      ip link show tun0                # back within a few seconds
+      sudo cat /run/protonvpn-manager/reconnect.attempts   # "<time>:success"
+      ```
+- [ ] Do it **twice** in a row: the second drop must reconnect too (#248).
+      Afterwards no file in `~/.local/state/vpn` may be owned by root.
 
 ---
 
 ## Running the test suite on this machine
 
-`cd tests && ./run_tests.sh` is safe while you work: it never starts OpenVPN,
+> **Until #250 is fixed: disconnect first** (`vpn disconnect`).
+> `tests/simple_regression_tests.sh` runs the real `vpn cleanup`: it kills a
+> running OpenVPN and leaves the kill switch blocking all traffic (run
+> `~/vpn-recover.sh` if that happens). `tests/integration_tests.sh` writes to
+> the real `~/.local/state/vpn` logs.
+
+`cd tests && ./run_tests.sh` aims to be safe while you work: it never starts OpenVPN,
 runs `sudo`, or reads `~/.config/vpn` (HOME is a temporary directory and `sudo`
 is blocked unless a test mocks it). Two parts touch the real VPN on purpose:
 
