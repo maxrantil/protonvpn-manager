@@ -303,16 +303,28 @@ check_process_health() {
     fi
 }
 
+# Lookups for the status report. Each is a single awk, so an empty result
+# (no tunnel yet, no address or route yet) still exits 0 under
+# `set -euo pipefail`.
 get_vpn_interface() {
-    ip link show | grep -E "tun[0-9]+" | head -1 | awk '{print $2}' | sed 's/://'
+    ip link show 2> /dev/null | awk -F': ' '$2 ~ /^tun[0-9]+/ { sub(/@.*/, "", $2); print $2; exit }'
 }
 
 get_vpn_gateway() {
     local interface
     interface=$(get_vpn_interface)
     if [[ -n $interface ]]; then
-        ip route | grep "^0.0.0.0.*$interface" | awk '{print $3}' | head -1
+        ip route 2> /dev/null | awk -v dev="$interface" '$1 ~ /^0\.0\.0\.0/ && $2 == "via" && $0 ~ (" dev " dev "( |$)") { print $3; exit }'
     fi
+}
+
+# First IPv4 address of an interface (empty if it has none yet)
+get_interface_ip() {
+    ip addr show "$1" 2> /dev/null | awk '$1 == "inet" { split($2, a, "/"); print a[1]; exit }'
+}
+
+count_tunnels() {
+    ip link show 2> /dev/null | awk -F': ' '$2 ~ /^tun[0-9]+/ { n++ } END { print n + 0 }'
 }
 
 show_status() {
@@ -352,13 +364,18 @@ show_status() {
         # Log credential status for audit (helps with credential validation testing)
         log_message "Connection status check: credential auth validated" "$VPN_LOG_FILE"
 
-        echo -e "${GREEN}${BOLD}[OK]${NC} ${GREEN}✓ VPN Status: CONNECTED${NC}"
+        if [[ -n $interface ]]; then
+            echo -e "${GREEN}${BOLD}[OK]${NC} ${GREEN}✓ VPN Status: CONNECTED${NC}"
+        else
+            echo -e "${YELLOW}${BOLD}[WARN]${NC} ${YELLOW}⚠ VPN Status: NO TUNNEL${NC}"
+            echo -e "  OpenVPN is running but has no tunnel interface (still connecting, or the tunnel failed)"
+        fi
         echo -e "  Process ID: $pid"
 
         if [[ -n $interface ]]; then
             echo -e "  Interface: $interface"
             local vpn_ip gateway
-            vpn_ip=$(ip addr show "$interface" 2> /dev/null | grep "inet " | awk '{print $2}' | cut -d'/' -f1)
+            vpn_ip=$(get_interface_ip "$interface")
             gateway=$(get_vpn_gateway)
 
             if [[ -n $vpn_ip ]]; then
@@ -374,7 +391,7 @@ show_status() {
         echo "$external_ip"
 
         local uptime
-        uptime=$(ps -o etime= -p "$pid" 2> /dev/null | tr -d ' ')
+        uptime=$(ps -o etime= -p "$pid" 2> /dev/null | tr -d ' ' || true)
         if [[ -n $uptime ]]; then
             echo -e "  Uptime: $uptime"
         fi
@@ -396,12 +413,12 @@ show_status() {
 
     echo
     local active_tunnels
-    active_tunnels=$(ip link show | grep -c "tun[0-9]" 2> /dev/null || echo "0")
+    active_tunnels=$(count_tunnels)
     echo -e "  Active tunnels: $active_tunnels"
 
     if [[ -f $VPN_LOG_FILE ]]; then
         local log_size
-        log_size=$(du -h "$VPN_LOG_FILE" 2> /dev/null | cut -f1)
+        log_size=$(du -h "$VPN_LOG_FILE" 2> /dev/null | cut -f1 || true)
         echo -e "  Log file size: $log_size"
     fi
 }
@@ -860,23 +877,29 @@ show_status_accessible() {
     echo "Connection Information:"
 
     if is_vpn_running; then
-        echo "  Status: Connected"
         local pid interface external_ip vpn_ip uptime
         pid=$(get_vpn_pid)
         interface=$(get_vpn_interface)
         external_ip=$(get_cached_external_ip)
 
+        if [[ -n $interface ]]; then
+            echo "  Status: Connected"
+        else
+            echo "  Status: No tunnel"
+            echo "  OpenVPN is running but has no tunnel interface. It is still connecting, or the tunnel failed."
+        fi
+
         echo "  Process ID: $pid"
         [[ -n $interface ]] && echo "  Network Interface: $interface"
 
         if [[ -n $interface ]]; then
-            vpn_ip=$(ip addr show "$interface" 2> /dev/null | grep "inet " | awk '{print $2}' | cut -d'/' -f1)
+            vpn_ip=$(get_interface_ip "$interface")
             [[ -n $vpn_ip ]] && echo "  VPN IP Address: $vpn_ip"
         fi
 
         echo "  External IP Address: $external_ip"
 
-        uptime=$(ps -o etime= -p "$pid" 2> /dev/null | tr -d ' ')
+        uptime=$(ps -o etime= -p "$pid" 2> /dev/null | tr -d ' ' || true)
         [[ -n $uptime ]] && echo "  Connection Duration: $uptime"
     else
         echo "  Status: Disconnected"
@@ -886,8 +909,8 @@ show_status_accessible() {
 
     echo
     echo "System Health:"
-    check_process_health
-    local health_status=$?
+    local health_status=0
+    check_process_health || health_status=$?
 
     if [[ $health_status -eq 1 ]]; then
         echo "  WARNING: Multiple OpenVPN processes detected"
@@ -899,7 +922,7 @@ show_status_accessible() {
     fi
 
     local active_tunnels
-    active_tunnels=$(ip link show | grep -c "tun[0-9]" 2> /dev/null || echo "0")
+    active_tunnels=$(count_tunnels)
     echo "  Active Network Tunnels: $active_tunnels"
 }
 
