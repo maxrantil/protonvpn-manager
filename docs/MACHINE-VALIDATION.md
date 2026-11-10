@@ -198,21 +198,21 @@ vpn-manager config auto-reconnect on      # requires the kill switch to be enabl
 
 ## Running the test suite on this machine
 
-> **Until #250 is fixed: disconnect first** (`vpn disconnect`).
-> `tests/simple_regression_tests.sh` runs the real `vpn cleanup`: it kills a
-> running OpenVPN and leaves the kill switch blocking all traffic (run
-> `~/vpn-recover.sh` if that happens). `tests/integration_tests.sh` writes to
-> the real `~/.local/state/vpn` logs.
-
-`cd tests && ./run_tests.sh` aims to be safe while you work: it never starts OpenVPN,
-runs `sudo`, or reads `~/.config/vpn` (HOME is a temporary directory and `sudo`
-is blocked unless a test mocks it). Two parts touch the real VPN on purpose:
+`cd tests && ./run_tests.sh` is safe while you work, also next to a running VPN:
+every suite runs with a temporary HOME and a `sudo` that refuses, `cleanup` and
+`kill` are skipped while a session runs, and `tests/unit/test_suite_safety.sh`
+checks all of this with a fake OpenVPN (#250). Two parts touch the real VPN on
+purpose:
 
 - `tests/test_exit_codes.sh` connects with your real profiles and credentials.
   It is skipped unless you ask for it:
   `vpn disconnect && VPN_LIVE_TESTS=1 ./tests/test_exit_codes.sh`
 - The process safety tests run the real `vpn cleanup`. They are skipped while
   a VPN is running.
+
+Four files nothing runs (`tests/cleanup_tests.sh`, `health_command_functionality_tests.sh`,
+`command_completion_tests.sh`, `emergency_reset_vs_cleanup_tests.sh`) call the real
+`vpn cleanup`, `kill` and `emergency-reset` with your HOME: don't run them by hand while connected.
 
 ## If something fails
 
