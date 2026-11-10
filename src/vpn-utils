@@ -207,7 +207,8 @@ release_vpn_network_state() {
     # Before Tailscale takes resolv.conf back, so it keeps a working upstream
     restore_system_dns || true
     restore_tailscale_dns || true
-    local kill_switch="${VPN_DIR:-/usr/local/bin}/vpn-kill-switch"
+    # Callers set VPN_DIR; the fallback is this library's own directory
+    local kill_switch="${VPN_DIR:-$(dirname "$(realpath "${BASH_SOURCE[0]}")")}/vpn-kill-switch"
     [[ -x $kill_switch ]] || return 0
     "$kill_switch" ipv6-guard off > /dev/null 2>&1 || true
     [[ ${VPN_KEEP_KILL_SWITCH:-} == 1 ]] && return 0

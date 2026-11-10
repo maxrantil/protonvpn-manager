@@ -338,8 +338,8 @@ test_fixture_connect_never_reaches_real_sudo() {
 # of the branch. Decoy libraries mounted over /usr/local/bin (user + mount +
 # network namespace: nothing on the host changes) record any use.
 test_src_scripts_never_load_installed_copy() {
-    if ! unshare -rmn true 2> /dev/null; then
-        test_pass "src/ scripts load their own libraries (skipped: no user namespace)"
+    if [[ ! -d /usr/local/bin ]] || ! unshare -rmn true 2> /dev/null; then
+        test_pass "src/ scripts load their own libraries (skipped: no /usr/local/bin or no user namespace)"
         return
     fi
     local decoys="$WORK_DIR/decoys" marker="$WORK_DIR/installed-used.log" f out
