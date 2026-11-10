@@ -303,9 +303,9 @@ check_process_health() {
     fi
 }
 
-# Lookups for the status report. Each is a single awk, which exits 0 whether
-# or not it finds anything: under `set -euo pipefail` a grep that matched
-# nothing aborted the report (no tunnel yet, or no address/route yet).
+# Lookups for the status report. Each is a single awk, so an empty result
+# (no tunnel yet, no address or route yet) still exits 0 under
+# `set -euo pipefail`.
 get_vpn_interface() {
     ip link show 2> /dev/null | awk -F': ' '$2 ~ /^tun[0-9]+/ { sub(/@.*/, "", $2); print $2; exit }'
 }
@@ -314,7 +314,7 @@ get_vpn_gateway() {
     local interface
     interface=$(get_vpn_interface)
     if [[ -n $interface ]]; then
-        ip route 2> /dev/null | awk -v dev="$interface" '$1 ~ /^0\.0\.0\.0/ && $0 ~ (" dev " dev "( |$)") { print $3; exit }'
+        ip route 2> /dev/null | awk -v dev="$interface" '$1 ~ /^0\.0\.0\.0/ && $2 == "via" && $0 ~ (" dev " dev "( |$)") { print $3; exit }'
     fi
 }
 
@@ -391,7 +391,7 @@ show_status() {
         echo "$external_ip"
 
         local uptime
-        uptime=$(ps -o etime= -p "$pid" 2> /dev/null | tr -d ' ')
+        uptime=$(ps -o etime= -p "$pid" 2> /dev/null | tr -d ' ' || true)
         if [[ -n $uptime ]]; then
             echo -e "  Uptime: $uptime"
         fi
@@ -418,7 +418,7 @@ show_status() {
 
     if [[ -f $VPN_LOG_FILE ]]; then
         local log_size
-        log_size=$(du -h "$VPN_LOG_FILE" 2> /dev/null | cut -f1)
+        log_size=$(du -h "$VPN_LOG_FILE" 2> /dev/null | cut -f1 || true)
         echo -e "  Log file size: $log_size"
     fi
 }
@@ -885,7 +885,8 @@ show_status_accessible() {
         if [[ -n $interface ]]; then
             echo "  Status: Connected"
         else
-            echo "  Status: No tunnel. OpenVPN is running but has no tunnel interface (still connecting, or the tunnel failed)"
+            echo "  Status: No tunnel"
+            echo "  OpenVPN is running but has no tunnel interface. It is still connecting, or the tunnel failed."
         fi
 
         echo "  Process ID: $pid"
@@ -898,7 +899,7 @@ show_status_accessible() {
 
         echo "  External IP Address: $external_ip"
 
-        uptime=$(ps -o etime= -p "$pid" 2> /dev/null | tr -d ' ')
+        uptime=$(ps -o etime= -p "$pid" 2> /dev/null | tr -d ' ' || true)
         [[ -n $uptime ]] && echo "  Connection Duration: $uptime"
     else
         echo "  Status: Disconnected"

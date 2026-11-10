@@ -274,7 +274,7 @@ net="$STATUS_NET"
 EOF
 cat >> "$STATUS_WORK/stubs/ip" << 'EOF'
 case "$*" in
-	"link show"*tun0* | "-o link show"*) [[ -f $net/tunnel ]] && echo "5: tun0: <POINTOPOINT,UP> mtu 1500" ;;
+	"link show"*tun0*) [[ -f $net/tunnel ]] && echo "5: tun0: <POINTOPOINT,UP> mtu 1500" ;;
 	"link show"*)
 		echo "1: lo: <LOOPBACK,UP> mtu 65536"
 		[[ -f $net/tunnel ]] && echo "5: tun0: <POINTOPOINT,UP> mtu 1500"
@@ -291,8 +291,7 @@ printf '#!/bin/bash\nexit 1\n' > "$STATUS_WORK/stubs/sudo"
 cat > "$STATUS_WORK/stubs/pgrep" << EOF
 #!/bin/bash
 if [[ \$* == *openvpn* ]]; then
-	pid=\$(cat "$STATUS_WORK/fake.pid" 2> /dev/null)
-	[[ -n \$pid ]] && { echo "\$pid"; exit 0; }
+	[[ -s "$STATUS_WORK/fake.pid" ]] && { cat "$STATUS_WORK/fake.pid"; exit 0; }
 	exit 1
 fi
 exec /usr/bin/pgrep "\$@"
@@ -370,10 +369,30 @@ test_status_counts_tunnels_once() {
 	fi
 }
 
+# Several OpenVPN processes: the accessible report warns and still completes
+test_status_accessible_multiple_processes() {
+	local second
+	bash -c 'exec -a "$0 --config $1" sleep 60' "$STATUS_WORK/fake/openvpn" "$STATUS_WORK/fake/profile.ovpn" &
+	second=$!
+	sleep 0.3
+	echo "$second" >> "$STATUS_WORK/fake.pid"
+	rm -f "$STATUS_NET"/*
+	run_status VPN_ACCESSIBLE_MODE=1
+	kill "$second" 2> /dev/null
+	echo "$STATUS_FAKE_PID" > "$STATUS_WORK/fake.pid"
+	if [[ $STATUS_RC -eq 0 ]] && grep -q "Multiple OpenVPN processes" <<< "$STATUS_OUT" &&
+		grep -q "Active Network Tunnels:" <<< "$STATUS_OUT"; then
+		test_pass "status (accessible mode): several processes warned about, report completes (exit 0)"
+	else
+		test_fail "status (accessible mode): several processes warned about, report completes (exit 0)" "exit $STATUS_RC: $STATUS_OUT"
+	fi
+}
+
 if start_status_fake_openvpn; then
 	test_status_reports_process_without_tunnel
 	test_status_tunnel_without_address
 	test_status_counts_tunnels_once
+	test_status_accessible_multiple_processes
 	kill "$STATUS_FAKE_PID" 2> /dev/null
 	STATUS_FAKE_PID=""
 else

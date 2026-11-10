@@ -31,7 +31,11 @@
 
 ### Agent Validation Status
 
-- code-quality-analyzer: review running at the time of writing (see PR #256)
+- code-quality-analyzer: 4.4/5 approve with nits (awk lookups checked against real
+  `ip` formats incl. `tun1@NONE`; stricter than the old grep for tun1 vs tun10). Nits
+  done: gateway only from `via` routes, `|| true` on the `ps`/`du` pipelines, comment
+  wording, accessible no-tunnel message on two lines, and a test for several processes
+  in accessible mode (shown failing against master's `src/`, passing on the branch)
 
 ## 🚀 Next Session Priorities
 
