@@ -193,6 +193,43 @@ test_connect_pauses_tailscale_dns() {
     report $? "resolv.conf is regenerated from resolvconf (VPN DNS)" "$(cat "$CALLS")"
 }
 
+# The sleep and network hooks run the connector as root for the user, then
+# read last_profile back as the user. A root-owned 0600 copy made every
+# auto-reconnect after the first one fail, with the kill switch blocking
+# everything. A user namespace gives EUID 0 without touching the system;
+# chown is recorded (the namespace cannot hand files to another user).
+run_state_writers() { # $1 = command prefix (empty: run unprivileged)
+    local profile="$HOME/.config/vpn/locations/se-1.ovpn"
+    echo client > "$profile"
+    $1 bash -c "$(stubbed_source vpn-utils)
+        secure_user_dir() { :; }
+        chown() { echo \"chown:\$*\" >> \"\$CALLS\"; }
+        REAL_USER=alice REAL_GROUP=staff
+        eval \"\$(sed -n '/^save_reconnect_state() {/,/^}/p' '$SRC_DIR/vpn-connector')\"
+        save_reconnect_state '$profile'
+        pause_tailscale_dns" > /dev/null 2>&1
+}
+
+test_root_run_leaves_state_to_user() {
+    local state="$XDG_STATE_HOME/vpn" missing="" f
+    if ! unshare -r true 2> /dev/null; then
+        test_pass "state written as root stays the user's (skipped: no user namespace)"
+        return
+    fi
+    reset_state
+    run_state_writers "unshare -r"
+    for f in last_profile last_profile.sha256 tailscale-dns-paused; do
+        called "chown:-h alice:staff $state/$f" || missing+=" $f"
+    done
+    [[ -z $missing ]]
+    report $? "state written as root (hooks) is handed to the real user" "not chowned:$missing; $(cat "$CALLS")"
+
+    reset_state
+    run_state_writers ""
+    ! grep -q "^chown:" "$CALLS"
+    report $? "an unprivileged connect never chowns" "$(cat "$CALLS")"
+}
+
 test_tailscale_dns_left_alone() {
     reset_state
     echo "TAILSCALE_DNS=keep" > "$HOME/.config/vpn/config"
@@ -449,6 +486,7 @@ echo -e "${T_BLUE}========================================${T_NC}"
 test_connect_blocks_ipv6
 test_connect_pauses_tailscale_dns
 test_tailscale_dns_left_alone
+test_root_run_leaves_state_to_user
 test_release_restores
 test_release_respects_user_setting
 test_release_with_keep_kill_switch
