@@ -6,13 +6,9 @@
 TEST_DIR="$(dirname "$(realpath "$0")")"
 source "$TEST_DIR/test_framework.sh"
 
-# `cleanup` and `kill` end a running OpenVPN. Run on top of a live session they
-# took the machine offline (the kill switch stayed up, #250); with sudo blocked
-# by setup_test_env they could only fail. Skipped while a VPN is running, using
-# the pattern the scripts themselves use to find one.
-vpn_session_running() {
-    pgrep -f '(^|/)openvpn .*--config' > /dev/null 2>&1
-}
+# `cleanup` and `kill` end a running OpenVPN, so they are skipped while one
+# runs (vpn_session_running, test_framework.sh). setup_test_env in main keeps
+# the user's HOME out of reach and blocks sudo (#250).
 
 test_cleanup_preserves_networkmanager() {
     start_test "Cleanup does not restart NetworkManager"
@@ -63,15 +59,15 @@ test_commands_complete_without_hanging() {
             continue
         fi
 
-        # Only hanging is a failure here; a non-zero exit is the command's
-        # verdict (e.g. status reports a problem), not a hang
+        # Hanging (124) or dying (126, 127, a signal) fails; a smaller non-zero
+        # exit is the command's own verdict (e.g. status reporting a problem)
         local rc=0
         timeout "${timeout_val}s" "$PROJECT_DIR/src/vpn" "$cmd" > /dev/null 2>&1 || rc=$?
-        if [[ $rc -ne 124 ]]; then
+        if [[ $rc -ne 124 && $rc -lt 126 ]]; then
             log_test "PASS" "$CURRENT_TEST: '$cmd' completed within ${timeout_val}s"
             ((TESTS_PASSED++))
         else
-            log_test "FAIL" "$CURRENT_TEST: '$cmd' timed out after ${timeout_val}s"
+            log_test "FAIL" "$CURRENT_TEST: '$cmd' timed out or died (exit $rc)"
             FAILED_TESTS+=("$CURRENT_TEST: $cmd")
             ((TESTS_FAILED++))
         fi

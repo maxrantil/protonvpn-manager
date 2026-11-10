@@ -43,10 +43,13 @@ report() {
 WORK_DIR=$(mktemp -d)
 FAKE_VPN_PID=""
 teardown() {
-    [[ -n $FAKE_VPN_PID ]] && kill "$FAKE_VPN_PID" 2> /dev/null
+    if [[ -n $FAKE_VPN_PID ]]; then
+        kill "$FAKE_VPN_PID" 2> /dev/null
+    fi
     rm -rf "$WORK_DIR"
 }
 trap teardown EXIT
+trap 'exit 130' INT TERM HUP
 REAL_HOME="$HOME"
 REAL_PATH="$PATH"
 
@@ -110,46 +113,82 @@ test_process_safety_skipped_with_running_vpn() {
 
 # A process the scripts take for a running OpenVPN (argv[0] ends in
 # "openvpn", "--config" in the command line). It is ours, so a plain kill
-# ends it: any suite that runs an unguarded `vpn cleanup` or `vpn kill`
-# kills it, where a real root OpenVPN would only survive thanks to sudo.
+# ends it: a suite that runs an unguarded `vpn cleanup` or `vpn kill` kills
+# it, where a real root OpenVPN would only survive thanks to the blocked sudo.
 start_fake_openvpn() {
-    local dir="$WORK_DIR/fake-vpn"
+    local dir="$WORK_DIR/fake-vpn" i
     mkdir -p "$dir" && : > "$dir/profile.ovpn"
-    bash -c 'exec -a "$0 --config $1" sleep 600' "$dir/openvpn" "$dir/profile.ovpn" &
+    bash -c 'exec -a "$0 --config $1" sleep 120' "$dir/openvpn" "$dir/profile.ovpn" &
     FAKE_VPN_PID=$!
-    sleep 0.2
-    kill -0 "$FAKE_VPN_PID" 2> /dev/null
+    # Ready once the scripts' own pattern finds it (before the exec, the
+    # command line is bash's and does not match)
+    for ((i = 0; i < 50; i++)); do
+        pgrep -f '(^|/)openvpn .*--config' | grep -qx "$FAKE_VPN_PID" && return 0
+        sleep 0.1
+    done
+    return 1
 }
 
-# simple_regression_tests.sh ran the real `vpn cleanup` (3x) and `vpn kill`
-# with the user's HOME and sudo; integration_tests.sh and e2e_tests.sh ran
-# scripts against the real ~/.local/state/vpn. With a session up, cleanup
-# killed OpenVPN and the kill switch then blocked everything (#250). Here
-# HOME stands in for the user's and sudo is recorded: every suite must pass,
-# leave the running VPN alone, reach no sudo and write nothing into HOME.
-test_suites_leave_running_vpn_and_home_alone() {
-    local suite out rc user_home="$WORK_DIR/user-home" sudo_only="$WORK_DIR/sudo-only"
-    mkdir -p "$sudo_only" && cp "$STUBS/sudo" "$sudo_only/"
-    for suite in simple_regression_tests.sh integration_tests.sh e2e_tests.sh process_safety_tests.sh; do
-        if ! start_fake_openvpn; then
-            test_fail "$suite: fake OpenVPN did not start"
-            continue
-        fi
-        rm -rf "$user_home" && mkdir -p "$user_home"
-        : > "$CALLS"
-        rc=0
-        out=$(cd "$TESTS_DIR" && env -u XDG_CONFIG_HOME -u XDG_STATE_HOME -u XDG_CACHE_HOME -u VPN_LIVE_TESTS \
-            HOME="$user_home" PATH="$sudo_only:$REAL_PATH" timeout 300 bash "$TESTS_DIR/$suite" 2>&1) || rc=$?
-        kill -0 "$FAKE_VPN_PID" 2> /dev/null
-        report $? "$suite leaves the running VPN alone" "$(grep -iE 'cleanup|terminat' <<< "$out" | head -3)"
+stop_fake_openvpn() {
+    if [[ -n $FAKE_VPN_PID ]]; then
         kill "$FAKE_VPN_PID" 2> /dev/null
-        FAKE_VPN_PID=""
-        [[ ! -s $CALLS ]]
-        report $? "$suite reaches no real sudo" "$(head -3 "$CALLS")"
-        [[ -z $(find "$user_home" -mindepth 1 -print -quit) ]]
-        report $? "$suite writes nothing into the user's HOME" "$(find "$user_home" -type f | head -5)"
-        [[ $rc -eq 0 ]]
-        report $? "$suite passes while a VPN is running" "exit $rc: $(grep -E 'FAIL|✗' <<< "$out" | head -5)"
+    fi
+    FAKE_VPN_PID=""
+}
+
+# The suites that run the real scripts (#250: they used to run `vpn cleanup`
+# and `vpn kill` with the user's HOME and sudo, and on top of a live session
+# that killed OpenVPN with the kill switch still up). Each suite runs
+# standalone with stand-ins for the user's HOME, runtime directory and TMPDIR,
+# and a sudo that only records.
+USER_HOME="$WORK_DIR/user-home"
+RUN_DIR="$WORK_DIR/user-run"
+TMP_DIR="$WORK_DIR/tmp"
+SUDO_ONLY="$WORK_DIR/sudo-only"
+RUN_RC=0
+RUN_OUT=""
+run_suite_isolated() { # $1 = suite file
+    rm -rf "$USER_HOME" "$RUN_DIR" "$TMP_DIR"
+    mkdir -p "$USER_HOME" "$RUN_DIR" "$TMP_DIR" && chmod 700 "$RUN_DIR"
+    : > "$CALLS"
+    RUN_RC=0
+    RUN_OUT=$(cd "$TESTS_DIR" && env -u XDG_CONFIG_HOME -u XDG_STATE_HOME -u XDG_CACHE_HOME -u VPN_LIVE_TESTS \
+        HOME="$USER_HOME" XDG_RUNTIME_DIR="$RUN_DIR" TMPDIR="$TMP_DIR" PATH="$SUDO_ONLY:$REAL_PATH" \
+        timeout 120 bash "$TESTS_DIR/$1" 2>&1) || RUN_RC=$?
+}
+
+check_suite_left_alone() { # $1 = suite file, $2 = situation
+    local why="exit $RUN_RC"
+    [[ $RUN_RC -eq 124 ]] && why="timeout (exit 124)"
+    [[ ! -s $CALLS ]]
+    report $? "$1 $2: reaches no real sudo" "$(head -3 "$CALLS")"
+    [[ -z $(find "$USER_HOME" "$RUN_DIR" -mindepth 1 -print -quit) ]]
+    report $? "$1 $2: writes nothing into the user's HOME or runtime directory" \
+        "$(find "$USER_HOME" "$RUN_DIR" -mindepth 1 | head -5)"
+    [[ -z $(find "$TMP_DIR" -mindepth 1 -print -quit) ]]
+    report $? "$1 $2: leaves nothing behind in TMPDIR" "$(find "$TMP_DIR" -mindepth 1 -maxdepth 1 | head -5)"
+    [[ $RUN_RC -eq 0 ]]
+    report $? "$1 $2: passes" "$why: $(grep -E 'FAIL|✗' <<< "$RUN_OUT" | head -5)"
+}
+
+test_suites_leave_running_vpn_and_home_alone() {
+    local suite
+    mkdir -p "$SUDO_ONLY" && cp "$STUBS/sudo" "$SUDO_ONLY/"
+    for suite in simple_regression_tests.sh integration_tests.sh e2e_tests.sh process_safety_tests.sh; do
+        # With a VPN running: the guards must hold
+        if start_fake_openvpn; then
+            run_suite_isolated "$suite"
+            kill -0 "$FAKE_VPN_PID" 2> /dev/null
+            report $? "$suite (VPN running): leaves the running VPN alone" \
+                "$(grep -iE 'cleanup|terminat' <<< "$RUN_OUT" | head -3)"
+            stop_fake_openvpn
+            check_suite_left_alone "$suite" "(VPN running)"
+        else
+            test_fail "$suite: fake OpenVPN did not start"
+        fi
+        # Without one, the real cleanup and kill run: the isolation alone must hold
+        run_suite_isolated "$suite"
+        check_suite_left_alone "$suite" "(no VPN)"
     done
 }
 
