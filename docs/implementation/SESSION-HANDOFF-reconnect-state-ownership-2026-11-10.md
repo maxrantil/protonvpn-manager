@@ -23,16 +23,23 @@
 
 ## 🎯 Current Project State
 
-- **Tests**: ✅ `test_leak_protection.sh` 33/33; `run_tests.sh` 91 passed / 0 failed,
+- **Tests**: ✅ `test_leak_protection.sh` 35/35; `run_tests.sh` 91 passed / 0 failed,
   run next to a live VPN (cleanup tests skip themselves; the session survived and no
   test wrote to the real `~/.local/state/vpn`)
-- **Branch**: ✅ clean, pushed `255bca6`
+- **Branch**: ✅ clean, pushed
 - **CI/CD**: 🔄 runs on #252
 
 ### Agent Validation Status
 
-- security-validator, code-quality-analyzer: reviews running at the time of writing;
-  results go into the PR conversation and `SESSION_HANDOVER.md`
+- security-validator: 4.2/5 approve (`chown -h` never follows the final component;
+  hardlink swaps blocked by protected_hardlinks; REAL_USER validated and fails safe)
+- code-quality-analyzer: 4.0/5 approve with nits
+- Both flagged `save_reconnect_state`'s plain `mkdir -p`/`chmod 700` (root could create
+  the state dir root-owned or follow a planted symlink): now `secure_user_dir`. The
+  Tailscale marker is removed before it is written (no write through a symlink).
+  Both covered by new assertions (RED first); `test_leak_protection.sh` 35/35
+- Not done (optional): the inline chowns in `src/vpn-kill-switch` and `src/vpn-manager`
+  could use the helper; a failed chown is silent
 
 ## 🚀 Next Session Priorities
 
