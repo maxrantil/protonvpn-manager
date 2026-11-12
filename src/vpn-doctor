@@ -121,13 +121,13 @@ store_check_result() {
 
     case "$status" in
         "FAIL")
-            ((CRITICAL_COUNT++))
+            CRITICAL_COUNT=$((CRITICAL_COUNT + 1))
             ;;
         "WARN")
-            ((WARNING_COUNT++))
+            WARNING_COUNT=$((WARNING_COUNT + 1))
             ;;
         "INFO")
-            ((INFO_COUNT++))
+            INFO_COUNT=$((INFO_COUNT + 1))
             ;;
     esac
 }
@@ -323,7 +323,9 @@ check_process_health() {
 
     # Count OpenVPN processes
     # Program must be openvpn itself (grep/editors mentioning it don't count)
-    process_count=$(pgrep -f '(^|/)openvpn .*--config' 2>/dev/null | wc -l || echo 0)
+    # pgrep -c prints 0 and exits 1 when nothing matches; keep its output
+    process_count=$(pgrep -c -f '(^|/)openvpn .*--config' 2>/dev/null) || true
+    [[ $process_count =~ ^[0-9]+$ ]] || process_count=0
 
     case $process_count in
         0)
@@ -396,7 +398,9 @@ generate_summary() {
 
     local passed_count=0
     for check in "${CHECKS[@]}"; do
-        [[ "${CHECK_RESULTS[$check]}" == "PASS" ]] && ((passed_count++))
+        if [[ "${CHECK_RESULTS[$check]}" == "PASS" ]]; then
+            passed_count=$((passed_count + 1))
+        fi
     done
 
     echo -e "${CYAN}╔════════════════════════════════════════╗${NC}"
@@ -417,8 +421,12 @@ generate_summary() {
     echo -e "Overall Status: $overall_status"
     echo
     echo -e "${GREEN}✓${NC} Passed: $passed_count checks"
-    [[ $WARNING_COUNT -gt 0 ]] && echo -e "${YELLOW}⚠${NC} Warnings: $WARNING_COUNT checks"
-    [[ $CRITICAL_COUNT -gt 0 ]] && echo -e "${RED}✗${NC} Failed: $CRITICAL_COUNT checks"
+    if [[ $WARNING_COUNT -gt 0 ]]; then
+        echo -e "${YELLOW}⚠${NC} Warnings: $WARNING_COUNT checks"
+    fi
+    if [[ $CRITICAL_COUNT -gt 0 ]]; then
+        echo -e "${RED}✗${NC} Failed: $CRITICAL_COUNT checks"
+    fi
     echo
 
     # Show recommendations for issues
@@ -432,7 +440,11 @@ generate_summary() {
         done
         echo
         echo "For detailed diagnostics: vpn doctor --verbose"
-        [[ "$FIX" == "false" ]] && echo "For automatic fixes: vpn doctor --fix"
+        # An `if`, not `[[ ]] &&`: as the function's last command a false
+        # test would return 1 and set -e would skip the exit-code logic
+        if [[ "$FIX" == "false" ]]; then
+            echo "For automatic fixes: vpn doctor --fix"
+        fi
     fi
 }
 
@@ -506,7 +518,7 @@ run_diagnostics() {
         esac
 
         display_check_result "$check" "$check_num" "$total_checks"
-        ((check_num++))
+        check_num=$((check_num + 1))
     done
 }
 
@@ -577,7 +589,7 @@ post_install_check() {
     for component in "${required_components[@]}"; do
         if [[ ! -f "$install_dir/$component" ]]; then
             echo "ERROR: Component missing: $component" >&2
-            ((failed++))
+            failed=$((failed + 1))
         fi
     done
 
@@ -586,7 +598,7 @@ post_install_check() {
         if [[ -f "$install_dir/$component" ]]; then
             if [[ ! -x "$install_dir/$component" ]]; then
                 echo "ERROR: Component not executable: $component" >&2
-                ((failed++))
+                failed=$((failed + 1))
             fi
 
             # Check permissions are 755
@@ -602,12 +614,12 @@ post_install_check() {
     # Check 3: Config directory exists
     if [[ ! -d "$CONFIG_DIR" ]]; then
         echo "ERROR: Config directory missing: $CONFIG_DIR" >&2
-        ((failed++))
+        failed=$((failed + 1))
     fi
 
     if [[ ! -d "$LOCATIONS_DIR" ]]; then
         echo "ERROR: Locations directory missing: $LOCATIONS_DIR" >&2
-        ((failed++))
+        failed=$((failed + 1))
     fi
 
     # Return appropriate exit code
