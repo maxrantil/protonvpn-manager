@@ -121,13 +121,13 @@ store_check_result() {
 
     case "$status" in
         "FAIL")
-            ((CRITICAL_COUNT++))
+            CRITICAL_COUNT=$((CRITICAL_COUNT + 1))
             ;;
         "WARN")
-            ((WARNING_COUNT++))
+            WARNING_COUNT=$((WARNING_COUNT + 1))
             ;;
         "INFO")
-            ((INFO_COUNT++))
+            INFO_COUNT=$((INFO_COUNT + 1))
             ;;
     esac
 }
@@ -323,7 +323,9 @@ check_process_health() {
 
     # Count OpenVPN processes
     # Program must be openvpn itself (grep/editors mentioning it don't count)
-    process_count=$(pgrep -f '(^|/)openvpn .*--config' 2>/dev/null | wc -l || echo 0)
+    # pgrep -c prints 0 and exits 1 when nothing matches; keep its output
+    process_count=$(pgrep -c -f '(^|/)openvpn .*--config' 2>/dev/null) || true
+    [[ $process_count =~ ^[0-9]+$ ]] || process_count=0
 
     case $process_count in
         0)
@@ -396,7 +398,7 @@ generate_summary() {
 
     local passed_count=0
     for check in "${CHECKS[@]}"; do
-        [[ "${CHECK_RESULTS[$check]}" == "PASS" ]] && ((passed_count++))
+        [[ "${CHECK_RESULTS[$check]}" == "PASS" ]] && passed_count=$((passed_count + 1))
     done
 
     echo -e "${CYAN}╔════════════════════════════════════════╗${NC}"
@@ -506,7 +508,7 @@ run_diagnostics() {
         esac
 
         display_check_result "$check" "$check_num" "$total_checks"
-        ((check_num++))
+        check_num=$((check_num + 1))
     done
 }
 
@@ -577,7 +579,7 @@ post_install_check() {
     for component in "${required_components[@]}"; do
         if [[ ! -f "$install_dir/$component" ]]; then
             echo "ERROR: Component missing: $component" >&2
-            ((failed++))
+            failed=$((failed + 1))
         fi
     done
 
@@ -586,7 +588,7 @@ post_install_check() {
         if [[ -f "$install_dir/$component" ]]; then
             if [[ ! -x "$install_dir/$component" ]]; then
                 echo "ERROR: Component not executable: $component" >&2
-                ((failed++))
+                failed=$((failed + 1))
             fi
 
             # Check permissions are 755
@@ -602,12 +604,12 @@ post_install_check() {
     # Check 3: Config directory exists
     if [[ ! -d "$CONFIG_DIR" ]]; then
         echo "ERROR: Config directory missing: $CONFIG_DIR" >&2
-        ((failed++))
+        failed=$((failed + 1))
     fi
 
     if [[ ! -d "$LOCATIONS_DIR" ]]; then
         echo "ERROR: Locations directory missing: $LOCATIONS_DIR" >&2
-        ((failed++))
+        failed=$((failed + 1))
     fi
 
     # Return appropriate exit code

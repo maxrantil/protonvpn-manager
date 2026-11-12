@@ -118,6 +118,7 @@ test_colors_have_ansi_codes() {
     assert_contains "\033[" "$GREEN" "GREEN contains ANSI escape code"
     assert_contains "\033[" "$YELLOW" "YELLOW contains ANSI escape code"
     assert_contains "\033[" "$NC" "NC contains ANSI escape code"
+    assert_contains "\033[" "${GRAY:-}" "GRAY contains ANSI escape code"
 }
 
 # Test: NO_COLOR environment variable disables colors
@@ -132,6 +133,7 @@ test_no_color_support() {
     assert_equals "" "$BLUE" "NO_COLOR disables BLUE"
     assert_equals "" "$CYAN" "NO_COLOR disables CYAN"
     assert_equals "" "$NC" "NO_COLOR disables NC"
+    assert_equals "" "${GRAY-unset}" "NO_COLOR disables GRAY"
 
     unset NO_COLOR
 }
