@@ -398,7 +398,9 @@ generate_summary() {
 
     local passed_count=0
     for check in "${CHECKS[@]}"; do
-        [[ "${CHECK_RESULTS[$check]}" == "PASS" ]] && passed_count=$((passed_count + 1))
+        if [[ "${CHECK_RESULTS[$check]}" == "PASS" ]]; then
+            passed_count=$((passed_count + 1))
+        fi
     done
 
     echo -e "${CYAN}╔════════════════════════════════════════╗${NC}"
@@ -419,8 +421,12 @@ generate_summary() {
     echo -e "Overall Status: $overall_status"
     echo
     echo -e "${GREEN}✓${NC} Passed: $passed_count checks"
-    [[ $WARNING_COUNT -gt 0 ]] && echo -e "${YELLOW}⚠${NC} Warnings: $WARNING_COUNT checks"
-    [[ $CRITICAL_COUNT -gt 0 ]] && echo -e "${RED}✗${NC} Failed: $CRITICAL_COUNT checks"
+    if [[ $WARNING_COUNT -gt 0 ]]; then
+        echo -e "${YELLOW}⚠${NC} Warnings: $WARNING_COUNT checks"
+    fi
+    if [[ $CRITICAL_COUNT -gt 0 ]]; then
+        echo -e "${RED}✗${NC} Failed: $CRITICAL_COUNT checks"
+    fi
     echo
 
     # Show recommendations for issues
@@ -434,7 +440,11 @@ generate_summary() {
         done
         echo
         echo "For detailed diagnostics: vpn doctor --verbose"
-        [[ "$FIX" == "false" ]] && echo "For automatic fixes: vpn doctor --fix"
+        # An `if`, not `[[ ]] &&`: as the function's last command a false
+        # test would return 1 and set -e would skip the exit-code logic
+        if [[ "$FIX" == "false" ]]; then
+            echo "For automatic fixes: vpn doctor --fix"
+        fi
     fi
 }
 
