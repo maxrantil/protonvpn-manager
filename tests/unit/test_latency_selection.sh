@@ -58,6 +58,8 @@ chmod 700 "$XDG_RUNTIME_DIR"
 
 # Stub ping: fixed latencies per host; logs every host it is asked about
 export PING_LOG="$WORK_DIR/ping.log"
+export PING_STATE="$WORK_DIR/pingstate"
+mkdir -p "$PING_STATE"
 cat > "$WORK_DIR/bin/ping" << 'EOF'
 #!/bin/bash
 host="${*: -1}"
@@ -67,6 +69,18 @@ case "$host" in
 	10.0.0.2) avg=12.25 ;;
 	10.0.0.3) avg=88 ;;
 	10.0.0.4) avg=5.1 ;;
+	# Rate limited: drops a ping while another one to it is in flight
+	127.0.0.3)
+		mkdir "$PING_STATE/inflight" 2> /dev/null || exit 1
+		sleep 0.3
+		rmdir "$PING_STATE/inflight"
+		avg=20
+		;;
+	# Answers only while $PING_STATE/up exists
+	127.0.0.2)
+		[[ -e $PING_STATE/up ]] || exit 1
+		avg=30
+		;;
 	*) exit 1 ;;
 esac
 echo "rtt min/avg/max/mdev = 1.0/$avg/2.0/0.1 ms"
@@ -102,7 +116,8 @@ check "best without country considers all servers" "dk-1" "$(bash "$EVALUATOR" b
 # 3. Cache: reused within max-age, re-measured when max-age is 0
 : > "$PING_LOG"
 bash "$EVALUATOR" best se > /dev/null 2>&1
-check "best reuses fresh measurements (no pings)" "0" "$(wc -l < "$PING_LOG")"
+check "best reuses fresh measurements (only the unreachable se-9 is pinged again)" \
+	"127.0.0.1" "$(xargs < "$PING_LOG")"
 : > "$PING_LOG"
 bash "$EVALUATOR" fresh se > /dev/null 2>&1
 check "fresh re-measures every candidate" "4" "$(wc -l < "$PING_LOG")"
@@ -127,8 +142,10 @@ fi
 if [[ -n $LISTEN_PORT ]]; then
 	ovpn tcp-1 127.0.0.1 "$LISTEN_PORT" tcp
 	state prefer
-	best=$(printf '%s\n' "$LOC/se-3.ovpn" "$LOC/tcp-1.ovpn" | bash "$EVALUATOR" rank 2> /dev/null | head -1 | cut -f2)
-	check "ICMP result wins over a (faster) TCP-only answer" "$LOC/se-3.ovpn" "$best"
+	ranked=$(printf '%s\n' "$LOC/se-3.ovpn" "$LOC/tcp-1.ovpn" | bash "$EVALUATOR" rank 2> /dev/null | cut -f2)
+	check "ICMP result wins over a (faster) TCP-only answer" "$LOC/se-3.ovpn" "$(head -1 <<< "$ranked")"
+	check "a TCP-only server is still ranked, after the ICMP ones" \
+		"$LOC/se-3.ovpn $LOC/tcp-1.ovpn" "$(xargs <<< "$ranked")"
 
 	# 5. TCP fallback when no server answers ping at all
 	state tcpfallback
@@ -283,6 +300,49 @@ if bash -c '
 else
 	test_fail "dependency check needs only openvpn, ip and flock (no curl/bc/notify-send/wg-quick)"
 fi
+
+# 14. Profiles sharing a server address (as Proton's do) are measured once,
+#     so parallel pings never compete for one rate-limited host (#260)
+SHARED="$WORK_DIR/shared/locations"
+mkdir -p "$SHARED"
+for i in 1 2 3 4 5 6; do
+	printf 'client\nproto udp\nremote 127.0.0.3 1194\n' > "$SHARED/se-$i.ovpn"
+done
+printf 'client\nproto udp\nremote 127.0.0.3 51820\n' > "$SHARED/se-7.ovpn" # same host, other port
+printf 'client\nproto udp\nremote 10.0.0.4 1194\n' > "$SHARED/se-999.ovpn"  # fastest, but not a VPN
+state shared
+: > "$PING_LOG"
+ranked=$(printf '%s\n' "$SHARED"/se-*.ovpn | bash "$EVALUATOR" rank 2> /dev/null | cut -f2)
+check "every profile on a shared, rate-limited host is ranked" "8" "$(grep -c . <<< "$ranked")"
+check "a shared host is pinged once, not once per profile" "1" "$(grep -c '^127.0.0.3$' "$PING_LOG")"
+check "profiles sharing a host get the same measurement" "20 20 20 20 20 20 20" \
+	"$(printf '%s\n' "$SHARED"/se-*.ovpn | bash "$EVALUATOR" rank --max-age 900 2> /dev/null | grep -v se-999 | cut -f1 | xargs)"
+
+# 15. A server that did not answer is measured again instead of being reused
+#     from the cache: one bad measurement must not hide it for LATENCY_CACHE_MAX_AGE
+printf 'client\nproto udp\nremote 127.0.0.2 1194\n' > "$SHARED/se-50.ovpn"
+state recheck
+rm -f "$PING_STATE/up"
+if echo "$SHARED/se-50.ovpn" | bash "$EVALUATOR" rank --max-age 900 > /dev/null 2>&1; then
+	test_fail "rank fails while the server does not answer"
+else
+	test_pass "rank fails while the server does not answer"
+fi
+touch "$PING_STATE/up"
+check "a failed measurement is not reused from the cache" "$SHARED/se-50.ovpn" \
+	"$(echo "$SHARED/se-50.ovpn" | bash "$EVALUATOR" rank --max-age 900 2> /dev/null | cut -f2)"
+rm -f "$PING_STATE/up" "$SHARED/se-50.ovpn"
+
+# 16. Failover gets FAILOVER_SERVERS candidates when the fastest one is a dud
+#     (machine checklist step 7)
+state failover7
+picked=$(LOCATIONS_DIR="$SHARED" bash -c '
+	source "$1/vpn-connector" > /dev/null 2>&1
+	set +e
+	connect_to_profile() { echo "TRY $(basename "$1" .ovpn)"; return 2; }
+	connect_by_country se
+' _ "$SRC_DIR" 2> /dev/null | grep '^TRY' | xargs)
+check "vpn connect se tries 3 servers when the fastest does not answer" "TRY se-999 TRY se-1 TRY se-2" "$picked"
 
 echo ""
 echo -e "${T_BLUE}Results: $TESTS_PASSED/$TESTS_RUN passed${T_NC}"
