@@ -130,24 +130,37 @@ vpn kill-switch status
       enabled: only the sleep and network hooks keep it), and normal browsing
       works again.
 
-Not yet verified anywhere, so worth trying: with the kill switch on, disconnect
-and connect to a **different** country (`vpn connect nl --kill-switch`). If
-that hangs or fails, note it. The kill switch may only allow the previous
-server's IP.
+Switching country with the kill switch on (verified 2026-11-10, `se` → `dk`;
+use any country you have profiles for):
+
+- [ ] `vpn connect dk --kill-switch` while connected is refused
+      ("OpenVPN process(es) already running"). The current connection and
+      the kill switch stay as they were.
+- [ ] `vpn disconnect`, then `vpn connect dk --kill-switch`, connects. The
+      kill switch allows only the new server's IP (`sudo iptables -S
+      VPN_KILL_SWITCH`), not the old one.
 
 ## 7. Failover to the next-fastest server
 
-This makes the fastest-looking "server" one that answers ping but isn't an
-OpenVPN server:
+This adds a "server" that answers ping but isn't an OpenVPN server: a copy
+of a real profile (OpenVPN rejects a profile without its CA before it tries
+the server) with every `remote` pointing at 1.1.1.1:
 
 ```bash
-printf 'client\ndev tun\nproto udp\nremote 1.1.1.1 1194\n' > ~/.config/vpn/locations/se-999.ovpn
+src=$(ls ~/.config/vpn/locations/se-*.ovpn | head -1)
+sed -E 's/^remote .*/remote 1.1.1.1 1194/' "$src" > ~/.config/vpn/locations/se-999.ovpn
 echo "CONNECT_TIMEOUT=10" >> ~/.config/vpn/config
 vpn connect se
 ```
 
-- [ ] `se-999` is picked first. After about 10 s it prints
+- [ ] If `se-999` is picked first: after about 10 s it prints
       `Server did not answer; trying the next fastest: se-XX`, then connects.
+      If a real server is faster, it simply connects; run
+      `best-vpn-profile test se` to see the ranking.
+
+Known issue (#260): the latency check can rank only one server ("1 of the
+servers answered"), and then there is nothing to fail over to: it tries
+`se-999` 3 times and fails.
 
 Clean up afterwards:
 
@@ -159,17 +172,19 @@ sed -i '/^CONNECT_TIMEOUT=10$/d' ~/.config/vpn/config
 
 ## 8. Smaller checks
 
-- [ ] `vpn secure` with no Secure Core profiles (names like `ch-se-01`) prints
-      an error. It does **not** connect to a regular server.
+- [ ] `vpn secure` with no Secure Core profiles (names like `ch-se-01` or
+      `se-au-01`) prints an error. It does **not** connect to a regular
+      server. With Secure Core profiles it connects to one of them.
 - [ ] A profile that runs scripts is rejected:
       ```bash
-      cp ~/.config/vpn/locations/se-1*.ovpn /tmp/x.ovpn 2>/dev/null; printf 'up /bin/true\n' >> /tmp/x.ovpn
-      cp /tmp/x.ovpn ~/.config/vpn/locations/se-998.ovpn
+      cp "$(ls ~/.config/vpn/locations/se-*.ovpn | head -1)" ~/.config/vpn/locations/se-998.ovpn
+      printf 'up /bin/true\n' >> ~/.config/vpn/locations/se-998.ovpn
       vpn custom ~/.config/vpn/locations/se-998.ovpn   # expect "directives that would run commands"
-      rm ~/.config/vpn/locations/se-998.ovpn /tmp/x.ovpn
+      rm ~/.config/vpn/locations/se-998.ovpn
       ```
 - [ ] `vpn help` no longer lists `download-configs` or `service`.
-- [ ] `vpn doctor` runs without errors about missing `bc`.
+- [ ] `vpn doctor` runs without errors about missing `bc`. Known issue
+      (#259): while disconnected it stops after check 4/5 with exit code 1.
 
 ## 9. Optional: sleep and network hooks
 
