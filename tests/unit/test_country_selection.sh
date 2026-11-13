@@ -79,8 +79,9 @@ expect_selection() {
 test_country_selection() {
     # se-au-01 (Secure Core: enters SE, exits AU) is the profile that sent
     # `vpn connect se` traffic out through Australia
-    expect_selection se "se-1.ovpn se-66.protonvpn.udp.ovpn se-test.ovpn test-se-2.ovpn wg-SE-374.conf "
-    expect_selection SE "se-1.ovpn se-66.protonvpn.udp.ovpn se-test.ovpn test-se-2.ovpn wg-SE-374.conf "
+    # (WireGuard profiles are never candidates until #223: wg-SE-374.conf is left out)
+    expect_selection se "se-1.ovpn se-66.protonvpn.udp.ovpn se-test.ovpn test-se-2.ovpn "
+    expect_selection SE "se-1.ovpn se-66.protonvpn.udp.ovpn se-test.ovpn test-se-2.ovpn "
     expect_selection dk "dk-120.protonvpn.udp.ovpn "
     # Regular US/Canada servers carry a state/province code: not Secure Core
     expect_selection us "us-ca-11.protonvpn.udp.ovpn "

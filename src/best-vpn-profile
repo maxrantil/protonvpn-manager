@@ -191,7 +191,8 @@ rank_profiles() {
 	# characters (tabs would split the tab-separated cache) are skipped.
 	while IFS= read -r p; do
 		[[ -n $p && -f $p && ! -L $p && $p != *[[:cntrl:]]* ]] || continue
-		[[ $p == *.ovpn || $p == *.conf ]] && printf '%s\n' "$p"
+		# WireGuard (.conf) profiles are not offered until #223
+		[[ $p == *.ovpn ]] && printf '%s\n' "$p"
 	done | sort -u > "$work/profiles"
 	[[ -s $work/profiles ]] || return 1
 
@@ -241,7 +242,7 @@ list_profiles() {
 		echo "No VPN locations directory found" >&2
 		return 1
 	}
-	find "$LOCATIONS_DIR" -maxdepth 3 -type f \( -name "*.ovpn" -o -name "*.conf" \) 2> /dev/null |
+	find "$LOCATIONS_DIR" -maxdepth 3 -type f -name "*.ovpn" 2> /dev/null |
 		if [[ -n $country ]]; then
 			grep -iE "/${country}([-_.#]|[0-9])[^/]*$" || true
 		else

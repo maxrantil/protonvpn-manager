@@ -190,7 +190,8 @@ case "${1:-}" in
     "list" | "l")
         if [[ -d "$LOCATIONS_DIR" ]]; then
             echo -e "\033[1;33mAvailable VPN Profiles:\033[0m"
-            find "$LOCATIONS_DIR" \( -name "*.ovpn" -o -name "*.conf" \) 2> /dev/null | sed 's|.*/||; s|\.ovpn$||; s|\.conf$||' | sort
+            # WireGuard (.conf) profiles are not offered until #223
+            find "$LOCATIONS_DIR" -name "*.ovpn" 2> /dev/null | sed 's|.*/||; s|\.ovpn$||' | sort
         else
             file_not_found_error "$COMP_VPN_MAIN" "$LOCATIONS_DIR" "Create locations directory and add VPN profile files"
             exit 1
