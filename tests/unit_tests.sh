@@ -240,6 +240,7 @@ run_unit_tests() {
         unit/test_profile_resolution.sh
         unit/test_country_selection.sh
         unit/test_errexit_safety.sh
+        unit/test_wireguard_fence.sh
         unit/test_suite_safety.sh
         unit/test_temp_file_manager.sh
         unit/test_vpn_doctor.sh
