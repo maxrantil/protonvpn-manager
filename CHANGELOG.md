@@ -16,10 +16,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Profile/credential/log race: the root daemon now only reads validated,
   root-owned copies and logs into a root-owned session directory, instead
   of user-writable files that could be swapped after validation
+- IPv6 is blocked outside the tunnel while connected (opt out with
+  `BLOCK_IPV6=false`); Tailscale DNS is paused while connected and restored
+  on disconnect (opt out with `TAILSCALE_DNS=keep`)
 - Connection success can no longer be spoofed via a shared `/tmp/openvpn.log`
 - Profiles with directives that run commands or write files as root are
   rejected (opt in with `ALLOW_PROFILE_SCRIPTS=true`); OpenVPN runs with
-  `--script-security 1`; WireGuard profiles are validated before `wg-quick`
+  `--script-security 1`
 - NetworkManager hook: config values could execute code as root through bash
   arithmetic; they are now validated as integers
 - Root hooks access the user's files as that user (no symlink-following root
@@ -46,6 +49,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `vpn secure` fails when no Secure Core profiles exist instead of silently
   connecting to a regular server, and picks the fastest Secure Core server
 - README: correct install command, log paths and component list
+- `tests/test_exit_codes.sh` makes real VPN connections and now only runs
+  with `VPN_LIVE_TESTS=1`
 - WireGuard (`.conf`) profiles are refused and no longer listed or ranked
   until WireGuard support is complete (#223); OpenVPN profiles are unaffected
 
@@ -57,7 +62,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   attempt each, `FAILOVER_SERVERS`, default 3) instead of retrying the same
   server three times; bad credentials stop immediately
 - Connecting no longer requires curl, bc, libnotify or wireguard-tools
-  (wg-quick is only needed for WireGuard profiles)
 - `vpn cleanup` / disconnect: graceful SIGTERM via sudo and polling instead of
   fixed sleeps (8.3s -> 0.2s on a test daemon); 1s less per connect
 - Kill switch: 2 privileged calls instead of ~20

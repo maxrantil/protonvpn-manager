@@ -957,7 +957,8 @@ If Tailscale manages your DNS (`tailscale set --accept-dns=true`, the
 default), its resolver would answer instead of the VPN's. So Tailscale DNS is
 paused while connected and restored on disconnect; MagicDNS names don't
 resolve in between. `TAILSCALE_DNS=keep` turns this off: DNS then bypasses the
-VPN, and with the kill switch on no names resolve at all.
+VPN, and with the kill switch on no names resolve at all (it blocks DNS
+outside the tunnel).
 
 ### IPv6 (no leaks)
 
