@@ -60,9 +60,9 @@ cd protonvpn-manager
 
 #### 2. Download ProtonVPN Configuration Files
 
-**Option A: Download via ProtonVPN Website (Recommended)**
+##### Option A: Download via ProtonVPN Website (Recommended)
 
-1. Log in to your ProtonVPN account at https://account.protonvpn.com
+1. Log in to your ProtonVPN account at <https://account.protonvpn.com>
 2. Go to **Downloads** → **OpenVPN configuration files**
 3. Select platform: **Linux**
 4. Select protocol: **UDP** (faster) or **TCP** (more reliable)
@@ -70,6 +70,7 @@ cd protonvpn-manager
    - **For all servers**: Download "All Configurations" ZIP file
    - **For specific countries**: Download individual country files
 6. Extract configuration files to the repository:
+
    ```bash
    # Example: Extract all configs
    unzip ~/Downloads/protonvpn-configs.zip -d locations/
@@ -78,7 +79,7 @@ cd protonvpn-manager
    cp ~/Downloads/*.ovpn locations/
    ```
 
-**Option B: Download via Command Line**
+##### Option B: Download via Command Line
 
 ```bash
 # Create locations directory
@@ -99,7 +100,8 @@ Create a credentials file with your ProtonVPN OpenVPN username and password:
 > **Do NOT use your regular ProtonVPN login credentials.** You need special OpenVPN credentials.
 >
 > **How to find your OpenVPN credentials:**
-> 1. Log into https://account.protonvpn.com
+>
+> 1. Log into <https://account.protonvpn.com>
 > 2. Go to **Account** → **OpenVPN / IKEv2 username**
 > 3. Your OpenVPN username looks like: `username+pm`
 > 4. Click "Show" or "Copy" to get your OpenVPN password
@@ -120,7 +122,8 @@ chmod 600 ~/.config/vpn/vpn-credentials.txt
 ```
 
 **Finding Your OpenVPN Credentials:**
-1. Log in to ProtonVPN account at https://account.protonvpn.com
+
+1. Log in to ProtonVPN account at <https://account.protonvpn.com>
 2. Go to **Account** → **OpenVPN / IKEv2 username**
 3. Your OpenVPN username will be displayed (usually looks like: `username+pm`)
 4. Your OpenVPN password is different from your account password
@@ -177,7 +180,7 @@ vpn status
 
 ### Directory Structure After Installation
 
-```
+```text
 protonvpn-manager/
 ├── locations/               # ProtonVPN OpenVPN configs (you create this)
 │   ├── se-01.protonvpn.com.udp.ovpn
@@ -197,6 +200,7 @@ protonvpn-manager/
 
 **Multiple Credential Files:**
 If you want to use different accounts, you can specify credentials:
+
 ```bash
 # Use default credentials
 ./src/vpn connect
@@ -206,19 +210,21 @@ CREDENTIALS_FILE=~/.config/vpn/work-vpn-credentials.txt ./src/vpn connect
 ```
 
 **Custom Config Directory:**
+
 ```bash
 # Use different config directory
 LOCATIONS_DIR=/path/to/custom/configs ./src/vpn connect
 ```
 
 **Testing Without Installing:**
+
 ```bash
 # Run directly from repository
 cd /path/to/protonvpn-manager
 ./src/vpn connect se
 ```
 
-### First Time Setup Complete!
+### First Time Setup Complete
 
 You're ready to use ProtonVPN Manager. Try these commands:
 
@@ -239,7 +245,7 @@ You're ready to use ProtonVPN Manager. Try these commands:
 ## Core Components
 
 - **`src/vpn`** - Main CLI interface
-- **`src/vpn-connector`** - Profile selection and connection (OpenVPN/WireGuard)
+- **`src/vpn-connector`** - Profile selection and connection (OpenVPN)
 - **`src/vpn-manager`** - Status, disconnect and cleanup
 - **`src/vpn-kill-switch`** - iptables leak protection
 - **`src/best-vpn-profile`** - Server latency evaluator (fastest server)
@@ -248,9 +254,17 @@ You're ready to use ProtonVPN Manager. Try these commands:
 - **`src/vpn-error-handler`**, **`src/vpn-utils`**, **`src/vpn-colors`**, **`src/temp-file-manager`** - Shared libraries
 - **`etc/`** - Optional elogind sleep hook and NetworkManager dispatcher hook
 
+**WireGuard is not supported yet.** WireGuard profiles (`.conf`) in
+`locations/` are not listed or ranked, and `vpn custom <file>.conf` is
+refused: on a host that uses Tailscale DNS, connecting one breaks name
+resolution, and `vpn status`/`vpn disconnect` only know OpenVPN. Use OpenVPN
+(`.ovpn`) profiles. WireGuard support is tracked in
+[#223](https://github.com/maxrantil/protonvpn-manager/issues/223).
+
 ## Available Commands
 
 ### Connection Management
+
 ```bash
 ./src/vpn connect [country]    # Connect to the fastest server (optional country code)
 ./src/vpn disconnect          # Disconnect from VPN
@@ -260,6 +274,7 @@ You're ready to use ProtonVPN Manager. Try these commands:
 ```
 
 ### Server Selection
+
 ```bash
 ./src/vpn best [country]     # Re-measure latency, connect to the fastest server
 ./src/vpn fast [country]     # Fastest server, reusing latency results up to 2h old
@@ -269,7 +284,7 @@ best-vpn-profile test [country]  # Show measured latency per server
 ```
 
 **How the fastest server is chosen:** each candidate profile's server
-(`remote` in `.ovpn`, `Endpoint` in WireGuard `.conf`) is pinged in parallel
+(`remote` in `.ovpn`) is pinged in parallel
 and the lowest average round-trip time wins. If no server answers ping
 (ICMP filtered), the TCP handshake time is used instead and a note is shown.
 TCP timings are never mixed with ping results, because a captive portal or
@@ -294,6 +309,7 @@ doesn't complete the handshake within `CONNECT_TIMEOUT`, the next fastest is
 tried (one attempt each). Bad credentials stop immediately instead.
 
 ### System Management
+
 ```bash
 ./src/vpn cleanup            # Clean up processes and routes
 ./src/vpn kill               # Force kill VPN processes
@@ -304,12 +320,14 @@ tried (one attempt each). Bad credentials stop immediately instead.
 ## Recent Enhancements
 
 **October 2025 - Code Quality Improvements:**
+
 - Extracted shared utilities to eliminate duplication (~40 lines saved)
 - Centralized color management with NO_COLOR support (accessibility)
 - Unified logging functions across all components
 - Added comprehensive unit tests for utilities
 
 **October 2025 - Basic Logging System:**
+
 - Added simple event logging to help with debugging
 - View logs with: `./src/vpn logs [lines]`
 - Color-coded output (green=INFO, yellow=WARN, red=ERROR)
@@ -336,6 +354,7 @@ In September 2025, this project was simplified from a complex enterprise system 
 This project prioritizes simplicity and reliability over feature abundance.
 
 ### Core Principles
+
 1. **Simplicity First**: Prefer simple solutions over complex ones
 2. **Performance Over Features**: Fast, reliable connections matter most
 3. **No Feature Creep**: Resist adding "nice to have" features
@@ -352,6 +371,7 @@ This project follows strict Test-Driven Development (TDD) principles. **All feat
 The test suite is organized into 5 distinct categories:
 
 **1. Unit Tests** (`-u, --unit-only`)
+
 - **Purpose**: Test individual functions in isolation
 - **Scope**: Single functions, utilities, parsers, validators
 - **Examples**: Country code validation, profile discovery, error handling logic
@@ -359,6 +379,7 @@ The test suite is organized into 5 distinct categories:
 - **When to use**: Developing new functions or fixing bugs in specific components
 
 **2. Integration Tests** (`-i, --integration-only`)
+
 - **Purpose**: Test component interactions and workflows
 - **Scope**: Multiple components working together (e.g., connector + manager)
 - **Examples**: Profile cache integration, connection workflows, cleanup coordination
@@ -366,6 +387,7 @@ The test suite is organized into 5 distinct categories:
 - **When to use**: Changes affecting multiple components or workflow logic
 
 **3. End-to-End Tests** (`-e, --e2e-only`)
+
 - **Purpose**: Test complete user workflows from CLI to connection
 - **Scope**: Full command execution paths (connect, disconnect, status, best)
 - **Examples**: `./src/vpn connect se` full workflow, status reporting accuracy
@@ -373,6 +395,7 @@ The test suite is organized into 5 distinct categories:
 - **When to use**: Changes to CLI interface, command handlers, or user-facing features
 
 **4. Realistic Connection Tests** (`-r, --realistic-only`)
+
 - **Purpose**: Test actual VPN connection scenarios (requires real configs)
 - **Scope**: Real OpenVPN processes, network state changes, credential handling
 - **Examples**: Connection with real ProtonVPN servers, DNS leak prevention
@@ -381,6 +404,7 @@ The test suite is organized into 5 distinct categories:
 - **Note**: Requires valid ProtonVPN credentials and config files
 
 **5. Process Safety Tests** (`-s, --safety-only`)
+
 - **Purpose**: Test process management, race conditions, and safety mechanisms
 - **Scope**: Lock handling, concurrent access, cleanup safety, TOCTOU prevention
 - **Examples**: Multiple connection attempts, flock mechanisms, cleanup during active connections
@@ -390,12 +414,14 @@ The test suite is organized into 5 distinct categories:
 #### Quick Start
 
 Run all tests (most common):
+
 ```bash
 cd tests
 ./run_tests.sh
 ```
 
 Run specific test category:
+
 ```bash
 # Only unit tests (fastest feedback)
 ./run_tests.sh -u
@@ -408,6 +434,7 @@ Run specific test category:
 ```
 
 Verbose output for debugging:
+
 ```bash
 # See all test output
 ./run_tests.sh -v
@@ -417,7 +444,8 @@ Verbose output for debugging:
 ```
 
 **Expected Output**: All tests passing shows green checkmark with summary:
-```
+
+```text
 ========================================
         COMPREHENSIVE TEST REPORT
 ========================================
@@ -435,6 +463,7 @@ Overall Statistics:
 #### Prerequisites
 
 **Required Tools** (usually pre-installed on Arch/Artix):
+
 ```bash
 # Core utilities
 bash grep awk find wc sort
@@ -444,10 +473,20 @@ which bash grep awk find
 ```
 
 **For Realistic Connection Tests** (optional):
+
 - Valid ProtonVPN account and credentials
 - OpenVPN installed: `sudo pacman -S openvpn`
 - ProtonVPN config files in `locations/` directory
 - Credentials file at `~/.config/vpn/vpn-credentials.txt`
+
+**Live exit-code tests** (`tests/test_exit_codes.sh`, optional): these connect
+with your real profiles and credentials and stop the VPN between cases, so
+they are skipped unless you set `VPN_LIVE_TESTS=1`, and refuse to run while a
+VPN is connected:
+
+```bash
+vpn disconnect && VPN_LIVE_TESTS=1 ./tests/test_exit_codes.sh
+```
 
 **Disk Space**: ~50MB for test artifacts and logs
 
@@ -462,6 +501,7 @@ Full usage reference:
 ```
 
 **Test Selection Flags:**
+
 ```bash
 -u, --unit-only           Run only unit tests (~10-20s)
 -i, --integration-only    Run only integration tests (~30-60s)
@@ -471,6 +511,7 @@ Full usage reference:
 ```
 
 **Execution Control Flags:**
+
 ```bash
 -v, --verbose             Show detailed test output (useful for debugging)
 -f, --fail-fast           Stop execution on first test failure
@@ -478,6 +519,7 @@ Full usage reference:
 ```
 
 **Common Combinations:**
+
 ```bash
 # Fast feedback loop during development
 ./run_tests.sh -u -v -f
@@ -493,6 +535,7 @@ Full usage reference:
 ```
 
 **Default Behavior** (no flags):
+
 - Runs all 5 test categories sequentially
 - Continues through failures (reports all issues)
 - Minimal output (only summaries and failures)
@@ -501,13 +544,15 @@ Full usage reference:
 #### Understanding Test Output
 
 **Test Execution Format:**
-```
+
+```text
 [INFO] [2025-11-20 14:32:15] Starting test: Country Code Validation
 [PASS] [2025-11-20 14:32:15] Country Code Validation: se is valid
 [FAIL] [2025-11-20 14:32:16] DNS Resolution: Expected: 'protonvpn.com', Got: 'timeout'
 ```
 
 **Log Levels:**
+
 - `[INFO]` - Test starting or informational message
 - `[PASS]` - Individual assertion passed
 - `[FAIL]` - Assertion failed (shows expected vs actual)
@@ -522,11 +567,13 @@ Full usage reference:
 4. **Final Status**: 🎉 (all passed) or ❌ (some failed)
 
 **Exit Codes:**
+
 - `0` - All tests passed
 - `1` - One or more tests failed
 
 **Example Success Report:**
-```
+
+```text
 Overall Statistics:
   Total Tests: 342
   Passed: 342
@@ -537,7 +584,8 @@ Overall Statistics:
 ```
 
 **Example Failure Report:**
-```
+
+```text
 Overall Statistics:
   Total Tests: 342
   Passed: 338
@@ -557,7 +605,8 @@ Failed Tests:
 
 **TDD is MANDATORY** - no exceptions. Follow this workflow for all changes:
 
-**1. RED - Write Failing Test First**
+##### 1. RED - Write Failing Test First
+
 ```bash
 # Example: Adding a new 'reconnect' feature
 
@@ -579,7 +628,8 @@ cd tests
 # Expected: [FAIL] reconnect_vpn: command not found
 ```
 
-**2. GREEN - Minimal Code to Pass**
+##### 2. GREEN - Minimal Code to Pass
+
 ```bash
 # Step 4: Implement ONLY enough code to pass the test
 # src/vpn-manager
@@ -594,7 +644,8 @@ reconnect_vpn() {
 # Expected: [PASS] Reconnect to Current Server
 ```
 
-**3. REFACTOR - Improve While Tests Pass**
+##### 3. REFACTOR - Improve While Tests Pass
+
 ```bash
 # Step 6: Refactor to real implementation
 reconnect_vpn() {
@@ -611,11 +662,13 @@ reconnect_vpn() {
 ```
 
 **Required Test Types** (for every feature):
+
 - ✅ **Unit Tests**: Individual function behavior
 - ✅ **Integration Tests**: Component interactions
 - ✅ **End-to-End Tests**: Complete user workflows
 
 **Before Creating PR:**
+
 ```bash
 # Run full test suite
 ./run_tests.sh
@@ -640,6 +693,7 @@ reconnect_vpn() {
 | **Total** | **90+** | **~42,000** | **All layers** |
 
 **Coverage Tracking:**
+
 ```bash
 # View test file count
 find tests -name "*.sh" -type f | wc -l
@@ -656,17 +710,20 @@ ls tests/               # E2E and other tests
 **Quality Metrics:**
 
 **Assertion Coverage**: Every function has assertions for:
+
 - ✅ Happy path (expected success cases)
 - ✅ Error conditions (invalid input, failures)
 - ✅ Edge cases (empty input, boundaries, special characters)
 - ✅ Race conditions (concurrent access, timing)
 
 **Regression Prevention**: Tests added for every bug fix:
+
 - Bug discovered → Test written to reproduce
 - Fix implemented → Test passes
 - Test remains → Prevents regression
 
 **Test Suite Health:**
+
 - Success rate target: **100%** (enforced by CI)
 - Run time target: **<10 minutes** for full suite
 - No flaky tests tolerated (deterministic results required)
@@ -678,6 +735,7 @@ ls tests/               # E2E and other tests
 **Workflow Location**: `.github/workflows/run-tests.yml`
 
 **What Gets Tested:**
+
 ```yaml
 # Triggered on every PR to master
 - Pull request opened
@@ -686,6 +744,7 @@ ls tests/               # E2E and other tests
 ```
 
 **CI Environment:**
+
 - **OS**: Ubuntu Latest (GitHub Actions runner)
 - **Dependencies**: OpenVPN, coreutils, curl, bc, libnotify-bin, wireguard-tools
 - **Test Command**: `cd tests && ./run_tests.sh` (all categories)
@@ -698,11 +757,13 @@ ls tests/               # E2E and other tests
 4. View detailed test output and results
 
 **PR Merge Requirements:**
+
 - ✅ All tests must pass (100% success rate)
 - ✅ No test failures allowed
 - ✅ CI must complete successfully
 
 **Local Testing Before Push:**
+
 ```bash
 # Run same tests CI will run
 cd tests
@@ -712,7 +773,8 @@ cd tests
 # If any fail locally, fix before pushing
 ```
 
-**Badge Status**: The ![Tests](badge-url) badge in README.md shows current test status:
+**Badge Status**: The Tests badge at the top of this README shows current test status:
+
 - ✅ Green "passing" = All tests pass
 - ❌ Red "failing" = Some tests failed
 
@@ -720,7 +782,8 @@ cd tests
 
 **Common Test Failures and Solutions:**
 
-**1. "Command not found" Errors**
+##### 1. "Command not found" Errors
+
 ```bash
 # Symptom
 [FAIL] test_connection: vpn-connector: command not found
@@ -731,7 +794,8 @@ cd /path/to/protonvpn-manager/tests
 ./run_tests.sh
 ```
 
-**2. Permission Denied on Test Files**
+##### 2. Permission Denied on Test Files
+
 ```bash
 # Symptom
 bash: ./run_tests.sh: Permission denied
@@ -740,7 +804,8 @@ bash: ./run_tests.sh: Permission denied
 chmod +x tests/run_tests.sh tests/**/*.sh
 ```
 
-**3. Realistic Tests Failing (No Credentials)**
+##### 3. Realistic Tests Failing (No Credentials)
+
 ```bash
 # Symptom
 [FAIL] Realistic Connection Tests: credentials file not found
@@ -754,7 +819,8 @@ echo -e "username\npassword" > ~/.config/vpn/vpn-credentials.txt
 chmod 600 ~/.config/vpn/vpn-credentials.txt
 ```
 
-**4. Tests Pass Locally but Fail in CI**
+##### 4. Tests Pass Locally but Fail in CI
+
 ```bash
 # Cause: Environment differences (Ubuntu CI vs Arch local)
 # Solution: Check GitHub Actions logs for specific errors
@@ -765,7 +831,8 @@ chmod 600 ~/.config/vpn/vpn-credentials.txt
 # - File permission differences
 ```
 
-**5. Stale Test State**
+##### 5. Stale Test State
+
 ```bash
 # Symptom: Random failures, inconsistent results
 
@@ -776,7 +843,8 @@ rm -rf ~/.local/state/vpn/*.cache ~/.cache/vpn/*.cache
 ./run_tests.sh
 ```
 
-**6. Verbose Debugging**
+##### 6. Verbose Debugging
+
 ```bash
 # Get detailed output for specific failure
 ./run_tests.sh -u -v | grep -A 10 "FAIL"
@@ -786,6 +854,7 @@ bash tests/unit/test_specific.sh
 ```
 
 **Getting Help:**
+
 - Review test output for specific error messages
 - Check `tests/test_framework.sh` for assertion functions
 - Consult existing tests for examples
@@ -804,6 +873,7 @@ Contributions are welcome! This project values simplicity and quality over quant
 ### Before Contributing
 
 New features must be:
+
 1. **Essential** for core VPN functionality (not "nice to have")
 2. **Simple** to implement and maintain
 3. **Tested** with comprehensive test coverage
@@ -823,6 +893,7 @@ New features must be:
 ### Reporting Issues
 
 Found a bug or have a suggestion?
+
 - Check existing [issues](https://github.com/maxrantil/protonvpn-manager/issues) first
 - Create a new issue with clear description and reproduction steps
 - For security vulnerabilities, see [SECURITY.md](SECURITY.md)
@@ -837,21 +908,21 @@ switch, failover and cleanup, with what to collect if something fails.
 ## Security
 
 Security is a top priority. Please review [SECURITY.md](SECURITY.md) for:
+
 - Reporting vulnerabilities responsibly
 - Understanding the security model
 - Known security practices
 - User security best practices
 
-**Never open a public issue for security vulnerabilities** - report them privately to rantil@pm.me.
+**Never open a public issue for security vulnerabilities** - report them privately to <rantil@pm.me>.
 
 ### Profile safety checks
 
-OpenVPN and `wg-quick` run as root, so profiles are checked before use.
-Directives that would run commands, load plugins, include other files, write
-files or open a management socket as root (`up`, `down`, `route-up`,
-`plugin`, `config`, `log`, `writepid`, `management`, ... in `.ovpn`;
-`PreUp`/`PostUp`/`PreDown`/`PostDown` in WireGuard `.conf`) are rejected,
-and OpenVPN is started with `--script-security 1`. Stock ProtonVPN profiles
+OpenVPN runs as root, so profiles are checked before use. Directives that
+would run commands, load plugins, include other files, write files or open a
+management socket as root (`up`, `down`, `route-up`, `plugin`, `config`,
+`log`, `writepid`, `management`, ...) are rejected, and OpenVPN is started
+with `--script-security 1`. Stock ProtonVPN profiles
 use none of these (their DNS script lines ship commented out).
 
 If you deliberately use such a profile (for example an uncommented
@@ -879,6 +950,26 @@ would bypass the tunnel. Settings in `~/.config/vpn/config`:
 ```bash
 DNS_MODE=none                    # don't manage DNS (and silence the warning)
 KILL_SWITCH_ALLOW_LAN_DNS=true   # allow DNS to the router with the kill switch on (leaks)
+TAILSCALE_DNS=keep               # keep Tailscale's DNS while connected (leaks DNS)
+```
+
+If Tailscale manages your DNS (`tailscale set --accept-dns=true`, the
+default), its resolver would answer instead of the VPN's. So Tailscale DNS is
+paused while connected and restored on disconnect; MagicDNS names don't
+resolve in between. `TAILSCALE_DNS=keep` turns this off: DNS then bypasses the
+VPN, and with the kill switch on no names resolve at all.
+
+### IPv6 (no leaks)
+
+ProtonVPN's OpenVPN tunnels carry only IPv4. Without a guard, IPv6 traffic
+would leave over your normal connection with your ISP's address. While
+connected, outgoing IPv6 outside the tunnel is therefore blocked (independent
+of the kill switch) and released on disconnect. Loopback, link-local,
+Tailscale and libvirt traffic stays allowed. To turn the guard off, in
+`~/.config/vpn/config`:
+
+```bash
+BLOCK_IPV6=false                 # don't block IPv6 while connected (leaks IPv6)
 ```
 
 ### Root-owned session files
@@ -903,6 +994,7 @@ file access in that user's home is done as that user.
 ### Connection Issues
 
 #### VPN Won't Connect
+
 ```bash
 # Check if OpenVPN is installed
 which openvpn
@@ -918,6 +1010,7 @@ ls -la locations/
 ```
 
 **Common causes**:
+
 - Missing OpenVPN configuration files in `locations/` directory
 - Incorrect credentials in credentials file
 - Another VPN process already running
@@ -926,6 +1019,7 @@ ls -la locations/
 **Solution**: Run `./src/vpn cleanup` to reset VPN state, then try again.
 
 #### Connection Drops Frequently
+
 ```bash
 # Check connection stability
 ./src/vpn health
@@ -938,6 +1032,7 @@ ls -la locations/
 ```
 
 **Common causes**:
+
 - Server overloaded or maintenance
 - Network instability
 - DNS resolution issues
@@ -945,9 +1040,10 @@ ls -la locations/
 **Solution**: Switch to a different server using `./src/vpn best`.
 
 #### "No Servers Found" Error
+
 ```bash
 # Verify configuration files
-ls -la locations/*.ovpn locations/*.conf
+ls -la locations/*.ovpn
 
 # Check file permissions
 chmod 644 locations/*.ovpn
@@ -956,8 +1052,9 @@ chmod 644 locations/*.ovpn
 ```
 
 **Common causes**:
+
 - Empty `locations/` directory
-- Incorrect file extensions (must be .ovpn or .conf)
+- Incorrect file extensions (must be `.ovpn`; WireGuard `.conf` profiles are not supported yet)
 - File permission issues
 
 **Solution**: Download OpenVPN configs from ProtonVPN and place in `locations/` directory.
@@ -965,6 +1062,7 @@ chmod 644 locations/*.ovpn
 ### Credential Issues
 
 #### "Authentication Failed" Error
+
 ```bash
 # Check credentials file exists
 ls -la ~/.config/vpn/vpn-credentials.txt
@@ -977,17 +1075,20 @@ stat -c "%a" ~/.config/vpn/vpn-credentials.txt
 ```
 
 **Common causes**:
+
 - Wrong username or password
 - Credentials file has wrong format
 - ProtonVPN account issue
 
 **Solution**:
+
 1. Log in to ProtonVPN web interface to verify credentials
 2. Update `~/.config/vpn/vpn-credentials.txt` with correct credentials
 3. Ensure file has exactly 2 lines (username on line 1, password on line 2)
 4. Set correct permissions: `chmod 600 ~/.config/vpn/vpn-credentials.txt`
 
 #### "Credentials File Not Found"
+
 ```bash
 # Create credentials directory
 mkdir -p ~/.config/vpn
@@ -1005,6 +1106,7 @@ chmod 600 ~/.config/vpn/vpn-credentials.txt
 ### Permission Issues
 
 #### "Permission Denied" When Connecting
+
 ```bash
 # VPN operations require sudo privileges
 # You'll be prompted for password when connecting
@@ -1017,12 +1119,14 @@ which openvpn
 ```
 
 **Common causes**:
+
 - User not in sudoers
 - OpenVPN not installed
 
 **Solution**: Ensure your user has sudo privileges and OpenVPN is installed (`sudo pacman -S openvpn`).
 
 #### "Lock File Permission Denied"
+
 ```bash
 # Clean up lock files
 ./src/vpn cleanup
@@ -1034,6 +1138,7 @@ rm -f "${XDG_RUNTIME_DIR:-/run/user/$UID}/vpn/"*.lock 2>/dev/null
 ### DNS and Network Issues
 
 #### DNS Not Resolving After Disconnect
+
 ```bash
 # Emergency network reset
 ./src/vpn cleanup
@@ -1046,12 +1151,14 @@ dig google.com
 ```
 
 **Common causes**:
+
 - DNS settings not restored after disconnect
 - NetworkManager not restarted
 
 **Solution**: Run `./src/vpn cleanup` which safely resets network configuration.
 
 #### IP Not Changing (DNS Leak)
+
 ```bash
 # Check external IP before connecting
 curl -s https://ifconfig.me
@@ -1067,6 +1174,7 @@ dig +short myip.opendns.com @resolver1.opendns.com
 ```
 
 **Common causes**:
+
 - DNS leak in OpenVPN configuration
 - Split tunneling enabled
 
@@ -1075,6 +1183,7 @@ dig +short myip.opendns.com @resolver1.opendns.com
 ### Performance Issues
 
 #### Slow Connection Speeds
+
 ```bash
 # Test current server performance
 ./src/vpn test
@@ -1087,6 +1196,7 @@ dig +short myip.opendns.com @resolver1.opendns.com
 ```
 
 **Common causes**:
+
 - Server overloaded
 - Geographic distance
 - Network congestion
@@ -1094,6 +1204,7 @@ dig +short myip.opendns.com @resolver1.opendns.com
 **Solution**: Use `./src/vpn best` to find optimal server.
 
 #### Connection Takes Too Long
+
 ```bash
 # Use fast connect (cached results)
 ./src/vpn fast se
@@ -1106,6 +1217,7 @@ rm -f "$XDG_CACHE_HOME/vpn/"*.cache
 ### Log Analysis
 
 #### View Recent Activity
+
 ```bash
 # View last 50 log entries
 ./src/vpn logs
@@ -1121,6 +1233,7 @@ less ~/.local/state/vpn/vpn_manager.log
 ```
 
 #### Enable Verbose Logging
+
 ```bash
 # Set environment variable for verbose output
 export VPN_DEBUG=1
