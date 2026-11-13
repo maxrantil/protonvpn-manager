@@ -144,23 +144,29 @@ use any country you have profiles for):
 
 This adds a "server" that answers ping but isn't an OpenVPN server: a copy
 of a real profile (OpenVPN rejects a profile without its CA before it tries
-the server) with every `remote` pointing at 1.1.1.1:
+the server) with every `remote` pointing at your default gateway (your
+router). The router answers ping faster than any real server, so `se-999`
+is ranked first. A public address such as 1.1.1.1 doesn't work: real
+servers are often faster, and then the failover never happens.
+
+Clear the latency cache first: the ranking reuses recent measurements, so
+an older result for `se-999` (or for the real servers) can change the order.
 
 ```bash
+gw=$(ip route show default | awk '{print $3; exit}')
 src=$(ls ~/.config/vpn/locations/se-*.ovpn | head -1)
-sed -E 's/^remote .*/remote 1.1.1.1 1194/' "$src" > ~/.config/vpn/locations/se-999.ovpn
+sed -E "s/^remote .*/remote $gw 1194/" "$src" > ~/.config/vpn/locations/se-999.ovpn
 echo "CONNECT_TIMEOUT=10" >> ~/.config/vpn/config
+best-vpn-profile clear
+best-vpn-profile test se   # se-999 should be at the top
 vpn connect se
 ```
 
-- [ ] If `se-999` is picked first: after about 10 s it prints
-      `Server did not answer; trying the next fastest: se-XX`, then connects.
-      If a real server is faster, it simply connects; run
-      `best-vpn-profile test se` to see the ranking.
-
-Known issue (#260): the latency check can rank only one server ("1 of the
-servers answered"), and then there is nothing to fail over to: it tries
-`se-999` 3 times and fails.
+- [ ] `vpn connect se` prints `Fastest server: se-999 (... ms; N of the servers
+      answered)` with N above 1.
+- [ ] After about 10 s it prints
+      `Server did not answer; trying the next fastest: se-XX`, then connects
+      to a real server.
 
 Clean up afterwards:
 
@@ -168,6 +174,7 @@ Clean up afterwards:
 vpn disconnect
 rm ~/.config/vpn/locations/se-999.ovpn
 sed -i '/^CONNECT_TIMEOUT=10$/d' ~/.config/vpn/config
+best-vpn-profile clear
 ```
 
 ## 8. Smaller checks
@@ -183,8 +190,8 @@ sed -i '/^CONNECT_TIMEOUT=10$/d' ~/.config/vpn/config
       rm ~/.config/vpn/locations/se-998.ovpn
       ```
 - [ ] `vpn help` no longer lists `download-configs` or `service`.
-- [ ] `vpn doctor` runs without errors about missing `bc`. Known issue
-      (#259): while disconnected it stops after check 4/5 with exit code 1.
+- [ ] `vpn doctor` runs without errors about missing `bc`. While
+      disconnected it still runs every check and prints the summary.
 
 ## 9. Optional: sleep and network hooks
 
