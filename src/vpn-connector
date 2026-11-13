@@ -293,7 +293,7 @@ rebuild_cache() {
         # Validate each profile path during rebuild
         if validate_profile_path "$profile_path" "$LOCATIONS_DIR" 2> /dev/null; then
             echo "$profile_path" >> "$temp_cache"
-            ((validated_count++))
+            validated_count=$((validated_count + 1))
         fi
     done < <(find "$LOCATIONS_DIR" -maxdepth 3 -xtype f \( -name "*.ovpn" -o -name "*.conf" \) 2> /dev/null | sort)
 
@@ -379,8 +379,9 @@ get_cached_profiles() {
     }
 
     # Issue #163: Check if cache was validated during rebuild (trusted cache mode)
+    # (|| true: no match is the legacy cache, not an error to end the function on)
     local cache_validated
-    cache_validated=$(grep "^# CACHE_VALIDATED=1" "$PROFILE_CACHE" 2> /dev/null)
+    cache_validated=$(grep "^# CACHE_VALIDATED=1" "$PROFILE_CACHE" 2> /dev/null) || true
 
     if [[ -n $cache_validated ]]; then
         # Trusted cache mode: All entries were validated during rebuild
@@ -405,7 +406,7 @@ get_cached_profiles() {
                 validated_profiles+="$profile_path"$'\n'
             else
                 # Log invalid entry (silent warning to avoid user confusion)
-                ((invalid_count++))
+                invalid_count=$((invalid_count + 1))
             fi
         done <<< "$cached_entries"
 
@@ -621,7 +622,8 @@ list_profiles() {
 
         if [[ $show_details == "detailed" ]]; then
             local server_ip country_info secure_core=""
-            server_ip=$(grep -m1 "^remote " "$profile" | awk '{print $2}')
+            # (|| true: a profile without a remote line is listed as N/A)
+            server_ip=$(grep -m1 "^remote " "$profile" | awk '{print $2}') || true
 
             # Check for secure core indicators using two-country-code pattern
             if echo "$name" | grep -E '^[a-z]{2}-[a-z]{2}-[0-9]+' > /dev/null; then

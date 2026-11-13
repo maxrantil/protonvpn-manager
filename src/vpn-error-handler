@@ -238,7 +238,10 @@ vpn_info() {
     local details="${3:-}"
 
     echo -e "${BLUE}[INFO] $component: $message${NC}"
-    [[ -n "$details" ]] && echo "Details: $details"
+    # (if, not &&: the function's status must not depend on the optional detail)
+    if [[ -n "$details" ]]; then
+        echo "Details: $details"
+    fi
 }
 
 # Warning message (non-blocking)
@@ -248,7 +251,9 @@ vpn_warn() {
     local suggestion="${3:-}"
 
     echo -e "${YELLOW}[WARNING] $component: $message${NC}" >&2
-    [[ -n "$suggestion" ]] && echo -e "${YELLOW}Consider: $suggestion${NC}" >&2
+    if [[ -n "$suggestion" ]]; then
+        echo -e "${YELLOW}Consider: $suggestion${NC}" >&2
+    fi
 }
 
 # Private logging function
