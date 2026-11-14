@@ -284,9 +284,11 @@ test_multiple_connection_prevention_regression() {
         CREDENTIALS_FILE="$test_creds" \
         timeout 5 "$vpn_script" connect dk 2>&1) || true
 
-    # Cleanup mock lock process and lock file immediately
-    kill $mock_lock_pid 2> /dev/null || true
-    wait $mock_lock_pid 2> /dev/null || true
+    # Cleanup mock lock process and lock file immediately (its sleep first:
+    # killing only the subshell left the sleep running for a minute)
+    pkill -P "$mock_lock_pid" 2> /dev/null || true
+    kill "$mock_lock_pid" 2> /dev/null || true
+    wait "$mock_lock_pid" 2> /dev/null || true
     rm -f "$vpn_lock_file"
     # Clean up lock directory if we created a temp one
     if [[ "$lock_dir" == "/tmp/vpn_$$" ]]; then
