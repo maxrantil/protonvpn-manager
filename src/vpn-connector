@@ -44,6 +44,9 @@ OPENVPN_BINARY="/usr/bin/openvpn"
 SESSION_DIR="${VPN_SESSION_DIR:-/run/protonvpn-manager-session}"
 OPENVPN_LOG="$SESSION_DIR/openvpn.log"
 
+# PID file the root daemon writes (same location and override as in vpn-manager)
+VPN_PID_FILE="${VPN_PID_FILE:-/var/run/openvpn.pid}"
+
 # Root-owned OpenVPN up/down helper that applies the VPN's DNS via resolvconf
 DNS_HELPER="${VPN_DNS_HELPER:-/usr/local/lib/protonvpn-manager/vpn-dns-update}"
 
@@ -1136,7 +1139,7 @@ start_openvpn_daemon() {
         --auth-user-pass "$SESSION_DIR/credentials" \
         "${script_args[@]}" \
         --daemon \
-        --writepid /var/run/openvpn.pid \
+        --writepid "$VPN_PID_FILE" \
         --log "$OPENVPN_LOG" \
         --verb 3; then
         echo "ERROR: OpenVPN could not be started (sudo denied, or the profile/options are invalid); see $OPENVPN_LOG" >&2
@@ -1358,7 +1361,7 @@ cleanup_failed_connection_processes() {
         done
         wait_for_pids_exit "$pids" 10 || true
     fi
-    sudo rm -f /var/run/openvpn.pid 2> /dev/null || true
+    sudo rm -f "$VPN_PID_FILE" 2> /dev/null || true
 
     return 0
 }

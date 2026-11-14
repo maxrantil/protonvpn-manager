@@ -265,6 +265,11 @@ setup_test_env() {
     # As on a real system, where the connector created its lock directory 700
     chmod 700 "$XDG_RUNTIME_DIR" "$XDG_RUNTIME_DIR/vpn"
 
+    # Never the system's PID file or session directory (both root-owned on a
+    # real system): tests can create a stale PID file or session copies here
+    export VPN_PID_FILE="$TEST_TEMP_DIR/openvpn.pid"
+    export VPN_SESSION_DIR="$TEST_TEMP_DIR/session"
+
     # Never real privileged commands: sudo refuses (and logs the attempt in
     # $MOCK_DIR/blocked.log) unless a test mocks it with mock_command
     ensure_mock_dir
@@ -275,6 +280,15 @@ echo "sudo blocked in tests: $*" >&2
 exit 1
 EOF
     chmod +x "$MOCK_DIR/sudo"
+
+    # Never the network: curl fails (`vpn status` then reports "Unable to
+    # determine" for the external IP) unless a test mocks it with mock_command
+    cat > "$MOCK_DIR/curl" << 'EOF'
+#!/bin/bash
+echo "curl blocked in tests: $*" >&2
+exit 7
+EOF
+    chmod +x "$MOCK_DIR/curl"
 
     # Set up test locations
     TEST_LOCATIONS_DIR="$TEST_TEMP_DIR/locations"
@@ -342,6 +356,7 @@ cleanup_test_env() {
         IFS='|' read -r XDG_CONFIG_HOME XDG_STATE_HOME XDG_CACHE_HOME XDG_RUNTIME_DIR <<< "$ORIGINAL_XDG"
         export XDG_CONFIG_HOME XDG_STATE_HOME XDG_CACHE_HOME XDG_RUNTIME_DIR
         ORIGINAL_HOME=""
+        unset VPN_PID_FILE VPN_SESSION_DIR
     fi
     if [[ -n "${LATENCY_FIXTURE_HOME:-}" ]] && [[ -d "$LATENCY_FIXTURE_HOME" ]]; then
         rm -rf "$LATENCY_FIXTURE_HOME"
