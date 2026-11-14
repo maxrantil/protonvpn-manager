@@ -287,15 +287,14 @@ rebuild_cache() {
     }
 
     # Security: Maintain existing security model (-xtype f, maxdepth 3)
-    # Issue #163: Validate each profile during rebuild (one-time validation)
+    # Issue #163: Validate each profile during rebuild (one-time validation),
+    # all of them in one pass (#272)
     local validated_count=0
     while IFS= read -r profile_path; do
-        # Validate each profile path during rebuild
-        if validate_profile_path "$profile_path" "$LOCATIONS_DIR" 2> /dev/null; then
-            echo "$profile_path" >> "$temp_cache"
-            validated_count=$((validated_count + 1))
-        fi
-    done < <(find "$LOCATIONS_DIR" -maxdepth 3 -xtype f \( -name "*.ovpn" -o -name "*.conf" \) 2> /dev/null | sort)
+        echo "$profile_path" >> "$temp_cache"
+        validated_count=$((validated_count + 1))
+    done < <(find "$LOCATIONS_DIR" -maxdepth 3 -xtype f \( -name "*.ovpn" -o -name "*.conf" \) 2> /dev/null | sort |
+        filter_valid_profile_paths "$LOCATIONS_DIR")
 
     # Verify we added some profiles
     if [[ $validated_count -eq 0 ]]; then
