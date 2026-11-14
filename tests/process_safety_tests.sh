@@ -11,33 +11,6 @@ TEST_DIR="$(dirname "$(realpath "$0")")"
 # shellcheck source=tests/test_framework.sh
 source "$TEST_DIR/test_framework.sh"
 
-test_health_check_command_exists() {
-    start_test "Health Check Command Exists"
-
-    local manager_script="$PROJECT_DIR/src/vpn-manager"
-
-    # Test that health command is available
-    local help_output
-    help_output=$("$manager_script" 2>&1) || true
-
-    assert_contains "$help_output" "health" "Help should mention health command"
-    assert_contains "$help_output" "Check OpenVPN process health" "Should describe health command"
-
-    # Test health command actually runs
-    local health_output
-    health_output=$("$manager_script" health 2> /dev/null) || true
-
-    # Should produce some output (either good, critical, or no processes)
-    if [[ -n "$health_output" ]]; then
-        log_test "PASS" "$CURRENT_TEST: Health command produces output"
-        ((TESTS_PASSED++))
-    else
-        log_test "FAIL" "$CURRENT_TEST: Health command produces no output"
-        FAILED_TESTS+=("$CURRENT_TEST: health command output")
-        ((TESTS_FAILED++))
-    fi
-}
-
 test_cleanup_command_reliability() {
     start_test "Cleanup Command Reliability"
 
@@ -178,10 +151,10 @@ test_process_detection_functionality() {
 test_lock_file_handling() {
     start_test "Lock File Handling"
 
-    # Test that cleanup removes lock files
+    # Test that cleanup removes (free) lock files from the lock directory
     local test_locks=(
-        "/tmp/vpn_connect.lock"
-        "/tmp/vpn_manager.lock"
+        "$XDG_RUNTIME_DIR/vpn/vpn_connect.lock"
+        "$XDG_RUNTIME_DIR/vpn/vpn_manager.lock"
     )
 
     # Create test lock files
@@ -419,7 +392,6 @@ run_process_safety_tests() {
     echo "    PROCESS SAFETY TESTS"
     echo "======================================="
 
-    test_health_check_command_exists
     test_cleanup_command_reliability
     test_artix_network_restart_detection
     test_pre_connection_safety_integration

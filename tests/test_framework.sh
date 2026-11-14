@@ -238,6 +238,40 @@ vpn_session_running() {
     pgrep -f "${pattern:-(^|/)openvpn .*--config}" > /dev/null 2>&1
 }
 
+# The pattern itself, for tests that look for their own fake processes
+openvpn_process_pattern() {
+    local pattern
+    pattern=$(sed -n "s/^OPENVPN_PGREP_PATTERN='\(.*\)'$/\1/p" "$PROJECT_DIR/src/vpn-validators" 2> /dev/null)
+    echo "${pattern:-(^|/)openvpn .*--config}"
+}
+
+# Start a process the scripts take for a running OpenVPN (it is a sleep, and
+# ours, so a plain kill ends it). Returns once the scripts' own pattern finds
+# it: before the exec the command line is still bash's. The PID is left in
+# FAKE_OPENVPN_PID (call directly, not in $(...), or the job is lost).
+# Args: $1 = profile name (default "test"), $2 = lifetime in seconds (default 60)
+start_fake_openvpn() {
+    local name="${1:-test}" lifetime="${2:-60}" pattern i
+    pattern=$(openvpn_process_pattern)
+    bash -c 'exec -a "openvpn --config /test/$1.ovpn --daemon" sleep "$2"' _ "$name" "$lifetime" > /dev/null 2>&1 &
+    FAKE_OPENVPN_PID=$!
+    for ((i = 0; i < 50; i++)); do
+        pgrep -f "$pattern" 2> /dev/null | grep -qx "$FAKE_OPENVPN_PID" && return 0
+        sleep 0.1
+    done
+    return 1
+}
+
+# True if the processes the scripts take for OpenVPN are exactly the given
+# PIDs: a test that counts processes proves nothing while a foreign one runs
+# Args: the expected PIDs (none: no OpenVPN-like process at all)
+only_these_openvpn_running() {
+    local found expected
+    found=$(pgrep -f "$(openvpn_process_pattern)" 2> /dev/null | sort -n | tr '\n' ' ')
+    expected=$(printf '%s\n' "$@" | sed '/^$/d' | sort -n | tr '\n' ' ')
+    [[ $found == "$expected" ]]
+}
+
 setup_test_env() {
     # Clean up any mocks from previous tests first
     cleanup_mocks

@@ -41,15 +41,31 @@ test_health_command_accessible() {
     fi
 }
 
+# The health report counts every process that looks like OpenVPN. A foreign
+# one (started by somebody else during the run) makes the counts meaningless:
+# the test is then skipped instead of failing or passing by accident.
+# Args: $1 = what the test expected to be running (PIDs, may be empty)
+skip_if_foreign_openvpn() {
+    # shellcheck disable=SC2086  # one PID per word
+    only_these_openvpn_running $1 && return 1
+    log_test "SKIP" "$CURRENT_TEST: another OpenVPN-like process is running, the count cannot be checked"
+    return 0
+}
+
+stop_fake_openvpn() {
+    kill "$@" 2> /dev/null || true
+    wait "$@" 2> /dev/null || true
+}
+
 test_health_reports_no_processes() {
     start_test "Health command correctly reports no processes when none running"
 
     # Ensure no VPN processes are running first
     "$PROJECT_DIR/src/vpn" kill > /dev/null 2>&1
-    sleep 1
 
     local health_output
     health_output=$("$PROJECT_DIR/src/vpn" health 2>&1)
+    skip_if_foreign_openvpn "" && return
 
     if echo "$health_output" | grep -q "NO PROCESSES RUNNING"; then
         log_test "PASS" "$CURRENT_TEST: Health correctly reports no processes"
@@ -64,18 +80,19 @@ test_health_reports_no_processes() {
 test_health_detects_single_process() {
     start_test "Health command correctly detects single VPN process"
 
-    # Create a fake OpenVPN process
-    bash -c 'exec -a "openvpn --config /test/config.ovpn --daemon" sleep 10' &
-    local fake_pid=$!
+    local fake_pid health_output foreign=0
+    if ! start_fake_openvpn config; then
+        log_test "FAIL" "$CURRENT_TEST: fake OpenVPN process did not start"
+        FAILED_TESTS+=("$CURRENT_TEST")
+        ((TESTS_FAILED++))
+        return
+    fi
+    fake_pid=$FAKE_OPENVPN_PID
 
-    sleep 2
-
-    local health_output
     health_output=$("$PROJECT_DIR/src/vpn" health 2>&1)
-
-    # Clean up the fake process
-    kill $fake_pid 2> /dev/null || true
-    wait $fake_pid 2> /dev/null || true
+    skip_if_foreign_openvpn "$fake_pid" && foreign=1
+    stop_fake_openvpn "$fake_pid"
+    [[ $foreign -eq 0 ]] || return
 
     if echo "$health_output" | grep -q "GOOD.*1 process running"; then
         log_test "PASS" "$CURRENT_TEST: Health correctly detects single process"
@@ -90,21 +107,17 @@ test_health_detects_single_process() {
 test_health_detects_multiple_processes() {
     start_test "Health command correctly detects multiple VPN processes as critical"
 
-    # Create multiple fake OpenVPN processes
-    bash -c 'exec -a "openvpn --config /test/config1.ovpn --daemon" sleep 10' &
-    local fake_pid1=$!
-    bash -c 'exec -a "openvpn --config /test/config2.ovpn --daemon" sleep 10' &
-    local fake_pid2=$!
+    local fake_pid1 fake_pid2 health_output exit_code foreign=0
+    start_fake_openvpn config1
+    fake_pid1=$FAKE_OPENVPN_PID
+    start_fake_openvpn config2
+    fake_pid2=$FAKE_OPENVPN_PID
 
-    sleep 2
-
-    local health_output
     health_output=$("$PROJECT_DIR/src/vpn" health 2>&1)
-    local exit_code=$?
-
-    # Clean up the fake processes
-    kill $fake_pid1 $fake_pid2 2> /dev/null || true
-    wait $fake_pid1 $fake_pid2 2> /dev/null || true
+    exit_code=$?
+    skip_if_foreign_openvpn "$fake_pid1 $fake_pid2" && foreign=1
+    stop_fake_openvpn "$fake_pid1" "$fake_pid2"
+    [[ $foreign -eq 0 ]] || return
 
     if [[ $exit_code -eq 1 ]] && echo "$health_output" | grep -q "CRITICAL.*multiple processes"; then
         log_test "PASS" "$CURRENT_TEST: Health correctly detects multiple processes as critical"
@@ -122,32 +135,29 @@ test_health_detects_multiple_processes() {
 test_health_returns_correct_exit_codes() {
     start_test "Health command returns correct exit codes for different states"
 
+    local no_proc_exit single_proc_exit multi_proc_exit fake_pid1 fake_pid2 foreign=0
+
     # Test no processes (should return 0)
     "$PROJECT_DIR/src/vpn" kill > /dev/null 2>&1
-    sleep 1
-
     "$PROJECT_DIR/src/vpn" health > /dev/null 2>&1
-    local no_proc_exit=$?
+    no_proc_exit=$?
+    skip_if_foreign_openvpn "" && return
 
     # Create single process and test (should return 0)
-    bash -c 'exec -a "openvpn --config /test/config.ovpn --daemon" sleep 5' &
-    local fake_pid1=$!
-    sleep 1
-
+    start_fake_openvpn config
+    fake_pid1=$FAKE_OPENVPN_PID
     "$PROJECT_DIR/src/vpn" health > /dev/null 2>&1
-    local single_proc_exit=$?
+    single_proc_exit=$?
 
     # Create multiple processes and test (should return 1)
-    bash -c 'exec -a "openvpn --config /test/config2.ovpn --daemon" sleep 5' &
-    local fake_pid2=$!
-    sleep 1
-
+    start_fake_openvpn config2
+    fake_pid2=$FAKE_OPENVPN_PID
     "$PROJECT_DIR/src/vpn" health > /dev/null 2>&1
-    local multi_proc_exit=$?
+    multi_proc_exit=$?
 
-    # Cleanup
-    kill $fake_pid1 $fake_pid2 2> /dev/null || true
-    wait $fake_pid1 $fake_pid2 2> /dev/null || true
+    skip_if_foreign_openvpn "$fake_pid1 $fake_pid2" && foreign=1
+    stop_fake_openvpn "$fake_pid1" "$fake_pid2"
+    [[ $foreign -eq 0 ]] || return
 
     if [[ $no_proc_exit -eq 0 && $single_proc_exit -eq 0 && $multi_proc_exit -eq 1 ]]; then
         log_test "PASS" "$CURRENT_TEST: Health returns correct exit codes (0,0,1)"
@@ -162,20 +172,21 @@ test_health_returns_correct_exit_codes() {
 test_health_performance() {
     start_test "Health command completes quickly"
 
-    local start_time end_time duration
-    start_time=$(date +%s.%3N)
+    # Milliseconds, in shell arithmetic (no bc: a missing bc used to pass)
+    local start_ms end_ms duration_ms
+    start_ms=$(date +%s%3N)
 
     "$PROJECT_DIR/src/vpn" health > /dev/null 2>&1
 
-    end_time=$(date +%s.%3N)
-    duration=$(echo "$end_time - $start_time" | bc 2> /dev/null || echo "0.5")
+    end_ms=$(date +%s%3N)
+    duration_ms=$((end_ms - start_ms))
 
     # Should complete in under 2 seconds
-    if (($(echo "$duration < 2.0" | bc -l 2> /dev/null || echo 1))); then
-        log_test "PASS" "$CURRENT_TEST: Health command completed in ${duration}s"
+    if [[ $duration_ms -lt 2000 ]]; then
+        log_test "PASS" "$CURRENT_TEST: Health command completed in ${duration_ms} ms"
         ((TESTS_PASSED++))
     else
-        log_test "FAIL" "$CURRENT_TEST: Health command too slow (${duration}s)"
+        log_test "FAIL" "$CURRENT_TEST: Health command too slow (${duration_ms} ms)"
         FAILED_TESTS+=("$CURRENT_TEST")
         ((TESTS_FAILED++))
     fi
