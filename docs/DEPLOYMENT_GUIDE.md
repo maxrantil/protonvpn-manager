@@ -165,7 +165,7 @@ pvpn status
 ```
 
 3. **Performance Cache Location (Optional)**:
-The system uses `/tmp/vpn_performance.cache` by default. This is fine for most users.
+The performance cache, the profile cache and the logs live in `$XDG_STATE_HOME/vpn/` (default `~/.local/state/vpn/`); set `XDG_STATE_HOME` to move them. Lock files live in `$XDG_RUNTIME_DIR/vpn/` (default `/run/user/$UID/vpn/`).
 
 ## Usage
 
@@ -307,7 +307,7 @@ openvpn --version
 # Keep only configs for your preferred countries
 
 # Clear performance cache
-rm /tmp/vpn_performance.cache
+rm ~/.local/state/vpn/vpn_performance.cache
 
 # Test specific country instead of all
 ./src/vpn connect se  # instead of ./src/vpn best
@@ -326,10 +326,10 @@ rm /tmp/vpn_performance.cache
 
 ```bash
 # View VPN manager logs
-tail -f /tmp/vpn_manager_$(id -u).log
+tail -f ~/.local/state/vpn/vpn_manager.log
 
 # View connection logs
-tail -f /tmp/vpn_connect.log
+tail -f ~/.local/state/vpn/vpn_connect.log
 ```
 
 #### Manual Testing
@@ -367,7 +367,7 @@ If something goes wrong:
 ./src/vpn cleanup
 
 # Reset performance cache
-rm /tmp/vpn_performance.cache
+rm ~/.local/state/vpn/vpn_performance.cache
 
 # Check system state
 ./src/vpn health
@@ -384,7 +384,7 @@ rm /tmp/vpn_performance.cache
 2. **Clear Performance Cache** (weekly):
 
 ```bash
-rm /tmp/vpn_performance.cache
+rm ~/.local/state/vpn/vpn_performance.cache
 ```
 
 3. **Check for Updates** (as needed):

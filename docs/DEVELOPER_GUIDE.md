@@ -564,7 +564,7 @@ ping se-45.protonvpn.com
 # Keep only configs for preferred countries in locations/
 
 # Clear performance cache
-rm /tmp/vpn_performance.cache
+rm ~/.local/state/vpn/vpn_performance.cache
 ```
 
 ### Development Environment Issues

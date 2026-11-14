@@ -251,16 +251,26 @@ Total: ~2,800 lines of focused VPN functionality
 ### Runtime Files
 
 ```text
-/tmp/
-├── vpn_manager_$(id -u).log      # VPN manager logs
+$XDG_STATE_HOME/vpn/              # default ~/.local/state/vpn/
+├── vpn_manager.log               # VPN manager logs
 ├── vpn_connect.log               # Connection logs
 ├── vpn_performance.cache         # Performance cache
-└── openvpn.pid                   # OpenVPN process ID
+└── vpn_profiles.cache            # Validated profile list
 
-/var/run/
-├── openvpn.pid                   # System-wide PID file
-└── vpn_manager.lock              # Process lock file
+$XDG_CACHE_HOME/vpn/              # default ~/.cache/vpn/
+└── external_ip.cache             # Last detected external IP
+
+$XDG_RUNTIME_DIR/vpn/             # default /run/user/$UID/vpn/
+├── vpn_connect.lock              # Connection lock
+└── vpn_manager.lock              # Process lock
+
+/run/protonvpn-manager-session/   # root-owned; VPN_SESSION_DIR overrides
+└── profile.ovpn, credentials     # Copies OpenVPN reads while connected
+
+/var/run/openvpn.pid              # OpenVPN process ID; VPN_PID_FILE overrides
 ```
+
+No runtime file lives at a fixed name in `/tmp` (shared, so a symlink target).
 
 ### Configuration Files
 

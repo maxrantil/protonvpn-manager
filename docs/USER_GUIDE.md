@@ -297,10 +297,10 @@ chmod 600 credentials.txt
 
 ### Performance Cache
 
-The system caches server performance in `/tmp/vpn_performance.cache`. This file is automatically managed but you can delete it to force fresh testing:
+The system caches server performance in `~/.local/state/vpn/vpn_performance.cache` (`$XDG_STATE_HOME/vpn/` when `XDG_STATE_HOME` is set). This file is automatically managed but you can delete it to force fresh testing:
 
 ```bash
-rm /tmp/vpn_performance.cache
+rm ~/.local/state/vpn/vpn_performance.cache
 ```
 
 ## Troubleshooting
@@ -366,14 +366,14 @@ Most commands support verbose mode:
 
 #### Check log files
 
-Log files are created in `/tmp/`:
+Log files are kept in `~/.local/state/vpn/` (`$XDG_STATE_HOME/vpn/` when `XDG_STATE_HOME` is set):
 
 ```bash
 # VPN manager logs
-tail -f /tmp/vpn_manager_$(id -u).log
+tail -f ~/.local/state/vpn/vpn_manager.log
 
 # Connection logs
-tail -f /tmp/vpn_connect.log
+tail -f ~/.local/state/vpn/vpn_connect.log
 ```
 
 #### Manual OpenVPN testing
@@ -394,7 +394,7 @@ If something goes wrong, these commands can help:
 ./src/vpn cleanup
 
 # Reset performance cache
-rm /tmp/vpn_performance.cache
+rm ~/.local/state/vpn/vpn_performance.cache
 
 # Check for remaining processes
 ps aux | grep openvpn
