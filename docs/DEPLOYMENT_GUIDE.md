@@ -17,10 +17,12 @@
 ### System Requirements
 
 **Operating System:**
+
 - Artix Linux or Arch Linux
 - Any Linux distribution with bash 4.0+ and OpenVPN
 
 **Hardware Requirements:**
+
 - **CPU**: Any modern CPU (single core sufficient)
 - **Memory**: 50MB minimum, 100MB recommended
 - **Storage**: 50MB for installation
@@ -29,6 +31,7 @@
 ### Dependencies
 
 **Essential Dependencies:**
+
 ```bash
 # Artix/Arch Linux
 sudo pacman -S openvpn curl
@@ -41,6 +44,7 @@ sudo pacman -S bc iproute2 ping
 ```
 
 **What You DON'T Need:**
+
 - ❌ No systemd services or complex service management
 - ❌ No databases (SQLite, PostgreSQL, etc.)
 - ❌ No web servers (nginx, apache, etc.)
@@ -53,6 +57,7 @@ sudo pacman -S bc iproute2 ping
 ### Simple Clone and Setup
 
 1. **Clone the Repository**:
+
 ```bash
 git clone https://github.com/maxrantil/protonvpn-manager.git
 cd protonvpn-manager
@@ -60,6 +65,7 @@ git checkout vpn-simple  # Use simplified version
 ```
 
 2. **Verify Dependencies**:
+
 ```bash
 # Check if OpenVPN is available
 which openvpn || echo "Install OpenVPN: sudo pacman -S openvpn"
@@ -69,6 +75,7 @@ which curl || echo "Install curl: sudo pacman -S curl"
 ```
 
 3. **Test Installation**:
+
 ```bash
 ./src/vpn help
 ```
@@ -83,6 +90,7 @@ If you see the help output, installation is complete!
    - Choose the servers you want
 
 2. **Place Config Files**:
+
 ```bash
 # Create locations directory if it doesn't exist
 mkdir -p locations/
@@ -96,6 +104,7 @@ mkdir -p locations/
 ```
 
 3. **Create Credentials File**:
+
 ```bash
 # Create credentials file
 echo "your_protonvpn_username" > credentials.txt
@@ -111,7 +120,7 @@ chmod 600 credentials.txt
 
 After setup, your directory should look like:
 
-```
+```text
 protonvpn-manager/
 ├── src/                          # VPN manager components
 │   ├── vpn                       # Main CLI interface
@@ -131,6 +140,7 @@ protonvpn-manager/
 ### Optional Optimizations
 
 1. **Add to PATH (Optional)**:
+
 ```bash
 # Add to your shell rc file (.bashrc, .zshrc, etc.)
 export PATH="$PATH:/path/to/protonvpn-manager/src"
@@ -144,6 +154,7 @@ vpn connect se
 ```
 
 2. **Create Alias (Optional)**:
+
 ```bash
 # Add to your shell rc file
 alias pvpn='/path/to/protonvpn-manager/src/vpn'
@@ -161,6 +172,7 @@ The system uses `/tmp/vpn_performance.cache` by default. This is fine for most u
 ### Basic Deployment Workflow
 
 1. **First Connection Test**:
+
 ```bash
 # Test connection to best server
 ./src/vpn best
@@ -173,6 +185,7 @@ The system uses `/tmp/vpn_performance.cache` by default. This is fine for most u
 ```
 
 2. **Country-Specific Testing**:
+
 ```bash
 # Test Sweden servers
 ./src/vpn connect se
@@ -186,6 +199,7 @@ The system uses `/tmp/vpn_performance.cache` by default. This is fine for most u
 ```
 
 3. **Production Usage**:
+
 ```bash
 # Daily workflow
 ./src/vpn best      # Connect to optimal server
@@ -208,11 +222,13 @@ chmod +x src/vpn*
 ### Network Configuration
 
 **Firewall Considerations:**
+
 - OpenVPN typically uses UDP 1194 or TCP 443
 - Your firewall should allow outbound connections
 - No inbound ports need to be opened
 
 **DNS Handling:**
+
 - The VPN manager handles DNS automatically
 - No manual DNS configuration required
 - DNS is restored on disconnect
@@ -222,9 +238,11 @@ chmod +x src/vpn*
 ### Common Deployment Issues
 
 #### "Command not found" when running ./src/vpn
+
 **Problem**: Scripts are not executable or bash is not found.
 
 **Solutions**:
+
 ```bash
 # Make scripts executable
 chmod +x src/*
@@ -237,9 +255,11 @@ head -1 src/vpn
 ```
 
 #### "No OpenVPN config files found"
+
 **Problem**: No `.ovpn` files in `locations/` directory.
 
 **Solutions**:
+
 ```bash
 # Check if files exist
 ls -la locations/
@@ -251,9 +271,11 @@ ls locations/*.ovpn
 ```
 
 #### "OpenVPN command not found"
+
 **Problem**: OpenVPN is not installed.
 
 **Solutions**:
+
 ```bash
 # Install OpenVPN
 sudo pacman -S openvpn    # Arch/Artix
@@ -265,17 +287,21 @@ openvpn --version
 ```
 
 #### "Permission denied" for VPN operations
+
 **Problem**: VPN operations require root privileges.
 
 **Solutions**:
+
 - VPN operations need sudo access
 - The tool will prompt for sudo when needed
 - Ensure your user is in the `sudo` group
 
 #### Performance testing takes too long
+
 **Problem**: Slow network or many servers to test.
 
 **Solutions**:
+
 ```bash
 # Use fewer config files
 # Keep only configs for your preferred countries
@@ -290,12 +316,14 @@ rm /tmp/vpn_performance.cache
 ### Debugging
 
 #### Enable Verbose Output
+
 ```bash
 # Add --verbose to most commands
 ./src/vpn connect se --verbose
 ```
 
 #### Check Log Files
+
 ```bash
 # View VPN manager logs
 tail -f /tmp/vpn_manager_$(id -u).log
@@ -305,6 +333,7 @@ tail -f /tmp/vpn_connect.log
 ```
 
 #### Manual Testing
+
 ```bash
 # Test OpenVPN config manually
 sudo openvpn --config locations/your-server.ovpn --auth-user-pass credentials.txt
@@ -314,6 +343,7 @@ ping se-45.protonvpn.com
 ```
 
 #### System State Inspection
+
 ```bash
 # Check for existing VPN processes
 ps aux | grep openvpn
@@ -352,11 +382,13 @@ rm /tmp/vpn_performance.cache
    - Replace old configs in `locations/`
 
 2. **Clear Performance Cache** (weekly):
+
 ```bash
 rm /tmp/vpn_performance.cache
 ```
 
 3. **Check for Updates** (as needed):
+
 ```bash
 git pull origin vpn-simple
 ```
@@ -376,6 +408,7 @@ The only maintenance is keeping OpenVPN configs current and occasionally clearin
 ## Deployment Summary
 
 ### What You Get
+
 - Simple VPN connection management
 - Intelligent server selection
 - Performance optimization
@@ -383,6 +416,7 @@ The only maintenance is keeping OpenVPN configs current and occasionally clearin
 - Basic troubleshooting tools
 
 ### What You Don't Get
+
 - Enterprise monitoring
 - Complex service management
 - API interfaces
@@ -390,6 +424,7 @@ The only maintenance is keeping OpenVPN configs current and occasionally clearin
 - Advanced security frameworks
 
 ### Perfect For
+
 - Personal VPN management
 - Simple, reliable connections
 - Users who want "it just works" functionality

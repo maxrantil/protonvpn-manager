@@ -22,6 +22,7 @@
 This project follows the **Unix philosophy**: "Do one thing and do it right."
 
 **Core Principles:**
+
 - **Simplicity First**: Prefer simple solutions over clever ones
 - **Minimal Dependencies**: Only essential external tools (OpenVPN, bash, curl)
 - **Process Safety**: Bulletproof VPN process management
@@ -29,6 +30,7 @@ This project follows the **Unix philosophy**: "Do one thing and do it right."
 - **No Feature Creep**: Resist adding "nice to have" features
 
 ### What This Project IS
+
 - Simple VPN connection management
 - Intelligent server selection
 - Performance testing and optimization
@@ -36,6 +38,7 @@ This project follows the **Unix philosophy**: "Do one thing and do it right."
 - Basic error handling
 
 ### What This Project IS NOT
+
 - ❌ Enterprise monitoring system
 - ❌ API server or web interface
 - ❌ Complex configuration management
@@ -46,12 +49,14 @@ This project follows the **Unix philosophy**: "Do one thing and do it right."
 ### Technology Stack
 
 **Core Technologies:**
+
 - **Shell Scripting**: Bash 4.0+ (primary language)
 - **VPN**: OpenVPN (only supported VPN protocol)
 - **Network**: curl for HTTP requests and speed testing
 - **System**: Standard Unix tools (ping, ps, pkill, etc.)
 
 **What We DON'T Use:**
+
 - ❌ Python, Node.js, or other runtime environments
 - ❌ Databases (SQLite, PostgreSQL, etc.)
 - ❌ Web frameworks or HTTP servers
@@ -64,6 +69,7 @@ This project follows the **Unix philosophy**: "Do one thing and do it right."
 ### Prerequisites
 
 **Essential Tools:**
+
 ```bash
 # Artix/Arch Linux
 sudo pacman -S bash openvpn curl bc
@@ -76,6 +82,7 @@ sudo pacman -S iproute2 ping
 ```
 
 **Development Setup:**
+
 ```bash
 # Clone the repository
 git clone https://github.com/maxrantil/protonvpn-manager.git
@@ -89,16 +96,19 @@ git checkout vpn-simple
 ### Code Editor Setup
 
 **Recommended Settings:**
+
 - Use 4-space indentation for bash scripts
 - Enable shellcheck integration
 - Set line length to 88 characters (matches project standard)
 
 **VS Code Extensions:**
+
 - Bash IDE
 - ShellCheck
 - Bash Debug
 
 **Vim/Neovim:**
+
 ```vim
 " .vimrc settings for bash development
 set expandtab
@@ -113,6 +123,7 @@ set textwidth=88
 
 **File Headers:**
 Every script must start with:
+
 ```bash
 #!/bin/bash
 # ABOUTME: Brief description of what this script does
@@ -120,6 +131,7 @@ Every script must start with:
 ```
 
 **Function Structure:**
+
 ```bash
 # Function with clear name and purpose
 function_name() {
@@ -135,6 +147,7 @@ function_name() {
 ```
 
 **Error Handling:**
+
 ```bash
 # Always check command success
 if ! command_that_might_fail; then
@@ -147,6 +160,7 @@ command_success && echo "Success" || { echo "Failed"; return 1; }
 ```
 
 **Variable Naming:**
+
 ```bash
 # Use descriptive names
 vpn_status="connected"
@@ -162,6 +176,7 @@ DEFAULT_TIMEOUT=30
 
 **Component Structure:**
 Each component should have:
+
 1. Clear purpose and responsibility
 2. Minimal dependencies on other components
 3. Error handling and logging
@@ -169,6 +184,7 @@ Each component should have:
 5. Help/usage information
 
 **File Naming:**
+
 - Use descriptive names: `vpn-manager`, `vpn-connector`
 - No file extensions for executable scripts
 - Use hyphens, not underscores: `best-vpn-profile`
@@ -176,6 +192,7 @@ Each component should have:
 ### Documentation Standards
 
 **Inline Comments:**
+
 ```bash
 # Explain WHY, not WHAT
 # Check if VPN is already running to prevent conflicts
@@ -186,6 +203,7 @@ fi
 ```
 
 **Function Documentation:**
+
 ```bash
 # Connect to a VPN server with retry logic
 # Arguments:
@@ -204,31 +222,37 @@ connect_to_server() {
 ### Core Components (6 total)
 
 #### 1. Main Interface (`vpn`)
+
 **Purpose**: Command routing and user interaction
 **Size**: ~331 lines
 **Key Functions**: Command parsing, help display, component coordination
 
 #### 2. VPN Manager (`vpn-manager`)
+
 **Purpose**: Process lifecycle management
 **Size**: ~875 lines
 **Key Functions**: Start/stop OpenVPN, status checking, cleanup
 
 #### 3. VPN Connector (`vpn-connector`)
+
 **Purpose**: Server selection and connection logic
 **Size**: ~968 lines
 **Key Functions**: Server discovery, country filtering, connection attempts
 
 #### 4. Best Profile Engine (`best-vpn-profile`)
+
 **Purpose**: Performance testing
 **Size**: ~104 lines
 **Key Functions**: Latency testing, speed testing, server ranking
 
 #### 5. Error Handler (`vpn-error-handler`)
+
 **Purpose**: Centralized error handling
 **Size**: ~275 lines
 **Key Functions**: Error message formatting, recovery suggestions
 
 #### 6. Config Fixer (`fix-ovpn-configs`)
+
 **Purpose**: OpenVPN config validation
 **Size**: ~280 lines
 **Key Functions**: Config file validation, common issue fixing
@@ -236,18 +260,21 @@ connect_to_server() {
 ### Adding New Functionality
 
 **Before Adding Features:**
+
 1. Ask: "Does this align with Unix philosophy?"
 2. Ask: "Is this essential for VPN management?"
 3. Ask: "Can this be done in an existing component?"
 4. Consider: "Will this add significant complexity?"
 
 **If Feature is Essential:**
+
 1. Create minimal implementation
 2. Add to existing component if possible
 3. Create new component only if absolutely necessary
 4. Keep component under 1000 lines
 
 **Code Addition Guidelines:**
+
 ```bash
 # Add new function to existing component
 new_feature() {
@@ -266,6 +293,7 @@ new_feature() {
 ### Manual Testing
 
 **Basic Testing Workflow:**
+
 ```bash
 # Test all core functions
 ./src/vpn help
@@ -283,6 +311,7 @@ new_feature() {
 ```
 
 **Component Testing:**
+
 ```bash
 # Test individual components
 ./src/vpn-manager status
@@ -293,6 +322,7 @@ new_feature() {
 ### Error Testing
 
 **Test Error Conditions:**
+
 ```bash
 # Test missing dependencies
 mv /usr/bin/openvpn /usr/bin/openvpn.backup
@@ -310,6 +340,7 @@ chmod 000 credentials.txt
 ### Performance Testing
 
 **Basic Performance Tests:**
+
 ```bash
 # Time connection speed
 time ./src/vpn connect se
@@ -324,6 +355,7 @@ time ./src/vpn best
 ### No Complex Testing Framework
 
 This project intentionally avoids:
+
 - ❌ Unit testing frameworks
 - ❌ Integration testing suites
 - ❌ Automated test pipelines
@@ -337,10 +369,12 @@ Testing is manual and focused on real-world usage patterns.
 ### Branch Strategy
 
 **Main Branches:**
+
 - `vpn-simple`: Main development branch (current simplified version)
 - `master`: Enterprise version (archived, for reference only)
 
 **Feature Development:**
+
 ```bash
 # Create feature branch from vpn-simple
 git checkout vpn-simple
@@ -358,7 +392,8 @@ git push origin fix/server-selection-bug
 ### Commit Guidelines
 
 **Commit Message Format:**
-```
+
+```text
 type: brief description
 
 - Detailed explanation if needed
@@ -367,6 +402,7 @@ type: brief description
 ```
 
 **Commit Types:**
+
 - `fix:` Bug fixes
 - `feat:` New features (rare, must align with philosophy)
 - `docs:` Documentation updates
@@ -374,7 +410,8 @@ type: brief description
 - `chore:` Maintenance tasks
 
 **Example Commits:**
-```
+
+```text
 fix: prevent multiple OpenVPN processes from starting
 
 - Add process check before starting new connection
@@ -391,12 +428,14 @@ feat: add country-specific server filtering
 ### Pull Request Guidelines
 
 **Before Creating PR:**
+
 1. Test all changed functionality manually
 2. Verify no new dependencies introduced
 3. Check that code follows project philosophy
 4. Update documentation if needed
 
 **PR Description Template:**
+
 ```markdown
 ## Changes
 Brief description of what was changed and why.
@@ -426,6 +465,7 @@ Brief description of what was changed and why.
 ### Contribution Guidelines
 
 **Good Contributions:**
+
 - Bug fixes that improve reliability
 - Performance improvements that reduce connection time
 - Error handling improvements
@@ -433,6 +473,7 @@ Brief description of what was changed and why.
 - Code simplification and cleanup
 
 **Bad Contributions:**
+
 - Adding APIs or web interfaces
 - Complex configuration systems
 - Background services or daemons
@@ -443,6 +484,7 @@ Brief description of what was changed and why.
 ### Code Review Process
 
 **Self-Review Checklist:**
+
 - [ ] Code follows Unix philosophy
 - [ ] No unnecessary complexity added
 - [ ] No new dependencies introduced
@@ -455,7 +497,9 @@ Brief description of what was changed and why.
 ### Development Issues
 
 #### "Script won't run"
+
 **Check:**
+
 ```bash
 # File permissions
 ls -la src/vpn
@@ -469,7 +513,9 @@ which bash
 ```
 
 #### "Command not found" errors
+
 **Check:**
+
 ```bash
 # Required commands
 which openvpn curl ping
@@ -479,7 +525,9 @@ sudo pacman -S openvpn curl
 ```
 
 #### "Shellcheck warnings"
+
 **Common Issues:**
+
 ```bash
 # Quote variables
 echo "$variable"  # Good
@@ -494,7 +542,9 @@ command; echo     # Bad (doesn't check success)
 ### Performance Issues
 
 #### "Slow connection times"
+
 **Debug:**
+
 ```bash
 # Test individual components
 time ./src/best-vpn-profile test se-45
@@ -506,7 +556,9 @@ ping se-45.protonvpn.com
 ```
 
 #### "Performance testing takes too long"
+
 **Optimize:**
+
 ```bash
 # Reduce number of test servers
 # Keep only configs for preferred countries in locations/
@@ -518,13 +570,17 @@ rm /tmp/vpn_performance.cache
 ### Development Environment Issues
 
 #### "Git conflicts with master branch"
+
 **Avoid:**
+
 - Don't merge from master to vpn-simple
 - Don't develop on master branch
 - Keep branches separate and focused
 
 #### "Code doesn't match project style"
+
 **Fix:**
+
 - Use 4-space indentation
 - Keep lines under 88 characters
 - Use descriptive variable names
