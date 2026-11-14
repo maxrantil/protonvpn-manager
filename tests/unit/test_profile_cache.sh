@@ -826,11 +826,10 @@ EOF
     local count
     count=$(grep -v "^#" "$LOG_DIR/vpn_profiles.cache" | wc -l)
 
-    # Every profile is validated during the rebuild (a few processes each,
-    # about 25 ms), so 1000 profiles take around 25 s. The bound catches a
-    # rebuild that stops scaling linearly, not that known per-profile cost
-    # (#272; the limit was 5 s before validation moved into the rebuild).
-    if [[ "$count" -eq 1000 ]] && [[ $duration_ms -lt 60000 ]]; then
+    # Every profile is validated during the rebuild, with a fixed number of
+    # processes for all of them together (#272: one set per profile made
+    # 1000 profiles take about 25 s)
+    if [[ "$count" -eq 1000 ]] && [[ $duration_ms -lt 5000 ]]; then
         pass_test
         cleanup_cache_test_env
         return 0
@@ -839,10 +838,110 @@ EOF
         cleanup_cache_test_env
         return 1
     else
-        fail_test "Rebuild took ${duration_ms}ms (expected <60000ms)"
+        fail_test "Rebuild took ${duration_ms}ms (expected <5000ms)"
         cleanup_cache_test_env
         return 1
     fi
+}
+
+# The rebuild validates all profiles in one pass (filter_valid_profile_paths,
+# #272). It must accept exactly what validate_profile_path accepts, profile
+# by profile: the per-profile function is the reference.
+# Run a command or function with a directory of stand-ins first on PATH
+# Args: $1 = directory, then the command
+with_stubs() {
+    local PATH="$1:$PATH"
+    shift
+    "$@"
+}
+
+# The reference: validate_profile_path for each path on stdin
+# Args: $1 = allowed directory
+filter_one_by_one() {
+    local p
+    while IFS= read -r p; do
+        validate_profile_path "$p" "$1" 2> /dev/null && printf '%s\n' "$p"
+    done
+    return 0
+}
+
+test_batch_validation_matches_single_validation() {
+    start_test "Batch profile validation accepts exactly what validate_profile_path accepts"
+
+    setup_cache_test_env
+    local outside="$CACHE_TEST_DIR/outside" stubs="$CACHE_TEST_DIR/stubs"
+    mkdir -p "$outside" "$stubs" "$LOCATIONS_DIR/nested/deeper" "$LOCATIONS_DIR/dir.ovpn"
+    printf 'client\n' > "$outside/out.ovpn"
+    printf 'client\n' > "$LOCATIONS_DIR/nested/deeper/deep-1.ovpn"
+    printf 'client\n' > "$LOCATIONS_DIR/wg-SE-1.conf"
+    printf 'client\n' > "$LOCATIONS_DIR/notes.txt"
+    printf 'client\n' > "$LOCATIONS_DIR/cost\$1.ovpn"
+    printf 'client\n' > "$LOCATIONS_DIR/tick\`id\`.ovpn"
+    printf 'client\n' > "$LOCATIONS_DIR/back\\slash.ovpn"
+    printf 'client\n' > "$LOCATIONS_DIR/foreign-owner.ovpn"
+    printf 'client\n' > "$LOCATIONS_DIR/with space.ovpn"
+    ln -s "$outside/out.ovpn" "$LOCATIONS_DIR/link-out.ovpn"
+    ln -s "$LOCATIONS_DIR/test-se-1.ovpn" "$LOCATIONS_DIR/link-in.ovpn"
+    ln -s "$outside" "$LOCATIONS_DIR/linked-dir"
+
+    # A profile owned by somebody else: stat reports another owner for it
+    # (a test cannot chown); every other call goes to the real stat
+    local real_stat
+    real_stat=$(command -v stat)
+    cat > "$stubs/stat" << EOF
+#!/bin/bash
+fmt="" files=()
+while [[ \$# -gt 0 ]]; do
+    case \$1 in
+        -c) fmt=\$2; shift 2 ;;
+        --) shift; files+=("\$@"); break ;;
+        *) files+=("\$1"); shift ;;
+    esac
+done
+rc=0
+for f in "\${files[@]}"; do
+    if [[ \$fmt == %U && \$f == *foreign-owner* ]]; then
+        echo mallory
+    else
+        "$real_stat" -c "\$fmt" -- "\$f" || rc=1
+    fi
+done
+exit \$rc
+EOF
+    chmod +x "$stubs/stat"
+
+    # Candidates: what the rebuild's find offers, plus paths it never offers
+    local candidates expected got
+    candidates=$({
+        find "$LOCATIONS_DIR" -maxdepth 3 -xtype f \( -name "*.ovpn" -o -name "*.conf" \) | sort
+        printf '%s\n' "" "$LOCATIONS_DIR/missing.ovpn" "$LOCATIONS_DIR/dir.ovpn" \
+            "$LOCATIONS_DIR/notes.txt" "$LOCATIONS_DIR/../outside/out.ovpn" \
+            "$LOCATIONS_DIR/linked-dir/out.ovpn" "$outside/out.ovpn" "$LOCATIONS_DIR/test-dk-1.ovpn"
+    })
+    expected=$(with_stubs "$stubs" filter_one_by_one "$LOCATIONS_DIR" <<< "$candidates")
+    got=$(with_stubs "$stubs" filter_valid_profile_paths "$LOCATIONS_DIR" <<< "$candidates" 2> /dev/null)
+
+    # When the batch realpath fails, every path goes through validate_profile_path
+    local real_realpath fallback
+    real_realpath=$(command -v realpath)
+    mkdir -p "$stubs/batch-fails"
+    cp "$stubs/stat" "$stubs/batch-fails/stat"
+    printf '#!/bin/bash\n[[ $1 == -z ]] && exit 1\nexec "%s" "$@"\n' "$real_realpath" > "$stubs/batch-fails/realpath"
+    chmod +x "$stubs/batch-fails/realpath"
+    fallback=$(with_stubs "$stubs/batch-fails" filter_valid_profile_paths "$LOCATIONS_DIR" <<< "$candidates" 2> /dev/null)
+
+    # The reference itself must have sorted good from bad, or this proves nothing
+    if [[ $expected != *test-se-1.ovpn* || $expected != *deep-1.ovpn* || $expected == *foreign-owner* ||
+        $expected == *link-* || $expected == *cost* || $expected == *outside* ]]; then
+        fail_test "fixture not sorted as intended by validate_profile_path: $(tr '\n' ' ' <<< "$expected")"
+    elif [[ $got != "$expected" ]]; then
+        fail_test "expected: $(tr '\n' ' ' <<< "$expected") | got: $(tr '\n' ' ' <<< "$got")"
+    elif [[ $fallback != "$expected" ]]; then
+        fail_test "with the batch realpath failing: expected: $(tr '\n' ' ' <<< "$expected") | got: $(tr '\n' ' ' <<< "$fallback")"
+    else
+        pass_test
+    fi
+    cleanup_cache_test_env
 }
 
 # ============================================================================
@@ -1033,6 +1132,7 @@ test_empty_locations_directory || true
 test_locations_directory_missing || true
 test_cache_directory_readonly || true
 test_large_profile_count_performance || true
+test_batch_validation_matches_single_validation || true
 
 # Metadata validation tests (Issue #155)
 test_validate_cache_metadata_rejects_non_numeric_mtime || true

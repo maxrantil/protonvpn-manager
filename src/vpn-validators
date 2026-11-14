@@ -73,6 +73,47 @@ validate_profile_path() {
     return 0
 }
 
+# The checks of validate_profile_path for many profiles at once, for the
+# profile cache rebuild: the allowed directory and the user are resolved once,
+# and one realpath and one stat cover all profiles (one set of processes per
+# profile made 1000 profiles take about 25 s, #272). If the batch output does
+# not line up with its input, every path goes through validate_profile_path.
+# Args: $1 = allowed directory; stdin: profile paths, one per line
+# Output: the paths that pass, in input order, one per line
+filter_valid_profile_paths() {
+    local allowed_dir="$1" allowed_canonical me path i
+    allowed_canonical=$(realpath "$allowed_dir" 2> /dev/null) || return 1
+    me=$(whoami)
+
+    # Exists, is a regular file and not a symlink (no process needed)
+    local -a candidates=()
+    while IFS= read -r path; do
+        [[ -n $path && -f $path && ! -L $path ]] && candidates+=("$path")
+    done
+    [[ ${#candidates[@]} -gt 0 ]] || return 0
+
+    local -a canonical=() owners=()
+    mapfile -d '' -t canonical < <(realpath -z -- "${candidates[@]}" 2> /dev/null)
+    if [[ ${#canonical[@]} -eq ${#candidates[@]} ]]; then
+        mapfile -t owners < <(stat -c "%U" -- "${canonical[@]}" 2> /dev/null)
+    fi
+    if [[ ${#canonical[@]} -ne ${#candidates[@]} || ${#owners[@]} -ne ${#candidates[@]} ]]; then
+        for path in "${candidates[@]}"; do
+            validate_profile_path "$path" "$allowed_dir" 2> /dev/null && printf '%s\n' "$path"
+        done
+        return 0
+    fi
+
+    for i in "${!candidates[@]}"; do
+        [[ ${canonical[i]} =~ ^"$allowed_canonical"/ ]] || continue
+        [[ ${canonical[i]} =~ \.(ovpn|conf)$ ]] || continue
+        [[ ${canonical[i]} =~ [\$\`\\] ]] && continue
+        [[ $me == root || ${owners[i]} == "$me" || ${owners[i]} == root ]] || continue
+        printf '%s\n' "${candidates[i]}"
+    done
+    return 0
+}
+
 # Validate profile CONTENT before handing it to a root process
 # OpenVPN and wg-quick both run as root. Profile directives that execute
 # programs, load code, or write files would run with root privileges, so they
