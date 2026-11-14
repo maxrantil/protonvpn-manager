@@ -18,7 +18,7 @@
 
 This VPN manager follows the **Unix philosophy**: "Do one thing and do it right."
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────┐
 │                    SIMPLE VPN ARCHITECTURE                     │
 ├─────────────────────────────────────────────────────────────────┤
@@ -88,15 +88,18 @@ This VPN manager follows the **Unix philosophy**: "Do one thing and do it right.
 ### Core Components (6 total, ~2,800 lines)
 
 #### 1. Main Interface (`vpn` - 331 lines)
+
 **Purpose**: Primary user interface and command router
 
 **Responsibilities**:
+
 - Parse user commands (connect, disconnect, status, best, etc.)
 - Route commands to appropriate components
 - Display help and usage information
 - Provide consistent user experience
 
 **Key Functions**:
+
 ```bash
 vpn connect [country]     # Connect to VPN server
 vpn disconnect           # Disconnect from VPN
@@ -106,9 +109,11 @@ vpn list                # List available servers
 ```
 
 #### 2. VPN Manager (`vpn-manager` - 875 lines)
+
 **Purpose**: Core VPN process and connection management
 
 **Responsibilities**:
+
 - OpenVPN process lifecycle (start/stop/monitor)
 - Connection state tracking
 - Process safety (prevent multiple instances)
@@ -116,15 +121,18 @@ vpn list                # List available servers
 - Status reporting
 
 **Key Features**:
+
 - Zero-tolerance for multiple VPN processes
 - Comprehensive cleanup on disconnect
 - External IP detection
 - Process health monitoring
 
 #### 3. VPN Connector (`vpn-connector` - 968 lines)
+
 **Purpose**: Server selection and connection logic
 
 **Responsibilities**:
+
 - Server discovery and filtering
 - Country-based server selection
 - Connection parameter optimization
@@ -132,51 +140,61 @@ vpn list                # List available servers
 - Performance-based selection
 
 **Key Features**:
+
 - Intelligent server ranking
 - Country code mapping (se, dk, nl, etc.)
 - Multiple connection attempts
 - Profile validation
 
 #### 4. Best Profile Engine (`best-vpn-profile` - 104 lines)
+
 **Purpose**: Performance testing and server optimization
 
 **Responsibilities**:
+
 - Test server latency and speed
 - Rank servers by performance
 - Cache performance results
 - Provide optimal server recommendations
 
 **Key Features**:
+
 - Sub-2-second performance testing
 - Result caching for speed
 - Ping and download speed tests
 - Performance scoring algorithm
 
 #### 5. Error Handler (`vpn-error-handler` - 275 lines)
+
 **Purpose**: Centralized error handling and recovery
 
 **Responsibilities**:
+
 - Error message standardization
 - Recovery procedure coordination
 - User feedback management
 - Logging and debugging support
 
 **Key Features**:
+
 - Consistent error messages
 - Recovery suggestions
 - Debug information collection
 - Graceful degradation
 
 #### 6. Config Fixer (`fix-ovpn-configs` - 280 lines)
+
 **Purpose**: OpenVPN configuration file validation and repair
 
 **Responsibilities**:
+
 - Validate OpenVPN config files
 - Fix common configuration issues
 - Ensure compatibility
 - Profile optimization
 
 **Key Features**:
+
 - Config file syntax validation
 - Automatic fixing of common issues
 - DNS configuration handling
@@ -186,7 +204,7 @@ vpn list                # List available servers
 
 ### Basic Connection Flow
 
-```
+```text
 User Command → vpn → vpn-connector → vpn-manager → OpenVPN
      ↓              ↓         ↓             ↓          ↓
   Command        Route    Server        Process    VPN
@@ -199,7 +217,7 @@ handler
 
 ### Performance Testing Flow
 
-```
+```text
 User "best" → best-vpn-profile → Multiple server tests → Ranking
 command                              ↓                      ↓
    ↓                            Ping + Speed tests    Performance
@@ -208,7 +226,7 @@ Result ← vpn-connector ← Optimal server selection ← scoring + cache
 
 ### Error Recovery Flow
 
-```
+```text
 Error occurs → vpn-error-handler → Diagnosis → Recovery action
      ↓               ↓                ↓            ↓
 User feedback ← Error message ← Error analysis ← Cleanup/retry
@@ -217,7 +235,8 @@ User feedback ← Error message ← Error analysis ← Cleanup/retry
 ## File Organization
 
 ### Source Code Structure
-```
+
+```text
 src/
 ├── vpn                    # Main CLI interface (331 lines)
 ├── vpn-manager           # Process management (875 lines)
@@ -230,20 +249,33 @@ Total: ~2,800 lines of focused VPN functionality
 ```
 
 ### Runtime Files
-```
-/tmp/
-├── vpn_manager_$(id -u).log      # VPN manager logs
+
+```text
+$XDG_STATE_HOME/vpn/              # default ~/.local/state/vpn/
+├── vpn_manager.log               # VPN manager logs
 ├── vpn_connect.log               # Connection logs
 ├── vpn_performance.cache         # Performance cache
-└── openvpn.pid                   # OpenVPN process ID
+└── vpn_profiles.cache            # Validated profile list
 
-/var/run/
-├── openvpn.pid                   # System-wide PID file
-└── vpn_manager.lock              # Process lock file
+$XDG_CACHE_HOME/vpn/              # default ~/.cache/vpn/
+└── external_ip.cache             # Last detected external IP
+
+$XDG_RUNTIME_DIR/vpn/             # default /run/user/$UID/vpn/
+├── vpn_connect.lock              # Connection lock
+└── vpn_manager.lock              # Process lock
+
+/run/protonvpn-manager-session/   # root-owned; VPN_SESSION_DIR overrides
+├── profile.ovpn, credentials     # Copies OpenVPN reads while connected
+└── openvpn.log                   # OpenVPN log, readable by your group
+
+/var/run/openvpn.pid              # OpenVPN process ID; VPN_PID_FILE overrides
 ```
+
+No runtime file lives at a fixed name in `/tmp` (shared, so a symlink target).
 
 ### Configuration Files
-```
+
+```text
 locations/                        # OpenVPN config files
 ├── se-45.protonvpn.udp.ovpn      # Sweden server configs
 ├── dk-49.protonvpn.udp.ovpn      # Denmark server configs
@@ -255,6 +287,7 @@ credentials.txt                    # VPN credentials (user-provided)
 ## Dependencies
 
 ### Required System Dependencies
+
 - **OpenVPN**: Core VPN functionality
 - **Bash 4.0+**: Shell execution environment
 - **curl**: External IP detection and speed testing
@@ -262,11 +295,13 @@ credentials.txt                    # VPN credentials (user-provided)
 - **sudo**: Privilege escalation for VPN operations
 
 ### Optional System Dependencies
+
 - **systemd-resolve**: DNS management (Arch Linux)
 - **resolvconf**: DNS management (other systems)
 - **pkill**: Process management (standard on most systems)
 
 ### No Complex Dependencies
+
 - ❌ No Python, Node.js, or other runtime environments
 - ❌ No databases or complex storage systems
 - ❌ No web servers or HTTP frameworks
@@ -276,6 +311,7 @@ credentials.txt                    # VPN credentials (user-provided)
 ## Performance Characteristics
 
 ### Performance Targets (Simple System)
+
 - **VPN Connection**: < 2.0 seconds
 - **Server Testing**: < 5.0 seconds for best server selection
 - **Status Check**: < 0.1 seconds
@@ -283,6 +319,7 @@ credentials.txt                    # VPN credentials (user-provided)
 - **Startup Time**: < 0.5 seconds
 
 ### Optimization Strategies
+
 1. **Caching**: Performance results cached to avoid repeated testing
 2. **Concurrent Testing**: Multiple servers tested in parallel
 3. **Early Exit**: Fast failure detection to avoid timeouts

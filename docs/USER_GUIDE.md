@@ -19,6 +19,7 @@
 Simple VPN Manager is a focused, lightweight VPN management tool for Artix/Arch Linux systems. It follows the Unix philosophy: **"Do one thing and do it right."**
 
 ### What It Does
+
 - **Smart Server Selection**: Automatically finds the best performing VPN server
 - **Safe Process Management**: Prevents multiple OpenVPN processes and handles cleanup
 - **Performance Testing**: Tests server latency and speed for optimal connections
@@ -26,6 +27,7 @@ Simple VPN Manager is a focused, lightweight VPN management tool for Artix/Arch 
 - **Configuration Validation**: Validates and fixes OpenVPN configuration files
 
 ### What It Does NOT Do
+
 - ❌ Complex APIs or web interfaces
 - ❌ Background services or daemons
 - ❌ Enterprise security frameworks
@@ -34,6 +36,7 @@ Simple VPN Manager is a focused, lightweight VPN management tool for Artix/Arch 
 - ❌ Notification systems
 
 ### Performance
+
 - **Connection Time**: < 2 seconds
 - **Server Testing**: < 5 seconds for best server selection
 - **Memory Usage**: < 10MB total
@@ -56,6 +59,7 @@ sudo pacman -S bc iproute2
 ### Setup
 
 1. **Clone the repository**:
+
 ```bash
 git clone https://github.com/maxrantil/protonvpn-manager.git
 cd protonvpn-manager
@@ -63,6 +67,7 @@ git checkout vpn-simple  # Use the simplified version
 ```
 
 2. **Add your VPN credentials**:
+
 ```bash
 # Create credentials file with your ProtonVPN credentials
 echo "your_username" > credentials.txt
@@ -71,6 +76,7 @@ chmod 600 credentials.txt
 ```
 
 3. **Place OpenVPN config files**:
+
 ```bash
 # Download OpenVPN configs from ProtonVPN
 # Place them in the locations/ directory
@@ -81,6 +87,7 @@ chmod 600 credentials.txt
 ```
 
 4. **Test the installation**:
+
 ```bash
 ./src/vpn help
 ```
@@ -109,16 +116,19 @@ chmod 600 credentials.txt
 ### Your First Connection
 
 1. **Connect to the best server**:
+
 ```bash
 ./src/vpn best
 ```
 
 2. **Check your status**:
+
 ```bash
 ./src/vpn status
 ```
 
 3. **When done, disconnect**:
+
 ```bash
 ./src/vpn disconnect
 ```
@@ -128,7 +138,9 @@ chmod 600 credentials.txt
 ### Connection Commands
 
 #### `vpn connect [country]`
+
 Connect to a VPN server.
+
 - Without country: connects to random server
 - With country: connects to specified country (se, dk, nl, etc.)
 
@@ -139,6 +151,7 @@ Connect to a VPN server.
 ```
 
 #### `vpn disconnect`
+
 Disconnect from VPN and clean up processes.
 
 ```bash
@@ -146,6 +159,7 @@ Disconnect from VPN and clean up processes.
 ```
 
 #### `vpn reconnect`
+
 Disconnect and reconnect to current server.
 
 ```bash
@@ -153,6 +167,7 @@ Disconnect and reconnect to current server.
 ```
 
 #### `vpn best`
+
 Connect to the best performing server based on testing.
 
 ```bash
@@ -162,6 +177,7 @@ Connect to the best performing server based on testing.
 ### Information Commands
 
 #### `vpn status`
+
 Show current VPN connection status.
 
 ```bash
@@ -170,7 +186,8 @@ Show current VPN connection status.
 ```
 
 Example output:
-```
+
+```text
 VPN Status: Connected
 Server: se-48.protonvpn.udp
 External IP: 185.159.157.48
@@ -178,6 +195,7 @@ Connected since: 14:30:15
 ```
 
 #### `vpn list`
+
 List available VPN servers.
 
 ```bash
@@ -185,6 +203,7 @@ List available VPN servers.
 ```
 
 #### `vpn test`
+
 Test current connection performance.
 
 ```bash
@@ -194,6 +213,7 @@ Test current connection performance.
 ### Server Selection Commands
 
 #### `vpn fast [country]`
+
 Quick connect using cached performance results.
 
 ```bash
@@ -204,6 +224,7 @@ Quick connect using cached performance results.
 ### System Commands
 
 #### `vpn cleanup`
+
 Clean up VPN processes and routing.
 
 ```bash
@@ -211,6 +232,7 @@ Clean up VPN processes and routing.
 ```
 
 #### `vpn kill`
+
 Force kill all VPN processes (emergency use).
 
 ```bash
@@ -218,6 +240,7 @@ Force kill all VPN processes (emergency use).
 ```
 
 #### `vpn health`
+
 Check system health and VPN status.
 
 ```bash
@@ -227,6 +250,7 @@ Check system health and VPN status.
 ### Help Commands
 
 #### `vpn help`
+
 Show help information and command list.
 
 ```bash
@@ -234,6 +258,7 @@ Show help information and command list.
 ```
 
 #### `vpn version`
+
 Show version information.
 
 ```bash
@@ -246,7 +271,7 @@ Show version information.
 
 Place your ProtonVPN OpenVPN configuration files in the `locations/` directory:
 
-```
+```text
 locations/
 ├── se-45.protonvpn.udp.ovpn    # Sweden servers
 ├── se-46.protonvpn.udp.ovpn
@@ -259,22 +284,23 @@ locations/
 
 Create a `credentials.txt` file in the project root:
 
-```
+```text
 your_protonvpn_username
 your_protonvpn_password
 ```
 
 **Important**: Set secure permissions:
+
 ```bash
 chmod 600 credentials.txt
 ```
 
 ### Performance Cache
 
-The system caches server performance in `/tmp/vpn_performance.cache`. This file is automatically managed but you can delete it to force fresh testing:
+The system caches server performance in `~/.local/state/vpn/vpn_performance.cache` (`$XDG_STATE_HOME/vpn/` when `XDG_STATE_HOME` is set). This file is automatically managed but you can delete it to force fresh testing:
 
 ```bash
-rm /tmp/vpn_performance.cache
+rm ~/.local/state/vpn/vpn_performance.cache
 ```
 
 ## Troubleshooting
@@ -282,38 +308,47 @@ rm /tmp/vpn_performance.cache
 ### Common Issues
 
 #### "No OpenVPN config files found"
+
 **Problem**: No `.ovpn` files in `locations/` directory.
 
 **Solution**:
+
 1. Download OpenVPN configs from ProtonVPN
 2. Place them in the `locations/` directory
 3. Ensure files have `.ovpn` extension
 
 #### "OpenVPN failed to start"
+
 **Problem**: OpenVPN configuration or credentials issue.
 
 **Solutions**:
+
 1. Check credentials file exists and has correct format
 2. Verify OpenVPN is installed: `which openvpn`
 3. Test config manually: `sudo openvpn --config locations/server.ovpn`
 
 #### "Permission denied" errors
+
 **Problem**: Insufficient privileges for VPN operations.
 
 **Solution**: VPN operations require sudo privileges. The tool will prompt for sudo when needed.
 
 #### "Multiple VPN processes detected"
+
 **Problem**: Another VPN connection is running.
 
 **Solutions**:
+
 1. Use `./src/vpn disconnect` to cleanly stop
 2. Use `./src/vpn cleanup` to clean up processes
 3. Use `./src/vpn kill` for emergency cleanup
 
 #### Connection hangs or fails
+
 **Problem**: Network connectivity or server issues.
 
 **Solutions**:
+
 1. Try a different server: `./src/vpn connect [different_country]`
 2. Test network connectivity: `ping google.com`
 3. Check if OpenVPN configs are valid
@@ -322,6 +357,7 @@ rm /tmp/vpn_performance.cache
 ### Debug Information
 
 #### Enable verbose output
+
 Most commands support verbose mode:
 
 ```bash
@@ -329,17 +365,19 @@ Most commands support verbose mode:
 ```
 
 #### Check log files
-Log files are created in `/tmp/`:
+
+Log files are kept in `~/.local/state/vpn/` (`$XDG_STATE_HOME/vpn/` when `XDG_STATE_HOME` is set):
 
 ```bash
 # VPN manager logs
-tail -f /tmp/vpn_manager_$(id -u).log
+tail -f ~/.local/state/vpn/vpn_manager.log
 
 # Connection logs
-tail -f /tmp/vpn_connect.log
+tail -f ~/.local/state/vpn/vpn_connect.log
 ```
 
 #### Manual OpenVPN testing
+
 Test OpenVPN config manually:
 
 ```bash
@@ -356,7 +394,7 @@ If something goes wrong, these commands can help:
 ./src/vpn cleanup
 
 # Reset performance cache
-rm /tmp/vpn_performance.cache
+rm ~/.local/state/vpn/vpn_performance.cache
 
 # Check for remaining processes
 ps aux | grep openvpn
@@ -380,6 +418,7 @@ ps aux | grep openvpn
 ### Workflow Examples
 
 #### Daily Use
+
 ```bash
 # Morning: Connect to best server
 ./src/vpn best
@@ -392,6 +431,7 @@ ps aux | grep openvpn
 ```
 
 #### Country-Specific Usage
+
 ```bash
 # Test and connect to Sweden
 ./src/vpn best           # Find best overall
@@ -400,6 +440,7 @@ ps aux | grep openvpn
 ```
 
 #### Troubleshooting Workflow
+
 ```bash
 # If connection problems
 ./src/vpn disconnect     # Clean disconnect
@@ -411,7 +452,8 @@ ps aux | grep openvpn
 ### Understanding Output
 
 #### Status Command Output
-```
+
+```text
 VPN Status: Connected
 Server: se-48.protonvpn.udp
 External IP: 185.159.157.48
@@ -424,8 +466,10 @@ Connected since: 14:30:15
 - **Connected since**: Connection start time
 
 #### Performance Testing Output
+
 The `best` command shows server testing progress:
-```
+
+```text
 Testing servers for best performance...
 ✓ se-48: 42ms (excellent)
 ✓ dk-49: 55ms (good)
