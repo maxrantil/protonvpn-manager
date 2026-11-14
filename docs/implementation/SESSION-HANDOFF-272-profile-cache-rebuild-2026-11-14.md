@@ -44,6 +44,18 @@ suites that run the real `cleanup`/`kill` skip then); the real OpenVPN survived;
   `set -euo pipefail`. Notes not acted on: `mapfile -d` needs bash 4.4+ (Artix ships
   5.x); a relative path starting with `-` is now accepted (`find` only yields
   absolute paths).
+- code-quality-analyzer: 4.3/5, no must-fix; no accept/reject difference from
+  `validate_profile_path` found. Should-fix not acted on: no test stubs a failing
+  `stat` (only `realpath`); `rebuild_cache` appends one line at a time
+  (`>>` per profile); the filter's exit status is lost in the process substitution.
+- performance-optimizer: 4/5. 1000 profiles 0.2-0.5 s; no per-profile forks left;
+  the 5 s limit is loose but still catches the old 25 s.
+- Both: one `realpath`/`stat` for all paths hits `ARG_MAX` (2 MiB) at about 25k
+  profiles of this machine's path length (44 installed). The count check then falls
+  back to per-profile validation: correct but slow again. Follow-up, not in this PR:
+  validate in chunks of about 500.
+- Combined tree (master + #275 + #276) merges without conflicts; `run_tests.sh`
+  91/0 with the VPN connected, OpenVPN still running afterwards.
 
 ## 🚀 Next Session Priorities
 
