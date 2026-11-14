@@ -237,10 +237,11 @@ VPN:
 - The process safety tests run the real `vpn cleanup`. They are skipped while
   a VPN is running.
 
-Four test files are run by nothing: `tests/cleanup_tests.sh`,
-`health_command_functionality_tests.sh`, `command_completion_tests.sh` and
-`emergency_reset_vs_cleanup_tests.sh`. They call the real `vpn cleanup`, `kill`
-and `emergency-reset` against your real HOME. Never run them by hand while connected.
+`tests/cleanup_tests.sh`, `health_command_functionality_tests.sh`,
+`command_completion_tests.sh` and `emergency_reset_vs_cleanup_tests.sh` run the
+real `vpn cleanup`, `kill` and `emergency-reset` too. They are part of the unit
+suite, use a temporary HOME with sudo blocked, and are skipped while a VPN is
+running (#271).
 
 ## If something fails
 

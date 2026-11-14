@@ -1,43 +1,68 @@
 #!/bin/bash
 # ABOUTME: Tests for VPN cleanup functionality
 # ABOUTME: Verifies that cleanup properly removes stale files and shows clean status
+# Runs the real scripts: HOME isolated and sudo blocked by setup_test_env, skipped while a VPN runs
 
 # Source the test framework
 TEST_DIR="$(dirname "$(realpath "$0")")"
 # shellcheck source=tests/test_framework.sh
 source "$TEST_DIR/test_framework.sh"
 
-test_cleanup_removes_stale_pid() {
-    start_test "Cleanup removes stale PID files"
+# The PID file itself (/var/run/openvpn.pid) is root-owned and outside the
+# test environment; what cleanup removes for the user is tested here
+test_cleanup_removes_stale_locks_and_cache() {
+    start_test "Cleanup removes stale lock and cache files"
 
-    # Create a fake stale PID file (need sudo since real one is created by root)
-    local fake_pid_file="/tmp/test_openvpn_$$.pid"
-    echo "99999" | sudo tee "$fake_pid_file" > /dev/null
+    local lock_dir="$XDG_RUNTIME_DIR/vpn" cache_dir="$XDG_CACHE_HOME/vpn"
+    mkdir -p "$cache_dir"
+    : > "$lock_dir/vpn_manager.lock"
+    : > "$lock_dir/vpn_connect.lock"
+    echo "203.0.113.7" > "$cache_dir/external_ip.cache"
 
-    # Temporarily modify the vpn-manager to use our test file
-    local original_vpn_manager="$PROJECT_DIR/src/vpn-manager"
-    local test_vpn_manager="/tmp/test_vpn_manager_$$"
+    "$PROJECT_DIR/src/vpn" cleanup > /dev/null 2>&1
 
-    # Create a test version that uses our fake PID file
-    sed "s|/var/run/openvpn.pid|$fake_pid_file|g" "$original_vpn_manager" > "$test_vpn_manager"
-    chmod +x "$test_vpn_manager"
-
-    # Run cleanup with test version
-    "$test_vpn_manager" cleanup > /dev/null 2>&1
-
-    # Check if fake PID file was removed
-    if [[ ! -f "$fake_pid_file" ]]; then
-        log_test "PASS" "$CURRENT_TEST: Stale PID file successfully removed"
+    local left
+    left=$(find "$lock_dir" "$cache_dir" -type f \( -name "*.lock" -o -name "*.cache" \))
+    if [[ -d $lock_dir && -d $cache_dir && -z $left ]]; then
+        log_test "PASS" "$CURRENT_TEST: Stale lock and cache files removed"
         ((TESTS_PASSED++))
     else
-        log_test "FAIL" "$CURRENT_TEST: Stale PID file not removed"
+        log_test "FAIL" "$CURRENT_TEST: Left behind: $left"
         FAILED_TESTS+=("$CURRENT_TEST")
         ((TESTS_FAILED++))
     fi
+}
 
-    # Cleanup
-    rm -f "$test_vpn_manager" "$fake_pid_file" 2> /dev/null
-    sudo rm -f "$fake_pid_file" 2> /dev/null || true
+# A lock somebody holds belongs to a running connect: removing it would let a
+# second connect run at the same time
+test_cleanup_keeps_held_lock() {
+    start_test "Cleanup keeps a lock that is held"
+
+    local held="$XDG_RUNTIME_DIR/vpn/vpn_connect.lock" free="$XDG_RUNTIME_DIR/vpn/vpn_manager.lock" result
+    : > "$held"
+    : > "$free"
+    # Held for the duration of the cleanup only (the subshell owns fd 9); the
+    # free lock next to it shows that the cleanup did reach the lock files
+    result=$(
+        exec 9< "$held"
+        flock -n 9 || {
+            echo "lock not acquired"
+            exit
+        }
+        "$PROJECT_DIR/src/vpn" cleanup 2>&1 9<&- | grep -q "cleanup completed" || echo "cleanup did not complete"
+        [[ -f $held ]] || echo "held lock removed"
+        [[ ! -f $free ]] || echo "free lock kept"
+    )
+
+    if [[ -z $result ]]; then
+        log_test "PASS" "$CURRENT_TEST: Held lock left in place, free lock removed"
+        ((TESTS_PASSED++))
+    else
+        log_test "FAIL" "$CURRENT_TEST: $result"
+        FAILED_TESTS+=("$CURRENT_TEST")
+        ((TESTS_FAILED++))
+    fi
+    rm -f "$held" "$free"
 }
 
 test_status_shows_clean_after_cleanup() {
@@ -62,9 +87,6 @@ test_status_shows_clean_after_cleanup() {
 
 test_cleanup_handles_missing_files() {
     start_test "Cleanup handles missing files gracefully"
-
-    # Make sure no PID file exists
-    sudo rm -f /var/run/openvpn.pid 2> /dev/null || true
 
     # Run cleanup (should not error even with missing files)
     local cleanup_output
@@ -104,22 +126,14 @@ test_cleanup_comprehensive() {
     # Check various cleanup aspects
     local issues=0
 
-    # Check PID file
-    if [[ -f /var/run/openvpn.pid ]]; then
-        ((issues++))
-        log_test "INFO" "$CURRENT_TEST: PID file still exists"
-    fi
-
     # Check lock files
-    if [[ -f /tmp/vpn_manager.lock || -f /tmp/vpn_connect.lock ]]; then
+    if [[ -f $XDG_RUNTIME_DIR/vpn/vpn_manager.lock || -f $XDG_RUNTIME_DIR/vpn/vpn_connect.lock ]]; then
         ((issues++))
         log_test "INFO" "$CURRENT_TEST: Lock files still exist"
     fi
 
     # Check for running VPN processes
-    local vpn_processes
-    vpn_processes=$(pgrep -f "openvpn.*config" 2> /dev/null | wc -l)
-    if [[ $vpn_processes -gt 0 ]]; then
+    if vpn_session_running; then
         ((issues++))
         log_test "INFO" "$CURRENT_TEST: VPN processes still running"
     fi
@@ -136,12 +150,22 @@ test_cleanup_comprehensive() {
 
 # Run all cleanup tests
 main() {
+    # The real scripts run here (`vpn cleanup` ends a running OpenVPN): never
+    # on top of a running session, and never with the user's HOME or a working
+    # sudo
+    if vpn_session_running; then
+        log_test "WARN" "SKIP VPN Cleanup Tests: a VPN is running and these tests run the real 'vpn cleanup'; disconnect first (vpn disconnect)"
+        exit 0
+    fi
+    setup_test_env
+
     log_test "INFO" "Starting VPN Cleanup Tests"
     echo "=================================="
     echo "      VPN CLEANUP TESTS"
     echo "=================================="
 
-    test_cleanup_removes_stale_pid
+    test_cleanup_removes_stale_locks_and_cache
+    test_cleanup_keeps_held_lock
     test_status_shows_clean_after_cleanup
     test_cleanup_handles_missing_files
     test_cleanup_requires_sudo_for_system_files

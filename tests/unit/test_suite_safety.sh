@@ -184,7 +184,9 @@ test_suites_leave_running_vpn_and_home_alone() {
     # VPN-running one; that pass is then skipped instead of proving nothing
     [[ -n $OPENVPN_PATTERN ]] && pgrep -f "$OPENVPN_PATTERN" > /dev/null 2>&1 && real_vpn=1
     mkdir -p "$SUDO_ONLY" && cp "$STUBS/sudo" "$SUDO_ONLY/"
-    for suite in simple_regression_tests.sh integration_tests.sh e2e_tests.sh process_safety_tests.sh; do
+    for suite in simple_regression_tests.sh integration_tests.sh e2e_tests.sh process_safety_tests.sh \
+        cleanup_tests.sh health_command_functionality_tests.sh command_completion_tests.sh \
+        emergency_reset_vs_cleanup_tests.sh unit/test_profile_cache.sh; do
         # With a VPN running: the guards must hold
         if start_fake_openvpn; then
             run_suite_isolated "$suite"
@@ -361,6 +363,19 @@ test_src_scripts_never_load_installed_copy() {
         "out=$out; installed files used: $(sort -u "$marker" | tr '\n' ' ')"
 }
 
+# Suites that run the real scripts are only safe as long as something runs
+# them: a file nothing runs drifts until it is unsafe or broken (#271)
+test_isolated_suites_are_registered() {
+    local suite focused
+    # The list unit_tests.sh loops over, not any line that names the file
+    focused=$(sed -n '/local -a focused_suites=(/,/^    )/p' "$TESTS_DIR/unit_tests.sh")
+    for suite in cleanup_tests.sh health_command_functionality_tests.sh command_completion_tests.sh \
+        emergency_reset_vs_cleanup_tests.sh unit/test_profile_cache.sh; do
+        grep -qE "^[[:space:]]+${suite//./\\.}\$" <<< "$focused"
+        report $? "$suite is run by unit_tests.sh" "not in the focused_suites list"
+    done
+}
+
 echo -e "${T_BLUE}========================================${T_NC}"
 echo -e "${T_BLUE}Test Suite Safety Tests${T_NC}"
 echo -e "${T_BLUE}========================================${T_NC}"
@@ -369,6 +384,7 @@ test_exit_codes_skipped_by_default
 test_exit_codes_refuses_with_running_vpn
 test_process_safety_skipped_with_running_vpn
 test_suites_leave_running_vpn_and_home_alone
+test_isolated_suites_are_registered
 test_mock_command_takes_effect
 test_setup_test_env_isolated
 test_fixture_connect_never_reaches_real_sudo

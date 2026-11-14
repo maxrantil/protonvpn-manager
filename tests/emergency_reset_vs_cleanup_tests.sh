@@ -1,6 +1,7 @@
 #!/bin/bash
 # ABOUTME: Tests to ensure proper separation between emergency reset and regular cleanup
 # ABOUTME: Prevents confusion and ensures users know which command disrupts networking
+# Runs the real scripts: HOME isolated and sudo blocked by setup_test_env, skipped while a VPN runs
 
 # Source the test framework
 TEST_DIR="$(dirname "$(realpath "$0")")"
@@ -53,11 +54,16 @@ test_cleanup_vs_emergency_help_distinction() {
 test_emergency_reset_warns_user() {
     start_test "Emergency reset command warns user about network disruption"
 
-    # We'll test the warning without actually restarting NetworkManager
+    # The warning without actually restarting NetworkManager: sudo is blocked
+    # by setup_test_env
     local emergency_output
+    : > "$MOCK_DIR/blocked.log"
     emergency_output=$("$PROJECT_DIR/src/vpn-manager" emergency-reset 2>&1 || true)
 
-    if echo "$emergency_output" | grep -q "EMERGENCY NETWORK RESET.*disrupt internet temporarily"; then
+    # The warning, and the restart it warns about: attempted through sudo,
+    # which the guard refused and logged
+    if echo "$emergency_output" | grep -q "EMERGENCY NETWORK RESET.*disrupt internet temporarily" &&
+        grep -q "restart NetworkManager\|NetworkManager restart" "$MOCK_DIR/blocked.log"; then
         log_test "PASS" "$CURRENT_TEST: Emergency reset properly warns about disruption"
         ((TESTS_PASSED++))
     else
@@ -75,7 +81,8 @@ test_regular_cleanup_no_warning() {
 
     # "prevent network disruption" is informative (good), not a warning (bad)
     # Should NOT contain emergency restart warnings
-    if ! echo "$cleanup_output" | grep -iq "emergency\|restart.*network"; then
+    if echo "$cleanup_output" | grep -q "cleanup completed" &&
+        ! echo "$cleanup_output" | grep -iq "emergency\|restart.*network"; then
         log_test "PASS" "$CURRENT_TEST: Regular cleanup doesn't contain emergency warnings"
         ((TESTS_PASSED++))
     else
@@ -89,7 +96,7 @@ test_emergency_reset_includes_regular_cleanup() {
     start_test "Emergency reset includes regular cleanup functionality"
 
     # Check that emergency_network_reset function calls full_cleanup
-    if grep -A 10 "^emergency_network_reset()" "$PROJECT_DIR/src/vpn-manager" | grep -q "full_cleanup"; then
+    if sed -n '/^emergency_network_reset() {/,/^}/p' "$PROJECT_DIR/src/vpn-manager" | grep -q "full_cleanup"; then
         log_test "PASS" "$CURRENT_TEST: Emergency reset includes regular cleanup"
         ((TESTS_PASSED++))
     else
@@ -104,7 +111,7 @@ test_emergency_reset_has_networkmanager_restart() {
 
     # Check that emergency_network_reset function contains NetworkManager restart
     local emergency_function
-    emergency_function=$(grep -A 20 "^emergency_network_reset()" "$PROJECT_DIR/src/vpn-manager")
+    emergency_function=$(sed -n '/^emergency_network_reset() {/,/^}/p' "$PROJECT_DIR/src/vpn-manager")
 
     if echo "$emergency_function" | grep -q "sv restart NetworkManager\|systemctl restart NetworkManager\|service NetworkManager restart"; then
         log_test "PASS" "$CURRENT_TEST: Emergency reset contains NetworkManager restart"
@@ -175,10 +182,13 @@ test_no_accidental_emergency_calls() {
     # Check that regular commands (kill, cleanup) don't call emergency_network_reset
     local kill_section cleanup_section
 
-    kill_section=$(grep -A 30 "^kill_all_vpn()" "$PROJECT_DIR/src/vpn-manager")
-    cleanup_section=$(grep -A 50 "^full_cleanup()" "$PROJECT_DIR/src/vpn-manager")
+    # The function bodies only: a fixed number of lines runs on into the next
+    # function, which for full_cleanup is emergency_network_reset itself
+    kill_section=$(sed -n '/^kill_all_vpn() {/,/^}/p' "$PROJECT_DIR/src/vpn-manager")
+    cleanup_section=$(sed -n '/^full_cleanup() {/,/^}/p' "$PROJECT_DIR/src/vpn-manager")
 
-    if ! echo "$kill_section" | grep -q "emergency_network_reset" && ! echo "$cleanup_section" | grep -q "emergency_network_reset"; then
+    if [[ -n $kill_section && -n $cleanup_section ]] &&
+        ! echo "$kill_section" | grep -q "emergency_network_reset" && ! echo "$cleanup_section" | grep -q "emergency_network_reset"; then
         log_test "PASS" "$CURRENT_TEST: Regular commands don't call emergency functions"
         ((TESTS_PASSED++))
     else
@@ -190,6 +200,15 @@ test_no_accidental_emergency_calls() {
 
 # Run all emergency reset vs cleanup tests
 main() {
+    # The real scripts run here (`vpn cleanup` ends a running OpenVPN,
+    # `emergency-reset` restarts NetworkManager): never on top of a running
+    # session, and never with the user's HOME or a working sudo
+    if vpn_session_running; then
+        log_test "WARN" "SKIP Emergency Reset vs Cleanup Tests: a VPN is running and these tests run the real 'vpn cleanup' and 'vpn emergency-reset'; disconnect first (vpn disconnect)"
+        exit 0
+    fi
+    setup_test_env
+
     log_test "INFO" "Starting Emergency Reset vs Cleanup Tests"
     echo "================================================="
     echo "      EMERGENCY RESET VS CLEANUP TESTS"
