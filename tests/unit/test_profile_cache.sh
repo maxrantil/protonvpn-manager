@@ -4,17 +4,15 @@
 
 set -euo pipefail
 
-TEST_DIR="$(dirname "$(realpath "$0")")"
-PROJECT_DIR="$(realpath "$TEST_DIR/../..")"
-
-# Source test framework
-source "$PROJECT_DIR/tests/test_framework.sh" 2> /dev/null || {
+# The framework sets TEST_DIR (tests/) and PROJECT_DIR (the checkout)
+source "$(dirname "$(realpath "$0")")/../test_framework.sh" 2> /dev/null || {
     echo "Error: Could not source test framework"
     exit 1
 }
 
-# Fix PROJECT_DIR which the framework overrides to /tests
-PROJECT_DIR="$(realpath "$TEST_DIR/../..")"
+# Sourcing vpn-connector creates its log and cache files under HOME: a
+# temporary one, never the user's (removed by the framework's EXIT trap)
+setup_test_env > /dev/null
 
 # Test counter
 TESTS_RUN=0
@@ -24,9 +22,9 @@ TESTS_FAILED=0
 # Setup test environment
 setup_cache_test_env() {
     # Create temporary directories
-    TEST_TEMP_DIR=$(mktemp -d)
-    export LOCATIONS_DIR="$TEST_TEMP_DIR/locations"
-    export LOG_DIR="$TEST_TEMP_DIR/log"
+    CACHE_TEST_DIR=$(mktemp -d "$TEST_TEMP_DIR/cache_test.XXXXXX")
+    export LOCATIONS_DIR="$CACHE_TEST_DIR/locations"
+    export LOG_DIR="$CACHE_TEST_DIR/log"
     export PROFILE_CACHE="$LOG_DIR/vpn_profiles.cache"
 
     mkdir -p "$LOCATIONS_DIR" "$LOG_DIR"
@@ -50,7 +48,7 @@ EOF
 }
 
 cleanup_cache_test_env() {
-    [[ -n "${TEST_TEMP_DIR:-}" ]] && rm -rf "$TEST_TEMP_DIR"
+    [[ -n "${CACHE_TEST_DIR:-}" ]] && rm -rf "$CACHE_TEST_DIR"
 }
 
 # Source vpn-connector for testing
@@ -60,6 +58,11 @@ source "$PROJECT_DIR/src/vpn-connector" 2> /dev/null || {
     echo "Error: Could not source vpn-connector"
     exit 1
 }
+
+# vpn-connector installed its own EXIT and signal traps when sourced; this
+# test needs both cleanups, the connector's and the framework's
+trap 'cleanup_on_exit; cleanup_test_env > /dev/null' EXIT
+trap 'exit 130' INT TERM HUP
 
 # Test helper functions
 start_test() {
@@ -610,7 +613,7 @@ test_symlink_cache_file_rejected() {
 
     # Create legitimate cache file elsewhere
     local fake_cache
-    fake_cache=$(mktemp)
+    fake_cache=$(mktemp "$CACHE_TEST_DIR/fake_cache.XXXXXX")
     echo "# FAKE CACHE" > "$fake_cache"
 
     # Create symlink as cache file (symlink attack)
@@ -823,8 +826,11 @@ EOF
     local count
     count=$(grep -v "^#" "$LOG_DIR/vpn_profiles.cache" | wc -l)
 
-    # Performance threshold: rebuild should complete in <5 seconds
-    if [[ "$count" -eq 1000 ]] && [[ $duration_ms -lt 5000 ]]; then
+    # Every profile is validated during the rebuild (a few processes each,
+    # about 25 ms), so 1000 profiles take around 25 s. The bound catches a
+    # rebuild that stops scaling linearly, not that known per-profile cost
+    # (#272; the limit was 5 s before validation moved into the rebuild).
+    if [[ "$count" -eq 1000 ]] && [[ $duration_ms -lt 60000 ]]; then
         pass_test
         cleanup_cache_test_env
         return 0
@@ -833,7 +839,7 @@ EOF
         cleanup_cache_test_env
         return 1
     else
-        fail_test "Rebuild took ${duration_ms}ms (expected <5000ms)"
+        fail_test "Rebuild took ${duration_ms}ms (expected <60000ms)"
         cleanup_cache_test_env
         return 1
     fi

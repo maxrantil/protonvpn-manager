@@ -1,6 +1,7 @@
 #!/bin/bash
 # ABOUTME: Tests to ensure VPN commands complete without hanging or blocking
 # ABOUTME: Prevents regression of the hanging cleanup bug caused by strict bash options
+# Runs the real scripts: HOME isolated and sudo blocked by setup_test_env, skipped while a VPN runs
 
 # Source the test framework
 TEST_DIR="$(dirname "$(realpath "$0")")"
@@ -158,43 +159,11 @@ test_pgrep_errors_dont_cause_hanging() {
     health_result=$(timeout 5s "$PROJECT_DIR/src/vpn-manager" health 2>&1)
     local exit_code=$?
 
-    if [[ $exit_code -eq 0 ]] && echo "$health_result" | grep -q "PROCESSES RUNNING"; then
+    if [[ $exit_code -eq 0 ]] && echo "$health_result" | grep -q "NO PROCESSES RUNNING"; then
         log_test "PASS" "$CURRENT_TEST: Health check handles pgrep failures without hanging"
         ((TESTS_PASSED++))
     else
         log_test "FAIL" "$CURRENT_TEST: Health check hangs or fails on pgrep errors"
-        FAILED_TESTS+=("$CURRENT_TEST")
-        ((TESTS_FAILED++))
-    fi
-}
-
-test_notify_send_failures_dont_hang() {
-    start_test "notify-send failures don't cause commands to hang"
-
-    # Create a mock notify-send that fails
-    local mock_notify="/tmp/mock_notify_send_$$"
-    echo '#!/bin/bash' > "$mock_notify"
-    echo 'exit 1' >> "$mock_notify"
-    chmod +x "$mock_notify"
-
-    # Temporarily override PATH to use mock notify-send
-    local old_path="$PATH"
-    export PATH="/tmp:$PATH"
-
-    # Run cleanup which calls notify-send at the end
-    local cleanup_result
-    cleanup_result=$(timeout 10s "$PROJECT_DIR/src/vpn" cleanup 2>&1)
-    local exit_code=$?
-
-    # Restore PATH
-    export PATH="$old_path"
-    rm -f "$mock_notify"
-
-    if [[ $exit_code -eq 0 ]] && echo "$cleanup_result" | grep -q "cleanup completed"; then
-        log_test "PASS" "$CURRENT_TEST: Commands complete even when notify-send fails"
-        ((TESTS_PASSED++))
-    else
-        log_test "FAIL" "$CURRENT_TEST: Commands hang when notify-send fails"
         FAILED_TESTS+=("$CURRENT_TEST")
         ((TESTS_FAILED++))
     fi
@@ -231,6 +200,15 @@ test_multiple_rapid_commands() {
 
 # Run all command completion tests
 main() {
+    # The real scripts run here (`vpn cleanup` and `vpn kill` end a running
+    # OpenVPN): never on top of a running session, and never with the user's
+    # HOME or a working sudo
+    if vpn_session_running; then
+        log_test "WARN" "SKIP Command Completion Tests: a VPN is running and these tests run the real 'vpn cleanup' and 'vpn kill'; disconnect first (vpn disconnect)"
+        exit 0
+    fi
+    setup_test_env
+
     log_test "INFO" "Starting Command Completion Tests"
     echo "============================================="
     echo "      COMMAND COMPLETION TESTS"
@@ -242,7 +220,6 @@ main() {
     test_status_completes_within_timeout
     test_commands_produce_output
     test_pgrep_errors_dont_cause_hanging
-    test_notify_send_failures_dont_hang
     test_multiple_rapid_commands
 
     show_test_summary

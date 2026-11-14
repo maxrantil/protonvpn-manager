@@ -1,6 +1,7 @@
 #!/bin/bash
 # ABOUTME: Tests for VPN health command functionality
 # ABOUTME: Ensures health checks work correctly and provide accurate process status
+# Runs the real scripts: HOME isolated and sudo blocked by setup_test_env, skipped while a VPN runs
 
 # Source the test framework
 TEST_DIR="$(dirname "$(realpath "$0")")"
@@ -30,7 +31,7 @@ test_health_command_accessible() {
     health_result=$("$PROJECT_DIR/src/vpn" health 2>&1)
     local exit_code=$?
 
-    if [[ $exit_code -eq 0 ]] && echo "$health_result" | grep -q "PROCESSES RUNNING"; then
+    if [[ $exit_code -eq 0 ]] && echo "$health_result" | grep -q "NO PROCESSES RUNNING"; then
         log_test "PASS" "$CURRENT_TEST: Health command accessible via main script"
         ((TESTS_PASSED++))
     else
@@ -182,6 +183,18 @@ test_health_performance() {
 
 # Run all health command tests
 main() {
+    # The real scripts run here (`vpn kill` ends a running OpenVPN, and a real
+    # one would be counted with the fake ones): never on top of a running
+    # session, and never with the user's HOME or a working sudo
+    if vpn_session_running; then
+        log_test "WARN" "SKIP Health Command Functionality Tests: a VPN is running and these tests run the real 'vpn kill'; disconnect first (vpn disconnect)"
+        exit 0
+    fi
+    setup_test_env
+    # An interrupted run must not leave its fake OpenVPN processes behind
+    # shellcheck disable=SC2046  # one PID per word
+    trap 'kill $(jobs -p) 2> /dev/null; cleanup_test_env' EXIT
+
     log_test "INFO" "Starting Health Command Functionality Tests"
     echo "================================================="
     echo "      HEALTH COMMAND FUNCTIONALITY TESTS"

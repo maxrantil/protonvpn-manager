@@ -255,6 +255,11 @@ run_unit_tests() {
         phase5_fast_switching_tests.sh
         phase5_secure_core_tests.sh
         phase5_wireguard_tests.sh
+        unit/test_profile_cache.sh
+        cleanup_tests.sh
+        health_command_functionality_tests.sh
+        command_completion_tests.sh
+        emergency_reset_vs_cleanup_tests.sh
     )
     for suite in "${focused_suites[@]}"; do
         log_test "INFO" "Running $suite"
