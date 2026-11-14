@@ -1,302 +1,69 @@
-# ProtonVPN Production Testing Suite
+# Testing
 
-## Overview
+How the test suite is organised, how to run it, and what keeps it safe on a
+machine that is in use. The safety rules themselves are tested:
+`tests/unit/test_suite_safety.sh`.
 
-This comprehensive testing suite validates the ProtonVPN production deployment system for reliability, security, and performance. The testing strategy addresses critical gaps identified in the codebase and provides robust validation for recent security fixes.
-
-## Test Architecture
-
-### Test Categories
-
-1. **Security Validation Tests** (`test_security_validation.sh`)
-   - Command injection prevention
-   - Path traversal protection
-   - Input sanitization verification
-   - Permission enforcement validation
-   - Service name validation
-   - PID file security
-   - Systemd security features
-
-2. **Installation Robustness Tests** (`test_installation.sh`)
-   - Basic installation scenarios
-   - Permission validation
-   - User creation edge cases
-   - Partial installation recovery
-   - Installation rollback procedures
-   - Configuration file creation
-   - Service file generation
-
-3. **Service Management Tests** (`test_service_management.sh`)
-   - Service status checking
-   - Service lifecycle operations
-   - Individual service management
-   - Health check functionality
-   - Log management
-   - Error handling
-   - Directory management
-   - Service dependencies
-
-4. **Mock Framework** (`test_mocking_framework.sh`)
-   - Non-privileged testing capabilities
-   - System command mocking
-   - State simulation
-   - Network operation mocking
-
-5. **Comprehensive Test Runner** (`test_comprehensive_runner.sh`)
-   - Orchestrates all test suites
-   - Environment setup and cleanup
-   - Test reporting and analysis
-
-## Quick Start
-
-### Run All Tests
+## Running
 
 ```bash
-cd $HOME/workspace/claude-code/vpn/tests
-./test_comprehensive_runner.sh
-```
-
-### Run Specific Test Categories
-
-```bash
-# Security tests only
-./test_comprehensive_runner.sh security
-
-# Installation tests only
-./test_comprehensive_runner.sh installation
-
-# Service management tests only
-./test_comprehensive_runner.sh service
-```
-
-### Run Individual Test Suites
-
-```bash
-# Security validation
-./test_security_validation.sh
-
-# Installation robustness
-./test_installation.sh
-
-# Service management
-./test_service_management.sh
-```
-
-## Test Environment
-
-### Mock Framework Features
-
-- **Non-privileged execution**: Tests system operations without requiring root
-- **Systemctl simulation**: Mock systemd operations with state tracking
-- **User management mocking**: Simulates user/group creation and management
-- **File system operation mocking**: Safe testing of permission changes
-- **Network command mocking**: VPN operation simulation
-
-### Test Isolation
-
-- Temporary directories for all test operations
-- Mock state management for consistent test results
-- Automatic cleanup on test completion
-- No modification of production system files
-
-## Security Testing Focus
-
-### Recently Fixed Vulnerabilities
-
-The security test suite specifically validates fixes for:
-
-1. **Command Injection Prevention**
-   - Service name validation in protonvpn-service-manager
-   - Input sanitization in logging functions
-   - Shell metacharacter filtering
-
-2. **Path Traversal Protection**
-   - Configuration file path validation in secure-config-manager
-   - Realpath canonicalization verification
-   - Directory boundary enforcement
-
-3. **Permission Hardening**
-   - PID file permission validation
-   - Service file ownership verification
-   - Directory security enforcement
-
-### Security Test Scenarios
-
-- Malicious input injection attempts
-- Path traversal attack simulation
-- Log injection prevention testing
-- Permission escalation prevention
-- Service name spoofing attempts
-
-## Installation Testing Strategy
-
-### Robustness Scenarios
-
-- Complete installation from scratch
-- Partial failure recovery procedures
-- User and group creation edge cases
-- Directory permission validation
-- Configuration file generation
-- Service file deployment
-
-### Error Recovery Testing
-
-- Installation rollback procedures
-- Cleanup verification
-- State consistency validation
-- Permission restoration
-
-## Service Management Testing
-
-### Lifecycle Testing
-
-- Service start/stop/restart operations
-- Individual service management
-- Service dependency validation
-- Health monitoring verification
-
-### Error Handling
-
-- Invalid service name rejection
-- Missing dependency handling
-- Permission error simulation
-- Resource limit enforcement
-
-## Test Reporting
-
-### Automated Reporting
-
-- Comprehensive test execution logs
-- Pass/fail statistics by category
-- Failed test identification
-- Performance metrics
-- Security validation results
-
-### Report Output
-
-Test reports are generated in the project directory with format:
-`test_report_YYYYMMDD_HHMMSS.txt`
-
-Reports include:
-
-- Test suite execution summary
-- Individual test results
-- Failed test details
-- Environment information
-- Recommendations for fixes
-
-## CI/CD Integration
-
-### Automation Ready
-
-- Exit codes for CI/CD pipeline integration
-- Standardized output formats
-- Environment variable configuration
-- Mock framework for containerized testing
-
-### Recommended CI/CD Usage
-
-```bash
-# In CI/CD pipeline
 cd tests
-./test_comprehensive_runner.sh all
-# Exit code 0 = all tests passed
-# Exit code 1 = some tests failed
+./run_tests.sh              # everything (about 5 minutes)
+./run_tests.sh --unit-only  # unit suite only
+bash unit/test_kill_switch.sh   # one file
 ```
 
-## Test Data Management
+The suite is safe to run while you work, also next to a running VPN. See
+"Running the test suite on this machine" in `docs/MACHINE-VALIDATION.md` for
+the two parts that can use the real VPN (`VPN_LIVE_TESTS=1`).
 
-### Mock Data Strategy
+## What runs what
 
-- Realistic but safe test configurations
-- Temporary file management
-- State isolation between tests
-- Automatic cleanup procedures
+| Runner | Runs |
+| --- | --- |
+| `run_tests.sh` | `unit_tests.sh`, `integration_tests.sh`, `e2e_tests.sh`, `realistic_connection_tests.sh`, `process_safety_tests.sh`, `test_flock_lock_implementation.sh`, `test_exit_codes.sh` (live, skipped by default) |
+| `unit_tests.sh` | its own tests, then every file in its `focused_suites` list (`unit/`, `security/`, `integration/` and the single-topic files in `tests/`) |
+| `integration_tests.sh` | its own tests and `simple_regression_tests.sh` |
+| CI (`.github/workflows/run-tests.yml`) | `run_tests.sh`, then `install.sh` and `smoke/run_smoke_tests.sh` |
 
-### Test Fixtures
+Run by hand, on purpose:
 
-- Sample configuration files
-- Mock service definitions
-- Test user/group data
-- Network configuration samples
+- `benchmark_profile_cache.sh`: timings of the profile cache (uses a temporary HOME)
+- `test_github_workflows.sh`: local check of the workflow rules; runs the unit
+  suite and pre-commit itself
+- `smoke/docker/run_docker_tests.sh`: installation in Docker images
+  (`smoke/README.md`)
 
-## Performance Considerations
+## Adding a test file
 
-### Test Execution Time
+1. Start the file with the two `# ABOUTME:` lines.
+2. Use `test_framework.sh` (`setup_test_env`) or a private `mktemp -d`
+   directory. Nothing may be written to the real HOME, the runtime directory
+   or a fixed name in `/tmp`.
+3. Add the file to `focused_suites` in `unit_tests.sh` (or to the list of
+   files run by hand in `unit/test_suite_safety.sh`, with the reason). A
+   script under `tests/` that nothing runs fails the safety tests.
+4. If the file runs the real scripts (`vpn cleanup`, `kill`, `connect`, …),
+   skip while `vpn_session_running` is true and add it to the isolated-run
+   list in `unit/test_suite_safety.sh`.
 
-- Security tests: ~2-3 minutes
-- Installation tests: ~3-5 minutes
-- Service management tests: ~2-4 minutes
-- Complete suite: ~10-15 minutes
+## The test environment (`setup_test_env`)
 
-### Resource Usage
+| Real system | In tests |
+| --- | --- |
+| `HOME`, `XDG_*` directories | inside a temporary directory |
+| `sudo` | refuses; every attempt is logged in `$MOCK_DIR/blocked.log` |
+| `curl` | fails (no network lookups); mock it with `mock_command curl …` |
+| `/var/run/openvpn.pid` | `VPN_PID_FILE` inside the temporary directory |
+| `/run/protonvpn-manager-session` | `VPN_SESSION_DIR` inside the temporary directory |
 
-- Minimal system resource impact
-- Temporary directory usage only
-- No permanent system modifications
-- Safe for production environment testing
+Helpers for tests that need an OpenVPN-like process: `start_fake_openvpn`
+(returns once the scripts' own pattern finds the process) and
+`foreign_openvpn_running`.
 
-## Troubleshooting
+## Known limit
 
-### Common Issues
-
-1. **Permission Errors**: Ensure test scripts are executable
-2. **Missing Dependencies**: Install required system tools
-3. **Mock Framework Failures**: Check temporary directory permissions
-4. **Test Timeouts**: Increase timeout values in test configuration
-
-### Debug Mode
-
-Run tests with debug output:
-
-```bash
-bash -x ./test_security_validation.sh
-```
-
-### Live VPN Tests
-
-`test_exit_codes.sh` makes real VPN connections with your profiles and
-credentials and stops the VPN between cases. It is skipped unless
-`VPN_LIVE_TESTS=1` is set, and refuses to run while a VPN is connected:
-
-```bash
-vpn disconnect && VPN_LIVE_TESTS=1 ./test_exit_codes.sh
-```
-
-### Log Analysis
-
-Test logs are available in:
-
-- Individual test output files
-- Mock framework state directories
-- Comprehensive test reports
-
-## Contributing
-
-### Adding New Tests
-
-1. Follow naming convention: `test_[category].sh`
-2. Include test description comments
-3. Use consistent logging functions
-4. Implement proper cleanup procedures
-5. Add to comprehensive test runner
-
-### Test Standards
-
-- All tests must run without root privileges
-- Use mock framework for system operations
-- Include both positive and negative test cases
-- Provide clear pass/fail criteria
-- Document test scenarios and expected outcomes
-
-## Security Validation Summary
-
-This testing suite specifically addresses the security vulnerabilities recently fixed:
-
-✅ **Command Injection Prevention**: Validated through malicious input testing
-✅ **Path Traversal Protection**: Verified through canonicalization testing
-✅ **Input Sanitization**: Confirmed through log injection testing
-✅ **Permission Hardening**: Validated through file permission testing
-✅ **Service Validation**: Confirmed through service name validation testing
-
-The comprehensive testing approach ensures that security fixes are properly implemented and cannot be bypassed through alternative attack vectors.
+The scripts find OpenVPN by process name. A user-owned OpenVPN that starts in
+the middle of a test run, after the `vpn_session_running` check, can still be
+ended by a test that runs `vpn kill` or `vpn cleanup`. A root-owned one (what
+this tool starts) is safe: ending it needs sudo, which the tests block.

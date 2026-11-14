@@ -44,10 +44,10 @@ test_health_command_accessible() {
 # The health report counts every process that looks like OpenVPN. A foreign
 # one (started by somebody else during the run) makes the counts meaningless:
 # the test is then skipped instead of failing or passing by accident.
-# Args: $1 = what the test expected to be running (PIDs, may be empty)
+# Args: $1 = the PIDs the test started itself (may be empty)
 skip_if_foreign_openvpn() {
     # shellcheck disable=SC2086  # one PID per word
-    only_these_openvpn_running $1 && return 1
+    foreign_openvpn_running $1 || return 1
     log_test "SKIP" "$CURRENT_TEST: another OpenVPN-like process is running, the count cannot be checked"
     return 0
 }
@@ -55,6 +55,15 @@ skip_if_foreign_openvpn() {
 stop_fake_openvpn() {
     kill "$@" 2> /dev/null || true
     wait "$@" 2> /dev/null || true
+}
+
+# A fake process that does not start is a failure of the test, never a skip
+# Args: the PIDs started so far (stopped again)
+fail_fake_not_started() {
+    [[ $# -eq 0 ]] || stop_fake_openvpn "$@"
+    log_test "FAIL" "$CURRENT_TEST: fake OpenVPN process did not start"
+    FAILED_TESTS+=("$CURRENT_TEST")
+    ((TESTS_FAILED++))
 }
 
 test_health_reports_no_processes() {
@@ -82,9 +91,7 @@ test_health_detects_single_process() {
 
     local fake_pid health_output foreign=0
     if ! start_fake_openvpn config; then
-        log_test "FAIL" "$CURRENT_TEST: fake OpenVPN process did not start"
-        FAILED_TESTS+=("$CURRENT_TEST")
-        ((TESTS_FAILED++))
+        fail_fake_not_started "$FAKE_OPENVPN_PID"
         return
     fi
     fake_pid=$FAKE_OPENVPN_PID
@@ -108,9 +115,15 @@ test_health_detects_multiple_processes() {
     start_test "Health command correctly detects multiple VPN processes as critical"
 
     local fake_pid1 fake_pid2 health_output exit_code foreign=0
-    start_fake_openvpn config1
+    if ! start_fake_openvpn config1; then
+        fail_fake_not_started "$FAKE_OPENVPN_PID"
+        return
+    fi
     fake_pid1=$FAKE_OPENVPN_PID
-    start_fake_openvpn config2
+    if ! start_fake_openvpn config2; then
+        fail_fake_not_started "$fake_pid1" "$FAKE_OPENVPN_PID"
+        return
+    fi
     fake_pid2=$FAKE_OPENVPN_PID
 
     health_output=$("$PROJECT_DIR/src/vpn" health 2>&1)
@@ -144,13 +157,19 @@ test_health_returns_correct_exit_codes() {
     skip_if_foreign_openvpn "" && return
 
     # Create single process and test (should return 0)
-    start_fake_openvpn config
+    if ! start_fake_openvpn config; then
+        fail_fake_not_started "$FAKE_OPENVPN_PID"
+        return
+    fi
     fake_pid1=$FAKE_OPENVPN_PID
     "$PROJECT_DIR/src/vpn" health > /dev/null 2>&1
     single_proc_exit=$?
 
     # Create multiple processes and test (should return 1)
-    start_fake_openvpn config2
+    if ! start_fake_openvpn config2; then
+        fail_fake_not_started "$fake_pid1" "$FAKE_OPENVPN_PID"
+        return
+    fi
     fake_pid2=$FAKE_OPENVPN_PID
     "$PROJECT_DIR/src/vpn" health > /dev/null 2>&1
     multi_proc_exit=$?

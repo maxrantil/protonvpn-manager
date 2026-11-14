@@ -80,11 +80,9 @@ test_commands_complete_without_hanging() {
 test_process_pattern_specificity() {
     start_test "Process detection pattern is specific"
 
-    # Test that the pattern in the code is the corrected one. The anchored
-    # pattern is now shared via OPENVPN_PGREP_PATTERN in vpn-validators.
-    if grep -q "pgrep -f \"\\^openvpn.*--config\"" "$PROJECT_DIR/src/vpn-manager" ||
-        { grep -q 'pgrep -f "$OPENVPN_PGREP_PATTERN"' "$PROJECT_DIR/src/vpn-manager" &&
-            grep -qF "OPENVPN_PGREP_PATTERN='(^|/)openvpn .*--config'" "$PROJECT_DIR/src/vpn-validators"; }; then
+    # The anchored pattern is shared via OPENVPN_PGREP_PATTERN in vpn-validators
+    if grep -q 'pgrep -f "$OPENVPN_PGREP_PATTERN"' "$PROJECT_DIR/src/vpn-manager" &&
+        grep -qF "OPENVPN_PGREP_PATTERN='(^|/)openvpn .*--config'" "$PROJECT_DIR/src/vpn-validators"; then
         log_test "PASS" "$CURRENT_TEST: Specific process pattern in use"
         ((TESTS_PASSED++))
     else

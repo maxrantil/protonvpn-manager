@@ -259,17 +259,20 @@ start_fake_openvpn() {
         pgrep -f "$pattern" 2> /dev/null | grep -qx "$FAKE_OPENVPN_PID" && return 0
         sleep 0.1
     done
+    echo "start_fake_openvpn: PID $FAKE_OPENVPN_PID never matched the pattern '$pattern'" >&2
     return 1
 }
 
-# True if the processes the scripts take for OpenVPN are exactly the given
-# PIDs: a test that counts processes proves nothing while a foreign one runs
-# Args: the expected PIDs (none: no OpenVPN-like process at all)
-only_these_openvpn_running() {
-    local found expected
-    found=$(pgrep -f "$(openvpn_process_pattern)" 2> /dev/null | sort -n | tr '\n' ' ')
-    expected=$(printf '%s\n' "$@" | sed '/^$/d' | sort -n | tr '\n' ' ')
-    [[ $found == "$expected" ]]
+# True if a process the scripts take for OpenVPN runs that is not one of the
+# given PIDs: a test that counts processes proves nothing while it does. (An
+# expected PID that is missing is not "foreign": that is for the test to fail on.)
+# Args: the PIDs the test started itself (none: any OpenVPN-like process is foreign)
+foreign_openvpn_running() {
+    local pid
+    for pid in $(pgrep -f "$(openvpn_process_pattern)" 2> /dev/null); do
+        [[ " $* " == *" $pid "* ]] || return 0
+    done
+    return 1
 }
 
 setup_test_env() {
@@ -301,6 +304,12 @@ setup_test_env() {
 
     # Never the system's PID file or session directory (both root-owned on a
     # real system): tests can create a stale PID file or session copies here
+    # (the caller's own values, if any, are restored by cleanup_test_env)
+    if [[ -z ${ORIGINAL_VPN_PATHS_SAVED:-} ]]; then
+        ORIGINAL_VPN_PATHS_SAVED=1
+        ORIGINAL_VPN_PID_FILE=${VPN_PID_FILE-}
+        ORIGINAL_VPN_SESSION_DIR=${VPN_SESSION_DIR-}
+    fi
     export VPN_PID_FILE="$TEST_TEMP_DIR/openvpn.pid"
     export VPN_SESSION_DIR="$TEST_TEMP_DIR/session"
 
@@ -390,7 +399,12 @@ cleanup_test_env() {
         IFS='|' read -r XDG_CONFIG_HOME XDG_STATE_HOME XDG_CACHE_HOME XDG_RUNTIME_DIR <<< "$ORIGINAL_XDG"
         export XDG_CONFIG_HOME XDG_STATE_HOME XDG_CACHE_HOME XDG_RUNTIME_DIR
         ORIGINAL_HOME=""
+    fi
+    if [[ -n ${ORIGINAL_VPN_PATHS_SAVED:-} ]]; then
         unset VPN_PID_FILE VPN_SESSION_DIR
+        [[ -z $ORIGINAL_VPN_PID_FILE ]] || export VPN_PID_FILE=$ORIGINAL_VPN_PID_FILE
+        [[ -z $ORIGINAL_VPN_SESSION_DIR ]] || export VPN_SESSION_DIR=$ORIGINAL_VPN_SESSION_DIR
+        ORIGINAL_VPN_PATHS_SAVED=""
     fi
     if [[ -n "${LATENCY_FIXTURE_HOME:-}" ]] && [[ -d "$LATENCY_FIXTURE_HOME" ]]; then
         rm -rf "$LATENCY_FIXTURE_HOME"
