@@ -260,6 +260,8 @@ run_unit_tests() {
         health_command_functionality_tests.sh
         command_completion_tests.sh
         emergency_reset_vs_cleanup_tests.sh
+        test_vpn_utils.sh
+        security/test_pid_validation.sh
     )
     for suite in "${focused_suites[@]}"; do
         log_test "INFO" "Running $suite"

@@ -58,7 +58,9 @@ if [[ $actual_perms != "700" ]]; then
     exit 1
 fi
 
-VPN_PID_FILE="/var/run/openvpn.pid"
+# PID file of the OpenVPN daemon (root-owned). Like VPN_SESSION_DIR, the
+# location can be overridden so that tests never touch the system's file
+VPN_PID_FILE="${VPN_PID_FILE:-/var/run/openvpn.pid}"
 VPN_LOG_FILE="$LOG_DIR/vpn_manager.log"
 LOCK_FILE="$LOCK_DIR/vpn_manager.lock"
 
@@ -827,8 +829,6 @@ full_cleanup() {
         echo "Cleaning up temporary files..."
         # Clean secure cache directory (XDG cache)
         rm -f "$CACHE_DIR"/*.cache 2> /dev/null || true
-        # Legacy cleanup for old /tmp files (can be removed after transition period)
-        rm -f /tmp/vpn_*.cache /tmp/vpn_*.lock 2> /dev/null || true
 
         cleanup_files
         cleanup_routes_light

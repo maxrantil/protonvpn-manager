@@ -8,8 +8,6 @@ TEST_DIR="$(dirname "$(realpath "$0")")"
 # shellcheck source=tests/test_framework.sh
 source "$TEST_DIR/test_framework.sh"
 
-# The PID file itself (/var/run/openvpn.pid) is root-owned and outside the
-# test environment; what cleanup removes for the user is tested here
 test_cleanup_removes_stale_locks_and_cache() {
     start_test "Cleanup removes stale lock and cache files"
 
@@ -65,24 +63,67 @@ test_cleanup_keeps_held_lock() {
     rm -f "$held" "$free"
 }
 
-test_status_shows_clean_after_cleanup() {
-    start_test "Status shows clean state after cleanup"
+# A PID that is certainly not running: a child that has already been reaped
+dead_pid() {
+    local pid
+    true &
+    pid=$!
+    wait "$pid"
+    echo "$pid"
+}
 
-    # Run cleanup
+# setup_test_env points VPN_PID_FILE into the test directory, so a stale PID
+# file (OpenVPN died without removing it) can be made and observed
+test_status_warns_about_stale_pid_until_cleanup() {
+    start_test "Status warns about a stale PID file until cleanup removes it"
+
+    local before after
+    dead_pid > "$VPN_PID_FILE"
+    before=$("$PROJECT_DIR/src/vpn" status 2>&1)
     "$PROJECT_DIR/src/vpn" cleanup > /dev/null 2>&1
+    after=$("$PROJECT_DIR/src/vpn" status 2>&1)
 
-    # Check status output doesn't contain stale file warnings
-    local status_output
-    status_output=$("$PROJECT_DIR/src/vpn" status 2>&1)
-
-    if ! echo "$status_output" | grep -q "Warning:.*Stale.*PID"; then
-        log_test "PASS" "$CURRENT_TEST: Status shows clean state"
+    if [[ $before == *"Stale PID file"* && ! -e $VPN_PID_FILE && $after == *"DISCONNECTED"* && $after != *"Stale PID file"* ]]; then
+        log_test "PASS" "$CURRENT_TEST: Warning shown, PID file removed, status clean afterwards"
         ((TESTS_PASSED++))
     else
-        log_test "FAIL" "$CURRENT_TEST: Status still shows stale PID warning"
+        log_test "FAIL" "$CURRENT_TEST: before: $(grep -i "stale" <<< "$before"); file left: $([[ -e $VPN_PID_FILE ]] && echo yes || echo no); after: $(grep -iE "stale|status:" <<< "$after")"
         FAILED_TESTS+=("$CURRENT_TEST")
         ((TESTS_FAILED++))
     fi
+    rm -f "$VPN_PID_FILE"
+}
+
+# The PID in a stale file may by now belong to something else (PID reuse):
+# neither cleanup nor kill may end that process
+test_stale_pid_file_never_ends_another_process() {
+    start_test "A stale PID file naming another process does not get that process killed"
+
+    local bystander result=""
+    sleep 60 &
+    bystander=$!
+
+    echo "$bystander" > "$VPN_PID_FILE"
+    "$PROJECT_DIR/src/vpn" cleanup > /dev/null 2>&1
+    kill -0 "$bystander" 2> /dev/null || result+="ended by cleanup; "
+
+    echo "$bystander" > "$VPN_PID_FILE"
+    "$PROJECT_DIR/src/vpn" kill > /dev/null 2>&1
+    kill -0 "$bystander" 2> /dev/null || result+="ended by kill; "
+    [[ ! -e $VPN_PID_FILE ]] || result+="PID file left behind; "
+
+    kill "$bystander" 2> /dev/null
+    wait "$bystander" 2> /dev/null
+
+    if [[ -z $result ]]; then
+        log_test "PASS" "$CURRENT_TEST: Process left running, stale PID file removed"
+        ((TESTS_PASSED++))
+    else
+        log_test "FAIL" "$CURRENT_TEST: $result"
+        FAILED_TESTS+=("$CURRENT_TEST")
+        ((TESTS_FAILED++))
+    fi
+    rm -f "$VPN_PID_FILE"
 }
 
 test_cleanup_handles_missing_files() {
@@ -103,18 +144,60 @@ test_cleanup_handles_missing_files() {
     fi
 }
 
-test_cleanup_requires_sudo_for_system_files() {
-    start_test "Cleanup uses sudo for system files when needed"
+# OpenVPN writes the PID file as root: where the user cannot remove it,
+# cleanup has to ask sudo (the test sudo refuses and logs the request)
+test_cleanup_uses_sudo_for_pid_file_it_cannot_remove() {
+    start_test "Cleanup uses sudo for a PID file it cannot remove itself"
 
-    # Check that cleanup_files function in vpn-manager uses sudo
-    if grep -q "sudo rm.*VPN_PID_FILE" "$PROJECT_DIR/src/vpn-manager"; then
-        log_test "PASS" "$CURRENT_TEST: Cleanup uses sudo for system files"
+    if [[ $EUID -eq 0 ]]; then
+        log_test "SKIP" "$CURRENT_TEST: running as root, every file is removable"
+        return
+    fi
+
+    local original_pid_file=$VPN_PID_FILE locked_dir="$TEST_TEMP_DIR/root-owned"
+    mkdir -p "$locked_dir"
+    export VPN_PID_FILE="$locked_dir/openvpn.pid"
+    dead_pid > "$VPN_PID_FILE"
+    chmod 555 "$locked_dir"
+    : > "$MOCK_DIR/blocked.log"
+
+    "$PROJECT_DIR/src/vpn" cleanup > /dev/null 2>&1
+
+    if grep -qxF "rm -f $VPN_PID_FILE" "$MOCK_DIR/blocked.log"; then
+        log_test "PASS" "$CURRENT_TEST: sudo rm requested for the PID file"
         ((TESTS_PASSED++))
     else
-        log_test "FAIL" "$CURRENT_TEST: Cleanup doesn't handle sudo for system files"
+        log_test "FAIL" "$CURRENT_TEST: no 'sudo rm -f $VPN_PID_FILE'; sudo log: $(tr '\n' ';' < "$MOCK_DIR/blocked.log")"
         FAILED_TESTS+=("$CURRENT_TEST")
         ((TESTS_FAILED++))
     fi
+    chmod 755 "$locked_dir"
+    rm -rf "$locked_dir"
+    export VPN_PID_FILE=$original_pid_file
+}
+
+# Files in the shared /tmp are not this tool's to remove (the caches and locks
+# moved to the XDG directories long ago)
+test_cleanup_leaves_shared_tmp_alone() {
+    start_test "Cleanup removes nothing from the shared /tmp"
+
+    local probe
+    probe=$(mktemp "/tmp/vpn_cleanup_probe_XXXXXX.cache") || {
+        log_test "SKIP" "$CURRENT_TEST: /tmp is not writable"
+        return
+    }
+
+    "$PROJECT_DIR/src/vpn" cleanup > /dev/null 2>&1
+
+    if [[ -f $probe ]]; then
+        log_test "PASS" "$CURRENT_TEST: /tmp/vpn_*.cache left in place"
+        ((TESTS_PASSED++))
+    else
+        log_test "FAIL" "$CURRENT_TEST: cleanup removed $probe"
+        FAILED_TESTS+=("$CURRENT_TEST")
+        ((TESTS_FAILED++))
+    fi
+    rm -f "$probe"
 }
 
 test_cleanup_comprehensive() {
@@ -166,9 +249,11 @@ main() {
 
     test_cleanup_removes_stale_locks_and_cache
     test_cleanup_keeps_held_lock
-    test_status_shows_clean_after_cleanup
+    test_status_warns_about_stale_pid_until_cleanup
+    test_stale_pid_file_never_ends_another_process
     test_cleanup_handles_missing_files
-    test_cleanup_requires_sudo_for_system_files
+    test_cleanup_uses_sudo_for_pid_file_it_cannot_remove
+    test_cleanup_leaves_shared_tmp_alone
     test_cleanup_comprehensive
 
     show_test_summary

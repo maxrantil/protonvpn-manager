@@ -102,11 +102,46 @@ test_country_selection() {
     report $? "selection succeeds (exit 0) under set -euo pipefail, also when nothing matches" "exit codes:$bad"
 }
 
+# A country code ends up in file name matching: anything but a supported
+# two-letter code must be refused before it gets there (path traversal,
+# command injection). Through the real command, as a user would type it.
+test_malicious_country_codes_rejected() {
+    local code out accepted="" outside="$WORK_DIR/outside"
+    mkdir -p "$outside" && printf 'client\n' > "$outside/se-outside.ovpn"
+    # (a real NUL cannot be passed as an argument; "\n" here is the two
+    # characters, $'se\nse' a real newline; the last entry ends in a Cyrillic е)
+    local -a codes=(
+        "../" ".." "/e" "\\" "\n" "./" "s;" "s|" "s&" "\$(" "\`s"
+        "../../etc/passwd" "../../../" "se/../../etc" "../outside/se"
+        $'se\nse' "se " " se" "s*" "??" "-h" "--" "sе"
+    )
+    for code in "${codes[@]}"; do
+        out=$("$SRC_DIR/vpn-connector" list "$code" 2>&1)
+        if ! grep -aq "security validation failed" <<< "$out" || grep -aq "se-outside" <<< "$out"; then
+            accepted+=" $(printf '%q' "$code")"
+        fi
+    done
+    [[ -z $accepted ]]
+    report $? "${#codes[@]} malicious country codes are refused by 'vpn-connector list'" "not refused:$accepted"
+
+    # Accepted means: exit 0 and the country's fixture profile is listed
+    local rejected="" rc entry
+    for entry in se:se-1 SE:se-1 dk:dk-120 us:us-ca-11 ca:ca-qc-02; do
+        code=${entry%%:*}
+        rc=0
+        out=$("$SRC_DIR/vpn-connector" list "$code" 2>&1) || rc=$?
+        [[ $rc -eq 0 && $out == *"${entry#*:}"* ]] || rejected+=" $code(exit $rc)"
+    done
+    [[ -z $rejected ]]
+    report $? "supported country codes are still accepted and list their profiles" "refused:$rejected"
+}
+
 echo -e "${T_BLUE}========================================${T_NC}"
 echo -e "${T_BLUE}Country Selection Test Suite${T_NC}"
 echo -e "${T_BLUE}========================================${T_NC}"
 
 test_country_selection
+test_malicious_country_codes_rejected
 
 echo ""
 echo -e "${T_BLUE}Results: $TESTS_PASSED/$TESTS_RUN passed${T_NC}"

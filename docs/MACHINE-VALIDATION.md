@@ -243,6 +243,13 @@ real `vpn cleanup`, `kill` and `emergency-reset` too. They are part of the unit
 suite, use a temporary HOME with sudo blocked, and are skipped while a VPN is
 running (#271).
 
+In tests the PID file (`VPN_PID_FILE`, normally `/var/run/openvpn.pid`) and the
+session directory (`VPN_SESSION_DIR`) are inside the temporary directory, and
+`curl` is blocked, so nothing looks up your external IP (#273). One limit
+remains: a user-owned OpenVPN started in the middle of a test run can be ended
+by a test. The root-owned one this tool starts cannot (sudo is blocked). How
+the suite is organised: `tests/README_TESTING.md`.
+
 ## If something fails
 
 Collect these and paste them into a new Claude session:

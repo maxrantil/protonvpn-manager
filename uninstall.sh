@@ -79,8 +79,9 @@ disconnect_vpn() {
 	# Stop only the daemon this tool started (its PID file), never every
 	# OpenVPN process on the system
 	local pid=""
-	if [[ -f /var/run/openvpn.pid ]]; then
-		pid=$(tr -cd '0-9' < /var/run/openvpn.pid)
+	local pid_file="${VPN_PID_FILE:-/var/run/openvpn.pid}"
+	if [[ -f $pid_file ]]; then
+		pid=$(tr -cd '0-9' < "$pid_file")
 	fi
 	if [[ -n "$pid" ]] && [[ "$(cat "/proc/$pid/comm" 2>/dev/null)" == "openvpn" ]]; then
 		log_warning "Stopping OpenVPN daemon started by VPN Manager (PID $pid)..."

@@ -68,8 +68,12 @@ assert_file_exists() {
 }
 
 # Setup test environment
+# A private directory, not a predictable name in the shared /tmp
+TEST_WORK_DIR=$(mktemp -d)
+trap 'rm -rf "$TEST_WORK_DIR"' EXIT
+
 setup_test_env() {
-    export TEST_LOG_FILE="/tmp/test_vpn_utils_$$.log"
+    export TEST_LOG_FILE="$TEST_WORK_DIR/vpn_utils.log"
     rm -f "$TEST_LOG_FILE"
 }
 
@@ -127,8 +131,8 @@ test_log_message_format() {
 # Test: log_message handles missing log file
 test_log_message_fallback() {
     local output
-    # Try to write to non-writable location (should fallback to stderr)
-    output=$(log_message "Fallback test" "/root/impossible.log" 2>&1)
+    # Try to write to a location that cannot exist (should fallback to stderr)
+    output=$(log_message "Fallback test" "$TEST_WORK_DIR/missing-dir/impossible.log" 2>&1)
 
     assert_contains "Fallback test" "$output" "log_message fallback to stderr"
 }

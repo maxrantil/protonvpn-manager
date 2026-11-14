@@ -186,7 +186,8 @@ test_suites_leave_running_vpn_and_home_alone() {
     mkdir -p "$SUDO_ONLY" && cp "$STUBS/sudo" "$SUDO_ONLY/"
     for suite in simple_regression_tests.sh integration_tests.sh e2e_tests.sh process_safety_tests.sh \
         cleanup_tests.sh health_command_functionality_tests.sh command_completion_tests.sh \
-        emergency_reset_vs_cleanup_tests.sh unit/test_profile_cache.sh; do
+        emergency_reset_vs_cleanup_tests.sh unit/test_profile_cache.sh \
+        test_vpn_utils.sh security/test_pid_validation.sh; do
         # With a VPN running: the guards must hold
         if start_fake_openvpn; then
             run_suite_isolated "$suite"
@@ -370,10 +371,54 @@ test_isolated_suites_are_registered() {
     # The list unit_tests.sh loops over, not any line that names the file
     focused=$(sed -n '/local -a focused_suites=(/,/^    )/p' "$TESTS_DIR/unit_tests.sh")
     for suite in cleanup_tests.sh health_command_functionality_tests.sh command_completion_tests.sh \
-        emergency_reset_vs_cleanup_tests.sh unit/test_profile_cache.sh; do
+        emergency_reset_vs_cleanup_tests.sh unit/test_profile_cache.sh \
+        test_vpn_utils.sh security/test_pid_validation.sh; do
         grep -qE "^[[:space:]]+${suite//./\\.}\$" <<< "$focused"
         report $? "$suite is run by unit_tests.sh" "not in the focused_suites list"
     done
+}
+
+# Every script under tests/ is run by the suite or CI, or is listed here as
+# something run by hand on purpose. A new test file that nothing runs fails
+# this test instead of quietly rotting (#273: 17 such files had piled up).
+test_no_test_script_is_run_by_nothing() {
+    # Library sourced by the suites; benchmark that prints timings (#272);
+    # workflow check that runs the unit suite and pre-commit itself; Docker
+    # runs (tests/smoke/README.md)
+    local -a by_hand=(
+        test_framework.sh
+        benchmark_profile_cache.sh
+        test_github_workflows.sh
+        smoke/docker/run_docker_tests.sh
+    )
+    local focused file rel name f orphans="" missing=""
+    focused=$(sed -n '/local -a focused_suites=(/,/^    )/p' "$TESTS_DIR/unit_tests.sh")
+    # What each runner and CI names, comment lines left out. A runner naming
+    # itself (usage text) does not count: its name must be in another one.
+    local -A names_in=()
+    for f in run_tests.sh unit_tests.sh integration_tests.sh smoke/run_smoke_tests.sh; do
+        names_in[$f]=$(grep -vE '^[[:space:]]*#' "$TESTS_DIR/$f")
+    done
+    names_in[ci]=$(cat "$PROJECT_ROOT"/.github/workflows/*.yml 2> /dev/null | grep -vE '^[[:space:]]*#')
+    while IFS= read -r file; do
+        rel=${file#"$TESTS_DIR"/}
+        name=$(basename "$file")
+        [[ " ${by_hand[*]} " == *" $rel "* ]] && continue
+        grep -qE "^[[:space:]]+${rel//./\\.}\$" <<< "$focused" && continue
+        for f in "${!names_in[@]}"; do
+            [[ $f == "$rel" ]] && continue
+            grep -qE "/${name//./\\.}([\"' ]|\$)" <<< "${names_in[$f]}" && continue 2
+        done
+        orphans+=" $rel"
+    done < <(find "$TESTS_DIR" -name '*.sh' -type f | sort)
+    [[ -z $orphans ]]
+    report $? "every script under tests/ is run by the suite or CI, or listed as run by hand" \
+        "run by nothing:$orphans"
+    for rel in "${by_hand[@]}"; do
+        [[ -f $TESTS_DIR/$rel ]] || missing+=" $rel"
+    done
+    [[ -z $missing ]]
+    report $? "the run-by-hand list names existing files only" "missing:$missing"
 }
 
 echo -e "${T_BLUE}========================================${T_NC}"
@@ -385,6 +430,7 @@ test_exit_codes_refuses_with_running_vpn
 test_process_safety_skipped_with_running_vpn
 test_suites_leave_running_vpn_and_home_alone
 test_isolated_suites_are_registered
+test_no_test_script_is_run_by_nothing
 test_mock_command_takes_effect
 test_setup_test_env_isolated
 test_fixture_connect_never_reaches_real_sudo

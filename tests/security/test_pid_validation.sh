@@ -43,21 +43,29 @@ fi
 
 # Test-specific variables
 TEST_PIDS=()
-TEST_PROCS_DIR="/tmp/pid-security-test-$$"
-mkdir -p "$TEST_PROCS_DIR"
+TEST_PROCS_DIR=$(mktemp -d)
 
 # Cleanup function
 cleanup_pid_tests() {
 	log_test "INFO" "Cleaning up test processes and directories"
 
 	# Kill all test processes
-	for pid in "${TEST_PIDS[@]}"; do
+	# (children first: the fake openvpn script's own sleep would otherwise
+	# outlive it and keep a caller's output pipe open for minutes)
+	# (the PID file: helpers called in $(...) cannot add to TEST_PIDS)
+	local recorded=()
+	[[ -f $TEST_PROCS_DIR/started.pids ]] && mapfile -t recorded <"$TEST_PROCS_DIR/started.pids"
+	for pid in "${TEST_PIDS[@]}" "${recorded[@]}"; do
+		[[ $pid =~ ^[0-9]+$ ]] || continue
+		pkill -KILL -P "$pid" 2>/dev/null || true
 		kill -KILL "$pid" 2>/dev/null || true
 	done
 
-	# Clean up test process spawns
-	pkill -f "sleep.*pid-test-marker" 2>/dev/null || true
-	pkill -f "exec -a 'openvpn --config /test/" 2>/dev/null || true
+	# The helpers run in $(...), so TEST_PIDS misses what they started: end
+	# the fake OpenVPN processes by their command line (/test/ profiles and
+	# no real binary: never a real session) and the remaining children
+	pkill -u "$(id -u)" -f "^openvpn --config /test/" 2>/dev/null || true
+	pkill -P $$ 2>/dev/null || true
 
 	# Remove test directory
 	rm -rf "$TEST_PROCS_DIR"
@@ -72,9 +80,10 @@ create_fake_openvpn_process() {
 	local sleep_duration="${2:-300}"
 
 	# Use exec -a to rename process, add marker for cleanup
-	bash -c "exec -a 'openvpn --config /test/$config_name' sleep $sleep_duration" &
+	# (output closed: the caller's $(...) would otherwise wait for the sleep)
+	bash -c "exec -a 'openvpn --config /test/$config_name' sleep $sleep_duration" > /dev/null 2>&1 &
 	local pid=$!
-	TEST_PIDS+=("$pid")
+	echo "$pid" >>"$TEST_PROCS_DIR/started.pids"
 
 	# Wait for process to start
 	sleep 0.1
@@ -87,9 +96,9 @@ create_fake_process() {
 	local process_name="${1:-sleep}"
 	local duration="${2:-300}"
 
-	"$process_name" "$duration" &
+	"$process_name" "$duration" > /dev/null 2>&1 &
 	local pid=$!
-	TEST_PIDS+=("$pid")
+	echo "$pid" >>"$TEST_PROCS_DIR/started.pids"
 
 	sleep 0.1
 	echo "$pid"
@@ -104,7 +113,10 @@ create_fake_process() {
 test_validate_pid_accepts_valid_pids() {
 	log_test "INFO" "Testing validate_pid: Accept valid PID range"
 
-	local valid_pids=(1 100 1000 10000 100000 1000000 4194303)
+	# Up to the system's own limit (32768 on some systems, 4194304 on others)
+	local pid_max
+	pid_max=$(cat /proc/sys/kernel/pid_max 2>/dev/null || echo 4194304)
+	local valid_pids=(1 100 1000 10000 $((pid_max / 2)) $((pid_max - 1)))
 	local all_passed=true
 
 	for pid in "${valid_pids[@]}"; do
@@ -120,7 +132,7 @@ test_validate_pid_accepts_valid_pids() {
 	done
 
 	if [[ "$all_passed" == "true" ]]; then
-		log_test "INFO" "All valid PIDs accepted (7/7)"
+		log_test "INFO" "All valid PIDs accepted (${#valid_pids[@]}/${#valid_pids[@]})"
 	fi
 }
 
