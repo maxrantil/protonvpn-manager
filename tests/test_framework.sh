@@ -238,6 +238,43 @@ vpn_session_running() {
     pgrep -f "${pattern:-(^|/)openvpn .*--config}" > /dev/null 2>&1
 }
 
+# The pattern itself, for tests that look for their own fake processes
+openvpn_process_pattern() {
+    local pattern
+    pattern=$(sed -n "s/^OPENVPN_PGREP_PATTERN='\(.*\)'$/\1/p" "$PROJECT_DIR/src/vpn-validators" 2> /dev/null)
+    echo "${pattern:-(^|/)openvpn .*--config}"
+}
+
+# Start a process the scripts take for a running OpenVPN (it is a sleep, and
+# ours, so a plain kill ends it). Returns once the scripts' own pattern finds
+# it: before the exec the command line is still bash's. The PID is left in
+# FAKE_OPENVPN_PID (call directly, not in $(...), or the job is lost).
+# Args: $1 = profile name (default "test"), $2 = lifetime in seconds (default 60)
+start_fake_openvpn() {
+    local name="${1:-test}" lifetime="${2:-60}" pattern i
+    pattern=$(openvpn_process_pattern)
+    bash -c 'exec -a "openvpn --config /test/$1.ovpn --daemon" sleep "$2"' _ "$name" "$lifetime" > /dev/null 2>&1 &
+    FAKE_OPENVPN_PID=$!
+    for ((i = 0; i < 50; i++)); do
+        pgrep -f "$pattern" 2> /dev/null | grep -qx "$FAKE_OPENVPN_PID" && return 0
+        sleep 0.1
+    done
+    echo "start_fake_openvpn: PID $FAKE_OPENVPN_PID never matched the pattern '$pattern'" >&2
+    return 1
+}
+
+# True if a process the scripts take for OpenVPN runs that is not one of the
+# given PIDs: a test that counts processes proves nothing while it does. (An
+# expected PID that is missing is not "foreign": that is for the test to fail on.)
+# Args: the PIDs the test started itself (none: any OpenVPN-like process is foreign)
+foreign_openvpn_running() {
+    local pid
+    for pid in $(pgrep -f "$(openvpn_process_pattern)" 2> /dev/null); do
+        [[ " $* " == *" $pid "* ]] || return 0
+    done
+    return 1
+}
+
 setup_test_env() {
     # Clean up any mocks from previous tests first
     cleanup_mocks
@@ -265,6 +302,17 @@ setup_test_env() {
     # As on a real system, where the connector created its lock directory 700
     chmod 700 "$XDG_RUNTIME_DIR" "$XDG_RUNTIME_DIR/vpn"
 
+    # Never the system's PID file or session directory (both root-owned on a
+    # real system): tests can create a stale PID file or session copies here
+    # (the caller's own values, if any, are restored by cleanup_test_env)
+    if [[ -z ${ORIGINAL_VPN_PATHS_SAVED:-} ]]; then
+        ORIGINAL_VPN_PATHS_SAVED=1
+        ORIGINAL_VPN_PID_FILE=${VPN_PID_FILE-}
+        ORIGINAL_VPN_SESSION_DIR=${VPN_SESSION_DIR-}
+    fi
+    export VPN_PID_FILE="$TEST_TEMP_DIR/openvpn.pid"
+    export VPN_SESSION_DIR="$TEST_TEMP_DIR/session"
+
     # Never real privileged commands: sudo refuses (and logs the attempt in
     # $MOCK_DIR/blocked.log) unless a test mocks it with mock_command
     ensure_mock_dir
@@ -275,6 +323,15 @@ echo "sudo blocked in tests: $*" >&2
 exit 1
 EOF
     chmod +x "$MOCK_DIR/sudo"
+
+    # Never the network: curl fails (`vpn status` then reports "Unable to
+    # determine" for the external IP) unless a test mocks it with mock_command
+    cat > "$MOCK_DIR/curl" << 'EOF'
+#!/bin/bash
+echo "curl blocked in tests: $*" >&2
+exit 7
+EOF
+    chmod +x "$MOCK_DIR/curl"
 
     # Set up test locations
     TEST_LOCATIONS_DIR="$TEST_TEMP_DIR/locations"
@@ -342,6 +399,12 @@ cleanup_test_env() {
         IFS='|' read -r XDG_CONFIG_HOME XDG_STATE_HOME XDG_CACHE_HOME XDG_RUNTIME_DIR <<< "$ORIGINAL_XDG"
         export XDG_CONFIG_HOME XDG_STATE_HOME XDG_CACHE_HOME XDG_RUNTIME_DIR
         ORIGINAL_HOME=""
+    fi
+    if [[ -n ${ORIGINAL_VPN_PATHS_SAVED:-} ]]; then
+        unset VPN_PID_FILE VPN_SESSION_DIR
+        [[ -z $ORIGINAL_VPN_PID_FILE ]] || export VPN_PID_FILE=$ORIGINAL_VPN_PID_FILE
+        [[ -z $ORIGINAL_VPN_SESSION_DIR ]] || export VPN_SESSION_DIR=$ORIGINAL_VPN_SESSION_DIR
+        ORIGINAL_VPN_PATHS_SAVED=""
     fi
     if [[ -n "${LATENCY_FIXTURE_HOME:-}" ]] && [[ -d "$LATENCY_FIXTURE_HOME" ]]; then
         rm -rf "$LATENCY_FIXTURE_HOME"

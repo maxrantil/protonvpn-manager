@@ -9,9 +9,15 @@ VPN_DIR="$PROJECT_DIR/src"
 
 # Setup test environment
 TEST_DIR=$(mktemp -d)
+# The connector keeps its profile cache under XDG_STATE_HOME: without a
+# private HOME the benchmark replaced the user's real cache with test profiles
+export HOME="$TEST_DIR/home"
+export XDG_CONFIG_HOME="$HOME/.config" XDG_STATE_HOME="$HOME/.local/state" XDG_CACHE_HOME="$HOME/.cache"
+export XDG_RUNTIME_DIR="$TEST_DIR/run"
 export LOCATIONS_DIR="$TEST_DIR/locations"
 export LOG_DIR="$TEST_DIR/log"
-mkdir -p "$LOCATIONS_DIR" "$LOG_DIR"
+mkdir -p "$LOCATIONS_DIR" "$LOG_DIR" "$HOME" "$XDG_RUNTIME_DIR"
+chmod 700 "$XDG_RUNTIME_DIR"
 
 # Create realistic number of test profiles (100 profiles)
 echo "Creating 100 test profiles..."
