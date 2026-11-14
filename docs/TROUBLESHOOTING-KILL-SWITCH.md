@@ -21,6 +21,7 @@ sudo vpn-kill-switch enable
 ## Step-by-Step Troubleshooting
 
 ### Step 1: Check Kill Switch Status
+
 ```bash
 vpn-kill-switch status
 ```
@@ -29,21 +30,25 @@ vpn-kill-switch status
 - If **DISABLED** = something else is wrong
 
 ### Step 2: Check VPN Status
+
 ```bash
 vpn status
 ```
 
 ### Step 3: Check Auto-Reconnect Status
+
 ```bash
 vpn-manager config auto-reconnect status
 ```
 
 ### Step 4: View Auto-Reconnect Logs
+
 ```bash
 cat ~/.local/state/vpn/reconnect.log
 ```
 
 ### Step 5: View VPN Manager Logs
+
 ```bash
 cat ~/.local/state/vpn/vpn_manager.log
 ```
@@ -85,16 +90,19 @@ sudo vpn-kill-switch enable
 ### Scenario 2: Auto-reconnect not working
 
 Check requirements:
+
 1. Kill switch must be enabled: `vpn-kill-switch status`
 2. Auto-reconnect must be on: `vpn-manager config auto-reconnect status`
 3. Must have connected at least once (to save profile state)
 
 Check logs:
+
 ```bash
 cat ~/.local/state/vpn/reconnect.log
 ```
 
 Common issues in logs:
+
 - "kill switch not enabled" → run `sudo vpn-kill-switch enable`
 - "Cooldown active" → wait 30 seconds between attempts
 - "Max attempts exceeded" → wait 5 minutes, rate limited for security
