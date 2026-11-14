@@ -1211,7 +1211,7 @@ dig +short myip.opendns.com @resolver1.opendns.com
 ./src/vpn fast se
 
 # Clear cache and re-test
-rm -f "$XDG_CACHE_HOME/vpn/"*.cache
+rm -f ~/.local/state/vpn/*.cache ~/.cache/vpn/*.cache
 ./src/vpn best
 ```
 

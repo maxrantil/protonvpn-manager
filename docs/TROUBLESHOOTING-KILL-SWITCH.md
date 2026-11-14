@@ -148,7 +148,7 @@ ip link show tun0 2>/dev/null || echo "No tun0 interface"
 # View logs
 cat ~/.local/state/vpn/reconnect.log
 cat ~/.local/state/vpn/vpn_manager.log
-tail -20 ~/.local/state/vpn/openvpn.log
+tail -20 /run/protonvpn-manager-session/openvpn.log   # while connected
 
 # System logs (Artix with runit - check syslog)
 tail -50 /var/log/messages 2>/dev/null | grep -i vpn

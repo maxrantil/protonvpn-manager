@@ -265,7 +265,8 @@ $XDG_RUNTIME_DIR/vpn/             # default /run/user/$UID/vpn/
 └── vpn_manager.lock              # Process lock
 
 /run/protonvpn-manager-session/   # root-owned; VPN_SESSION_DIR overrides
-└── profile.ovpn, credentials     # Copies OpenVPN reads while connected
+├── profile.ovpn, credentials     # Copies OpenVPN reads while connected
+└── openvpn.log                   # OpenVPN log, readable by your group
 
 /var/run/openvpn.pid              # OpenVPN process ID; VPN_PID_FILE overrides
 ```
