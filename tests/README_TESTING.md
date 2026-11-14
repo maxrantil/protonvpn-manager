@@ -50,12 +50,14 @@ This comprehensive testing suite validates the ProtonVPN production deployment s
 ## Quick Start
 
 ### Run All Tests
+
 ```bash
 cd $HOME/workspace/claude-code/vpn/tests
 ./test_comprehensive_runner.sh
 ```
 
 ### Run Specific Test Categories
+
 ```bash
 # Security tests only
 ./test_comprehensive_runner.sh security
@@ -68,6 +70,7 @@ cd $HOME/workspace/claude-code/vpn/tests
 ```
 
 ### Run Individual Test Suites
+
 ```bash
 # Security validation
 ./test_security_validation.sh
@@ -82,6 +85,7 @@ cd $HOME/workspace/claude-code/vpn/tests
 ## Test Environment
 
 ### Mock Framework Features
+
 - **Non-privileged execution**: Tests system operations without requiring root
 - **Systemctl simulation**: Mock systemd operations with state tracking
 - **User management mocking**: Simulates user/group creation and management
@@ -89,6 +93,7 @@ cd $HOME/workspace/claude-code/vpn/tests
 - **Network command mocking**: VPN operation simulation
 
 ### Test Isolation
+
 - Temporary directories for all test operations
 - Mock state management for consistent test results
 - Automatic cleanup on test completion
@@ -97,6 +102,7 @@ cd $HOME/workspace/claude-code/vpn/tests
 ## Security Testing Focus
 
 ### Recently Fixed Vulnerabilities
+
 The security test suite specifically validates fixes for:
 
 1. **Command Injection Prevention**
@@ -115,6 +121,7 @@ The security test suite specifically validates fixes for:
    - Directory security enforcement
 
 ### Security Test Scenarios
+
 - Malicious input injection attempts
 - Path traversal attack simulation
 - Log injection prevention testing
@@ -124,6 +131,7 @@ The security test suite specifically validates fixes for:
 ## Installation Testing Strategy
 
 ### Robustness Scenarios
+
 - Complete installation from scratch
 - Partial failure recovery procedures
 - User and group creation edge cases
@@ -132,6 +140,7 @@ The security test suite specifically validates fixes for:
 - Service file deployment
 
 ### Error Recovery Testing
+
 - Installation rollback procedures
 - Cleanup verification
 - State consistency validation
@@ -140,12 +149,14 @@ The security test suite specifically validates fixes for:
 ## Service Management Testing
 
 ### Lifecycle Testing
+
 - Service start/stop/restart operations
 - Individual service management
 - Service dependency validation
 - Health monitoring verification
 
 ### Error Handling
+
 - Invalid service name rejection
 - Missing dependency handling
 - Permission error simulation
@@ -154,6 +165,7 @@ The security test suite specifically validates fixes for:
 ## Test Reporting
 
 ### Automated Reporting
+
 - Comprehensive test execution logs
 - Pass/fail statistics by category
 - Failed test identification
@@ -161,10 +173,12 @@ The security test suite specifically validates fixes for:
 - Security validation results
 
 ### Report Output
+
 Test reports are generated in the project directory with format:
 `test_report_YYYYMMDD_HHMMSS.txt`
 
 Reports include:
+
 - Test suite execution summary
 - Individual test results
 - Failed test details
@@ -174,12 +188,14 @@ Reports include:
 ## CI/CD Integration
 
 ### Automation Ready
+
 - Exit codes for CI/CD pipeline integration
 - Standardized output formats
 - Environment variable configuration
 - Mock framework for containerized testing
 
 ### Recommended CI/CD Usage
+
 ```bash
 # In CI/CD pipeline
 cd tests
@@ -191,12 +207,14 @@ cd tests
 ## Test Data Management
 
 ### Mock Data Strategy
+
 - Realistic but safe test configurations
 - Temporary file management
 - State isolation between tests
 - Automatic cleanup procedures
 
 ### Test Fixtures
+
 - Sample configuration files
 - Mock service definitions
 - Test user/group data
@@ -205,12 +223,14 @@ cd tests
 ## Performance Considerations
 
 ### Test Execution Time
+
 - Security tests: ~2-3 minutes
 - Installation tests: ~3-5 minutes
 - Service management tests: ~2-4 minutes
 - Complete suite: ~10-15 minutes
 
 ### Resource Usage
+
 - Minimal system resource impact
 - Temporary directory usage only
 - No permanent system modifications
@@ -219,19 +239,34 @@ cd tests
 ## Troubleshooting
 
 ### Common Issues
+
 1. **Permission Errors**: Ensure test scripts are executable
 2. **Missing Dependencies**: Install required system tools
 3. **Mock Framework Failures**: Check temporary directory permissions
 4. **Test Timeouts**: Increase timeout values in test configuration
 
 ### Debug Mode
+
 Run tests with debug output:
+
 ```bash
 bash -x ./test_security_validation.sh
 ```
 
+### Live VPN Tests
+
+`test_exit_codes.sh` makes real VPN connections with your profiles and
+credentials and stops the VPN between cases. It is skipped unless
+`VPN_LIVE_TESTS=1` is set, and refuses to run while a VPN is connected:
+
+```bash
+vpn disconnect && VPN_LIVE_TESTS=1 ./test_exit_codes.sh
+```
+
 ### Log Analysis
+
 Test logs are available in:
+
 - Individual test output files
 - Mock framework state directories
 - Comprehensive test reports
@@ -239,6 +274,7 @@ Test logs are available in:
 ## Contributing
 
 ### Adding New Tests
+
 1. Follow naming convention: `test_[category].sh`
 2. Include test description comments
 3. Use consistent logging functions
@@ -246,6 +282,7 @@ Test logs are available in:
 5. Add to comprehensive test runner
 
 ### Test Standards
+
 - All tests must run without root privileges
 - Use mock framework for system operations
 - Include both positive and negative test cases
