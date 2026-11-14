@@ -58,7 +58,7 @@
 
 ## 🎯 Current Project State
 
-**Tests**: see `SESSION_HANDOVER.md` for the final numbers of this branch
+**Tests**: ✅ `run_tests.sh` 111 passed / 0 failed; contract 127/127
 **Branch**: pushed
 **Machine**: installed components are master `1870caf` (`src/` unchanged by #270/#274);
 VPN disconnected, kill switch off. After this PR merges, `src/vpn-manager`,
