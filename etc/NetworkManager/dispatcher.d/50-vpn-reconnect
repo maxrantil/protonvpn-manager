@@ -137,6 +137,9 @@ check_kill_switch() {
     fi
 
     if ! HOME="$REAL_HOME" "$KILL_SWITCH" is-enabled 2>/dev/null; then
+        # A healthy tunnel needs no reconnect: log refusals only when they cost
+        # the user their VPN, so the log shows when it really went down
+        vpn_is_healthy && return 1
         log_event "SECURITY" "Auto-reconnect blocked: kill switch not enabled"
         return 1
     fi
