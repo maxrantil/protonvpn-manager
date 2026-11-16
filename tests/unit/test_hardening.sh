@@ -779,10 +779,20 @@ test_kill_switch_refresh_without_tunnel() {
 		grep -q -- "-A VPN_KILL_SWITCH_V6 -j DROP" "$rules/v6" 2> /dev/null
 	report $? "refreshed chains still end in DROP" "refreshed chains still end in DROP"
 
+	# No known server at all: the rebuilt chain allows no server but still blocks
+	rm -f "$rules"/* "$XDG_STATE_HOME/vpn/kill_switch.state"
+	PATH="$stubs:$PATH" VPN_SESSION_DIR="$WORK_DIR/ks-session" \
+		bash "$SRC_DIR/vpn-kill-switch" refresh > /dev/null 2>&1
+	grep -q -- "-A VPN_KILL_SWITCH -j DROP" "$rules/v4" 2> /dev/null &&
+		! grep -qE -- "-A VPN_KILL_SWITCH -d [0-9.]+ -j ACCEPT" "$rules/v4"
+	report $? "refresh without a known server still ends in DROP" \
+		"refresh without a known server still ends in DROP" "$(cat "$rules/v4" 2> /dev/null)"
+
 	rm -f "$rules"/*
-	if PATH="$stubs:$PATH" VPN_SESSION_DIR="$WORK_DIR/ks-session" \
-		bash "$SRC_DIR/vpn-kill-switch" enable > /dev/null 2>&1 || [[ -e $rules/v4 ]]; then
-		test_fail "enable still refuses without a tunnel"
+	if out=$(PATH="$stubs:$PATH" VPN_SESSION_DIR="$WORK_DIR/ks-session" \
+		bash "$SRC_DIR/vpn-kill-switch" enable 2>&1) || [[ -e $rules/v4 ]] ||
+		! grep -q "VPN interface (tun0) not found" <<< "$out"; then
+		test_fail "enable still refuses without a tunnel" "$out"
 	else
 		test_pass "enable still refuses without a tunnel"
 	fi
