@@ -744,6 +744,62 @@ test_kill_switch_netns() {
 }
 
 # ---------------------------------------------------------------------------
+# 13b. Refresh rebuilds the rules with the tunnel down (the reconnect hook's
+#      case); enable still refuses without a tunnel. Stubs only: no firewall.
+# ---------------------------------------------------------------------------
+test_kill_switch_refresh_without_tunnel() {
+	local stubs="$WORK_DIR/ks-stubs" rules="$WORK_DIR/ks-rules"
+	mkdir -p "$stubs" "$rules"
+	rm -f "$rules"/*
+	# sudo runs the (stubbed) command; the kill switch chain reports as enabled
+	printf '#!/bin/bash\n[[ $1 == -n ]] && shift\nexec "$@"\n' > "$stubs/sudo"
+	printf '#!/bin/bash\nexit 0\n' > "$stubs/iptables"
+	printf '#!/bin/bash\nexit 0\n' > "$stubs/ip6tables"
+	printf '#!/bin/bash\ncat > "%s/v4"\n' "$rules" > "$stubs/iptables-restore"
+	printf '#!/bin/bash\ncat > "%s/v6"\n' "$rules" > "$stubs/ip6tables-restore"
+	# No tun0, no tailscale0, no routes; no openvpn process
+	printf '#!/bin/bash\n[[ $1 == link ]] && exit 1\nexit 0\n' > "$stubs/ip"
+	printf '#!/bin/bash\nexit 0\n' > "$stubs/ps"
+	chmod +x "$stubs"/*
+
+	mkdir -p "$XDG_STATE_HOME/vpn" "$WORK_DIR/ks-session"
+	printf 'status=enabled\nserver_ip=203.0.113.9\ntimestamp=0\ninterface=tun0\n' \
+		> "$XDG_STATE_HOME/vpn/kill_switch.state"
+
+	local out rc
+	out=$(PATH="$stubs:$PATH" VPN_SESSION_DIR="$WORK_DIR/ks-session" \
+		bash "$SRC_DIR/vpn-kill-switch" refresh 2>&1)
+	rc=$?
+	report "$rc" "refresh succeeds with the tunnel down" \
+		"refresh succeeds with the tunnel down" "rc=$rc: $out"
+	grep -q -- "-A VPN_KILL_SWITCH -d 203.0.113.9 -j ACCEPT" "$rules/v4" 2> /dev/null
+	report $? "refresh keeps the saved VPN server allowed" \
+		"refresh keeps the saved VPN server allowed" "$(cat "$rules/v4" 2> /dev/null)"
+	grep -q -- "-A VPN_KILL_SWITCH -j DROP" "$rules/v4" 2> /dev/null &&
+		grep -q -- "-A VPN_KILL_SWITCH_V6 -j DROP" "$rules/v6" 2> /dev/null
+	report $? "refreshed chains still end in DROP" "refreshed chains still end in DROP"
+
+	# No known server at all: the rebuilt chain allows no server but still blocks
+	rm -f "$rules"/* "$XDG_STATE_HOME/vpn/kill_switch.state"
+	PATH="$stubs:$PATH" VPN_SESSION_DIR="$WORK_DIR/ks-session" \
+		bash "$SRC_DIR/vpn-kill-switch" refresh > /dev/null 2>&1
+	grep -q -- "-A VPN_KILL_SWITCH -j DROP" "$rules/v4" 2> /dev/null &&
+		! grep -qE -- "-A VPN_KILL_SWITCH -d [0-9.]+ -j ACCEPT" "$rules/v4"
+	report $? "refresh without a known server still ends in DROP" \
+		"refresh without a known server still ends in DROP" "$(cat "$rules/v4" 2> /dev/null)"
+
+	rm -f "$rules"/*
+	if out=$(PATH="$stubs:$PATH" VPN_SESSION_DIR="$WORK_DIR/ks-session" \
+		bash "$SRC_DIR/vpn-kill-switch" enable 2>&1) || [[ -e $rules/v4 ]] ||
+		! grep -q "VPN interface (tun0) not found" <<< "$out"; then
+		test_fail "enable still refuses without a tunnel" "$out"
+	else
+		test_pass "enable still refuses without a tunnel"
+	fi
+	rm -f "$XDG_STATE_HOME/vpn/kill_switch.state"
+}
+
+# ---------------------------------------------------------------------------
 # 14. Dispatcher (root): config values cannot inject code via arithmetic.
 # ---------------------------------------------------------------------------
 test_dispatcher_config_injection() {
@@ -801,6 +857,7 @@ test_cleanup_fast_and_graceful
 test_shared_lib_paths
 test_detect_real_user
 test_kill_switch_netns
+test_kill_switch_refresh_without_tunnel
 test_dispatcher_config_injection
 test_hooks_use_custom_for_paths
 
