@@ -769,11 +769,23 @@ test_kill_switch_refresh_without_tunnel() {
 	# No tun0, no tailscale0, no routes; no openvpn process
 	printf '#!/bin/bash\n[[ $1 == link ]] && exit 1\nexit 0\n' > "$stubs/ip"
 	printf '#!/bin/bash\nexit 0\n' > "$stubs/ps"
+	# The session fixtures stand in for root-owned files (uid 0 in stat)
+	cat > "$stubs/stat" << EOF
+#!/bin/bash
+out=\$(command -p stat "\$@") || exit
+for a in "\$@"; do
+	[[ \$a == "$WORK_DIR/ks-session" || \$a == "$WORK_DIR/ks-session"/* ]] && out=\$(sed -E 's/^[0-9]+/0/' <<< "\$out")
+done
+printf '%s\n' "\$out"
+EOF
 	chmod +x "$stubs"/*
 
 	mkdir -p "$XDG_STATE_HOME/vpn" "$WORK_DIR/ks-session"
+	chmod 750 "$WORK_DIR/ks-session"
 	printf 'status=enabled\nserver_ip=203.0.113.9\ntimestamp=0\ninterface=tun0\n' \
 		> "$XDG_STATE_HOME/vpn/kill_switch.state"
+	printf '203.0.113.9 udp 1194\n' > "$WORK_DIR/ks-session/kill_switch.server"
+	chmod 600 "$WORK_DIR/ks-session/kill_switch.server"
 
 	local out rc
 	out=$(PATH="$stubs:$PATH" VPN_SESSION_DIR="$WORK_DIR/ks-session" \
@@ -781,7 +793,7 @@ test_kill_switch_refresh_without_tunnel() {
 	rc=$?
 	report "$rc" "refresh succeeds with the tunnel down" \
 		"refresh succeeds with the tunnel down" "rc=$rc: $out"
-	grep -q -- "-A VPN_KILL_SWITCH -d 203.0.113.9 -j ACCEPT" "$rules/v4" 2> /dev/null
+	grep -q -- "-A VPN_KILL_SWITCH -d 203.0.113.9 -p udp -m multiport --dports 1194 -j ACCEPT" "$rules/v4" 2> /dev/null
 	report $? "refresh keeps the saved VPN server allowed" \
 		"refresh keeps the saved VPN server allowed" "$(cat "$rules/v4" 2> /dev/null)"
 	grep -q -- "-A VPN_KILL_SWITCH -j DROP" "$rules/v4" 2> /dev/null &&
@@ -789,11 +801,11 @@ test_kill_switch_refresh_without_tunnel() {
 	report $? "refreshed chains still end in DROP" "refreshed chains still end in DROP"
 
 	# No known server at all: the rebuilt chain allows no server but still blocks
-	rm -f "$rules"/* "$XDG_STATE_HOME/vpn/kill_switch.state"
+	rm -f "$rules"/* "$XDG_STATE_HOME/vpn/kill_switch.state" "$WORK_DIR/ks-session/kill_switch.server"
 	PATH="$stubs:$PATH" VPN_SESSION_DIR="$WORK_DIR/ks-session" \
 		bash "$SRC_DIR/vpn-kill-switch" refresh > /dev/null 2>&1
 	grep -q -- "-A VPN_KILL_SWITCH -j DROP" "$rules/v4" 2> /dev/null &&
-		! grep -qE -- "-A VPN_KILL_SWITCH -d [0-9.]+ -j ACCEPT" "$rules/v4"
+		! grep -qE -- "-A VPN_KILL_SWITCH -d [0-9.]+ " "$rules/v4"
 	report $? "refresh without a known server still ends in DROP" \
 		"refresh without a known server still ends in DROP" "$(cat "$rules/v4" 2> /dev/null)"
 
@@ -806,6 +818,208 @@ test_kill_switch_refresh_without_tunnel() {
 		test_pass "enable still refuses without a tunnel"
 	fi
 	rm -f "$XDG_STATE_HOME/vpn/kill_switch.state"
+}
+
+# ---------------------------------------------------------------------------
+# 13c. The allowed VPN server comes from trusted sources only (#288): the
+#      root-owned session first, the route table only while tun0 is up, never
+#      another process's argv, and the state file only if no one else can
+#      write it. The ACCEPT is limited to the profile's protocol and ports.
+#      Stubs only: no firewall.
+# ---------------------------------------------------------------------------
+KS_STUBS="$WORK_DIR/ks288-stubs"
+KS_RULES="$WORK_DIR/ks288-rules"
+KS_SESSION="$WORK_DIR/ks288-session"
+KS_STATE="$XDG_STATE_HOME/vpn/kill_switch.state"
+
+ks_setup() {
+	rm -rf "$KS_STUBS" "$KS_RULES" "$KS_SESSION"
+	mkdir -p "$KS_STUBS" "$KS_RULES" "$KS_SESSION" "$XDG_STATE_HOME/vpn"
+	rm -f "$KS_STATE"
+	printf '#!/bin/bash\n[[ $1 == -n ]] && shift\nexec "$@"\n' > "$KS_STUBS/sudo"
+	printf '#!/bin/bash\nexit 0\n' > "$KS_STUBS/iptables"
+	printf '#!/bin/bash\nexit 0\n' > "$KS_STUBS/ip6tables"
+	printf '#!/bin/bash\ncat > "%s/v4"\n' "$KS_RULES" > "$KS_STUBS/iptables-restore"
+	printf '#!/bin/bash\ncat > "%s/v6"\n' "$KS_RULES" > "$KS_STUBS/ip6tables-restore"
+	# tun0 exists only if $KS_RULES/tun0 does; a host route via wlan0 only
+	# if $KS_RULES/route does
+	cat > "$KS_STUBS/ip" << EOF
+#!/bin/bash
+case "\$*" in
+	"link show tun0") [[ -e "$KS_RULES/tun0" ]] ;;
+	"link show"*) exit 1 ;;
+	"route show default") echo "default via 192.168.1.1 dev wlan0" ;;
+	"route show") [[ -e "$KS_RULES/route" ]] && echo "192.0.2.44 via 192.168.1.1 dev wlan0" ;;
+esac
+EOF
+	# Another user's process advertises a server on its command line
+	printf '#!/bin/bash\necho "nobody 4242 0.0 0.0 1 1 ? S 00:00 0:00 openvpn --remote 198.51.100.66 1194"\n' \
+		> "$KS_STUBS/ps"
+	# An unprivileged test cannot create root-owned files: report the
+	# session fixtures as owned by uid 0 (first field of stat's output)
+	cat > "$KS_STUBS/stat" << EOF
+#!/bin/bash
+out=\$(command -p stat "\$@") || exit
+for a in "\$@"; do
+	[[ \$a == "$KS_SESSION" || \$a == "$KS_SESSION"/* ]] && out=\$(sed -E 's/^[0-9]+/0/' <<< "\$out")
+done
+printf '%s\n' "\$out"
+EOF
+	chmod +x "$KS_STUBS"/*
+}
+
+# ks_session <proto> <log-ip> <log-port> <profile remote lines...>
+ks_session() {
+	local proto=$1 ip=$2 port=$3 log_proto=UDPv4
+	shift 3
+	[[ $proto == tcp* ]] && log_proto=TCPv4_CLIENT
+	chmod 700 "$KS_SESSION"
+	{
+		echo "client"
+		echo "proto $proto"
+		printf 'remote %s\n' "$@"
+		echo "remote-random"
+	} > "$KS_SESSION/profile.ovpn"
+	{
+		echo "2026-11-16 10:39:48 $log_proto link remote: [AF_INET]$ip:$port"
+		echo "2026-11-16 10:39:49 [node] Peer Connection Initiated with [AF_INET]$ip:$port"
+	} > "$KS_SESSION/openvpn.log"
+	chmod 600 "$KS_SESSION/profile.ovpn"
+	chmod 640 "$KS_SESSION/openvpn.log"
+}
+
+ks_refresh() {
+	rm -f "$KS_RULES/v4" "$KS_RULES/v6"
+	PATH="$KS_STUBS:$PATH" VPN_SESSION_DIR="$KS_SESSION" \
+		bash "$SRC_DIR/vpn-kill-switch" refresh > "$KS_RULES/out" 2>&1
+}
+
+# The server ACCEPT lines of the last refresh (empty if none)
+ks_server_rules() {
+	grep -E -- "^-A VPN_KILL_SWITCH -d [0-9.]+ " "$KS_RULES/v4" 2> /dev/null
+}
+
+ks_expect() { # <expected server rules> <name>
+	local got
+	got=$(ks_server_rules)
+	if [[ $got == "$1" ]] && grep -q -- "-A VPN_KILL_SWITCH -j DROP" "$KS_RULES/v4" 2> /dev/null; then
+		test_pass "$2"
+	else
+		test_fail "$2" "expected: '$1' got: '$got' ($(tail -3 "$KS_RULES/out" 2> /dev/null | tr '\n' ' '))"
+	fi
+}
+
+test_kill_switch_trusted_server_sources() {
+	ks_setup
+	local udp_rule="-A VPN_KILL_SWITCH -d 203.0.113.5 -p udp -m multiport --dports 4569,1194,80 -j ACCEPT"
+
+	# Session: root-owned profile and log; the state names another server
+	ks_session udp 203.0.113.5 4569 "203.0.113.5 4569" "203.0.113.5 1194" "203.0.113.5 80"
+	printf 'status=enabled\nserver_ip=198.51.100.7\ntimestamp=0\ninterface=tun0\n' > "$KS_STATE"
+	chmod 600 "$KS_STATE"
+	ks_refresh
+	ks_expect "$udp_rule" "the root-owned session's server is allowed, limited to its protocol and ports"
+
+	local recorded=1
+	[[ $(cat "$KS_SESSION/kill_switch.server" 2> /dev/null) == "203.0.113.5 udp 4569,1194,80" ]] &&
+		[[ $(stat -c %a "$KS_SESSION/kill_switch.server") == 600 ]] && recorded=0
+	report "$recorded" "the server, protocol and ports are recorded next to the session (mode 600)" \
+		"the server, protocol and ports are recorded next to the session (mode 600)" \
+		"$(cat "$KS_SESSION/kill_switch.server" 2> /dev/null)"
+
+	# ...and after a disconnect (profile removed, log kept) the record applies
+	rm -f "$KS_SESSION/profile.ovpn"
+	ks_refresh
+	ks_expect "$udp_rule" "the recorded protocol and ports apply after the profile is removed"
+	rm -f "$KS_SESSION/kill_switch.server"
+
+	# TCP profiles
+	ks_session tcp-client 203.0.113.6 443 "203.0.113.6 443" "203.0.113.6 7770"
+	ks_refresh
+	ks_expect "-A VPN_KILL_SWITCH -d 203.0.113.6 -p tcp -m multiport --dports 443,7770 -j ACCEPT" \
+		"a TCP session allows its server over TCP only"
+
+	# A log IP the profile does not list is not trusted
+	rm -f "$KS_STATE"
+	ks_session udp 203.0.113.8 1194 "203.0.113.5 1194"
+	ks_refresh
+	ks_expect "" "a session server the profile does not list is not allowed"
+
+	# Session files the user owns (VPN_SESSION_DIR pointed elsewhere)
+	ks_session udp 203.0.113.5 4569 "203.0.113.5 4569"
+	rm -f "$KS_STUBS/stat"
+	ks_refresh
+	ks_expect "" "session files not owned by root are not trusted"
+	ks_setup
+
+	# Nothing trusted names a server: another process's --remote argv (the
+	# ps stub's IP) is not a source either
+	ks_refresh
+	ks_expect "" "another process's openvpn argv does not choose the server"
+
+	# A host route for a server the profile lists: stale while tun0 is
+	# down, used while it is up
+	touch "$KS_RULES/route"
+	chmod 750 "$KS_SESSION"
+	printf 'client\nproto udp\nremote 192.0.2.44 1194\n' > "$KS_SESSION/profile.ovpn"
+	chmod 600 "$KS_SESSION/profile.ovpn"
+	ks_refresh
+	ks_expect "" "the route table is ignored while tun0 is down"
+	touch "$KS_RULES/tun0"
+	ks_refresh
+	ks_expect "-A VPN_KILL_SWITCH -d 192.0.2.44 -p udp -m multiport --dports 1194 -j ACCEPT" \
+		"the route table is used while tun0 is up"
+	rm -f "$KS_SESSION/kill_switch.server"
+	printf 'client\nproto udp\nremote 203.0.113.5 1194\n' > "$KS_SESSION/profile.ovpn"
+	ks_refresh
+	ks_expect "" "a host route the profile does not list is not allowed"
+
+	# An IP given to enable is deliberate: allowed as is if the profile
+	# does not list it
+	rm -f "$KS_RULES/v4" "$KS_SESSION/kill_switch.server"
+	PATH="$KS_STUBS:$PATH" VPN_SESSION_DIR="$KS_SESSION" \
+		bash "$SRC_DIR/vpn-kill-switch" enable 198.51.100.9 > "$KS_RULES/out" 2>&1
+	ks_expect "-A VPN_KILL_SWITCH -d 198.51.100.9 -j ACCEPT" \
+		"an IP given to enable that the profile does not list is allowed as given"
+	rm -f "$KS_RULES/tun0" "$KS_RULES/route" "$KS_SESSION/profile.ovpn" "$KS_SESSION/kill_switch.server"
+
+	# A remote's own protocol overrides the profile's: one rule per protocol
+	ks_session udp 203.0.113.5 1194 "203.0.113.5 1194" "203.0.113.5 443 tcp-client" "203.0.113.5 1194"
+	ks_refresh
+	ks_expect "-A VPN_KILL_SWITCH -d 203.0.113.5 -p udp -m multiport --dports 1194 -j ACCEPT
+-A VPN_KILL_SWITCH -d 203.0.113.5 -p tcp -m multiport --dports 443 -j ACCEPT" \
+		"a remote's own protocol gets its own rule (duplicate ports once)"
+	rm -f "$KS_SESSION/profile.ovpn" "$KS_SESSION/openvpn.log" "$KS_SESSION/kill_switch.server"
+
+	# The user's own state file never chooses the server, however private
+	printf 'status=enabled\nserver_ip=198.51.100.7\ntimestamp=0\ninterface=tun0\n' > "$KS_STATE"
+	chmod 600 "$KS_STATE"
+	ks_refresh
+	ks_expect "" "the user's state file does not choose the server"
+
+	# A record others can write, or a symlinked one, is not trusted
+	local record="$KS_SESSION/kill_switch.server"
+	printf '198.51.100.7 udp 1194\n' > "$record"
+	chmod 666 "$record"
+	ks_refresh
+	ks_expect "" "a group- or world-writable server record is not trusted"
+
+	local real="$WORK_DIR/ks288-elsewhere"
+	printf '198.51.100.7 udp 1194\n' > "$real"
+	chmod 600 "$real"
+	rm -f "$record"
+	ln -s "$real" "$record"
+	ks_refresh
+	ks_expect "" "a symlinked server record is not trusted"
+	rm -f "$record" "$real"
+
+	# Malformed record lines are dropped; valid ones still apply
+	printf '198.51.100.7 udp 1194,99999\n198.51.100.7 tcp 0\n198.51.100.7 udp 1194;x\n999.1.1.1 udp 1194\n198.51.100.7 tcp 443\n' > "$record"
+	chmod 600 "$record"
+	ks_refresh
+	ks_expect "-A VPN_KILL_SWITCH -d 198.51.100.7 -p tcp -m multiport --dports 443 -j ACCEPT" \
+		"malformed server record lines are dropped"
+	rm -rf "$KS_STUBS" "$KS_RULES" "$KS_SESSION" "$KS_STATE"
 }
 
 # ---------------------------------------------------------------------------
@@ -867,6 +1081,7 @@ test_shared_lib_paths
 test_detect_real_user
 test_kill_switch_netns
 test_kill_switch_refresh_without_tunnel
+test_kill_switch_trusted_server_sources
 test_dispatcher_config_injection
 test_hooks_use_custom_for_paths
 
