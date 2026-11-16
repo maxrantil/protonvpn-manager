@@ -494,6 +494,13 @@ test_cleanup_keeps_held_lock() {
 	fi
 }
 
+# Scope pgrep to processes this script started, so a live OpenVPN on the
+# machine running the suite is never discovered (or signalled) by a test.
+# The fake daemons are direct children of this script ($$).
+only_test_children() {
+	pgrep() { command pgrep -P "$$" "$@"; }
+}
+
 # ---------------------------------------------------------------------------
 # 8. Process matching: only real openvpn command lines, never lookalikes.
 # ---------------------------------------------------------------------------
@@ -540,6 +547,7 @@ test_process_matching() {
 	found=$(
 		# shellcheck disable=SC1091
 		source "$SRC_DIR/vpn-validators"
+		only_test_children
 		find_openvpn_pids
 	)
 	if [[ $found == "$fake" ]]; then
@@ -596,6 +604,7 @@ test_cleanup_fast_and_graceful() {
 		source "$SRC_DIR/vpn-manager" > /dev/null 2>&1
 		set +e
 		sudo() { :; }
+		only_test_children
 		hierarchical_process_cleanup false > /dev/null 2>&1
 	)
 	end=$(date +%s%N)
