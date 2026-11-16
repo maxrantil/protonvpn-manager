@@ -936,7 +936,7 @@ test_kill_switch_trusted_server_sources() {
 		[[ $(stat -c %a "$KS_SESSION/kill_switch.server") == 600 ]] && recorded=0
 	report "$recorded" "the server, protocol and ports are recorded next to the session (mode 600)" \
 		"the server, protocol and ports are recorded next to the session (mode 600)" \
-		"$(cat "$KS_SESSION/kill_switch.server" 2> /dev/null)"
+		"record: '$(cat "$KS_SESSION/kill_switch.server" 2> /dev/null)' output: $(cat "$KS_RULES/out")"
 
 	# ...and after a disconnect (profile removed, log kept) the record applies
 	rm -f "$KS_SESSION/profile.ovpn"
