@@ -468,10 +468,8 @@ save_state() {
         "$status" "$server_ip" "$(date +%s)" "$VPN_INTERFACE" > "$tmp"
     chmod 600 "$tmp" 2> /dev/null || true
 
-    # Fix ownership when running as root
-    if [[ $EUID -eq 0 && -n "${REAL_USER:-}" && -n "${REAL_GROUP:-}" ]]; then
-        chown -h "$REAL_USER:$REAL_GROUP" "$tmp" 2> /dev/null || true
-    fi
+    # Running as root (hooks, sudo): the state file stays the user's
+    give_to_real_user "$tmp"
     mv -f "$tmp" "$STATE_FILE" 2> /dev/null || rm -f "$tmp"
 }
 
