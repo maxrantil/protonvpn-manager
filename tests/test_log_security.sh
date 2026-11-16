@@ -10,6 +10,10 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 NC='\033[0m'
 
+# Sources under test, found from this script so the working directory
+# does not matter
+SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../src" && pwd)"
+
 # Test directory
 TEST_DIR="/tmp/vpn_log_test_$$"
 LOG_DIR="$TEST_DIR/.local/state/vpn"
@@ -91,7 +95,7 @@ fi
 echo ""
 echo "=== Test 4: Log location (not in /tmp) ==="
 # Check that production logs are NOT in /tmp
-if grep -E "^[^#]*log_file=\"/tmp.*\.log\"" ../src/vpn-manager ../src/vpn-connector 2> /dev/null; then
+if grep -E "^[^#]*log_file=\"/tmp.*\.log\"" "$SRC_DIR/vpn-manager" "$SRC_DIR/vpn-connector" 2> /dev/null; then
     echo -e "${RED}FAIL${NC} - Production logs still using /tmp directory"
     exit 1
 fi
@@ -100,7 +104,7 @@ echo -e "${GREEN}PASS${NC} - Production logs use secure directory (~/.local/stat
 echo ""
 echo "=== Test 5: Verify VPN_LOG_FILE usage ==="
 # Verify log_vpn_event and view_logs use $VPN_LOG_FILE
-if ! grep -q 'local log_file="\$VPN_LOG_FILE"' ../src/vpn-manager; then
+if ! grep -q 'local log_file="\$VPN_LOG_FILE"' "$SRC_DIR/vpn-manager"; then
     echo -e "${RED}FAIL${NC} - log_vpn_event() or view_logs() not using \$VPN_LOG_FILE"
     exit 1
 fi

@@ -210,27 +210,15 @@ run_unit_tests() {
     test_cache_file_operations
     test_configuration_validation
 
-    # Run security/robustness hardening regression tests
-    log_test "INFO" "Running hardening regression tests"
-    if bash "$TEST_DIR/unit/test_hardening.sh"; then
-        log_test "PASS" "Hardening regression tests: All tests passed"
-    else
-        log_test "FAIL" "Hardening regression tests: Some tests failed"
-        return 1
-    fi
-
-    # Run latency-based server selection tests
-    log_test "INFO" "Running latency-based server selection tests"
-    if bash "$TEST_DIR/unit/test_latency_selection.sh"; then
-        log_test "PASS" "Latency selection tests: All tests passed"
-    else
-        log_test "FAIL" "Latency selection tests: Some tests failed"
-        return 1
-    fi
-
-    # Focused suites that used to exist without being run by anything
-    local suite suite_output
+    # Every sub-script runs even after one fails; each counts as one passed
+    # or failed test, so a failure shows in the suite's results (#287)
+    local suite suite_output failed_suites=0
     local -a focused_suites=(
+        # Security/robustness hardening regression tests
+        unit/test_hardening.sh
+        # Latency-based server selection tests
+        unit/test_latency_selection.sh
+        # Focused suites that used to exist without being run by anything
         unit/test_auto_reconnect.sh
         unit/test_connection_feedback.sh
         unit/test_kill_switch.sh
@@ -262,37 +250,26 @@ run_unit_tests() {
         emergency_reset_vs_cleanup_tests.sh
         test_vpn_utils.sh
         security/test_pid_validation.sh
+        # Error handler unit tests (Issue #72)
+        unit/test_error_handler.sh
+        # Exponential backoff optimization tests (Issue #62)
+        unit/test_exponential_backoff.sh
     )
     for suite in "${focused_suites[@]}"; do
         log_test "INFO" "Running $suite"
         if suite_output=$(bash "$TEST_DIR/$suite" 2>&1 < /dev/null); then
             log_test "PASS" "$suite: All tests passed"
+            TESTS_PASSED=$((TESTS_PASSED + 1))
         else
             log_test "FAIL" "$suite: Some tests failed"
             echo "$suite_output" | tail -20
-            return 1
+            FAILED_TESTS+=("$suite")
+            TESTS_FAILED=$((TESTS_FAILED + 1))
+            failed_suites=$((failed_suites + 1))
         fi
     done
 
-    # Run error handler unit tests (Issue #72)
-    log_test "INFO" "Running VPN error handler unit tests"
-    if bash "$TEST_DIR/unit/test_error_handler.sh"; then
-        log_test "PASS" "VPN error handler tests: All 43 tests passed"
-    else
-        log_test "FAIL" "VPN error handler tests: Some tests failed"
-        return 1
-    fi
-
-    # Run exponential backoff optimization tests (Issue #62)
-    log_test "INFO" "Running exponential backoff optimization tests"
-    if bash "$TEST_DIR/unit/test_exponential_backoff.sh"; then
-        log_test "PASS" "Exponential backoff tests: All tests passed"
-    else
-        log_test "FAIL" "Exponential backoff tests: Some tests failed"
-        return 1
-    fi
-
-    return 0
+    [[ $failed_suites -eq 0 ]]
 }
 
 # Run tests if script is executed directly
