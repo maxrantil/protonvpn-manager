@@ -608,6 +608,11 @@ case "${1:-}" in
         # Useful after network changes (wake from sleep, new WiFi, etc.)
         if is_enabled; then
             echo -e "${YELLOW}Refreshing kill switch rules...${NC}"
+            # The tunnel check guards turning the kill switch on. Here it is
+            # already on (traffic already blocked), and the reconnect hook
+            # refreshes exactly when tun0 is gone; the server IP then comes
+            # from the saved state, so the reconnect stays allowed.
+            check_vpn_interface() { return 0; }
             # Re-enable with current network settings (will flush and re-add rules)
             enable_kill_switch
         else
