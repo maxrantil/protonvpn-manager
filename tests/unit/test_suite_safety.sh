@@ -364,6 +364,49 @@ test_src_scripts_never_load_installed_copy() {
         "out=$out; installed files used: $(sort -u "$marker" | tr '\n' ' ')"
 }
 
+# A failing sub-script must fail the unit suite and must not stop the
+# sub-scripts after it (#287: with a live VPN, test_hardening.sh failed, the
+# rest never ran and the summary still said 0 failed)
+test_failed_sub_script_is_counted() {
+    local proj="$WORK_DIR/runner_proj" rel
+    mkdir -p "$proj/tests"
+    cp "$TESTS_DIR/unit_tests.sh" "$TESTS_DIR/test_framework.sh" "$proj/tests/"
+    ln -s "$PROJECT_ROOT/src" "$proj/src"
+    # Every script unit_tests.sh runs becomes a stub that logs its own name;
+    # only the hardening stub fails
+    local -a subs=()
+    mapfile -t subs < <(grep -vE '^[[:space:]]*#' "$TESTS_DIR/unit_tests.sh" |
+        grep -oE '[A-Za-z0-9_/]+\.sh' | sed 's|^TEST_DIR/||' |
+        grep -vxE 'test_framework\.sh|unit_tests\.sh' | sort -u)
+    for rel in "${subs[@]}"; do
+        mkdir -p "$proj/tests/$(dirname "$rel")"
+        printf '#!/bin/bash\necho %q >> "%s"\n' "$rel" "$WORK_DIR/sub_ran.log" > "$proj/tests/$rel"
+    done
+    echo 'exit 1' >> "$proj/tests/unit/test_hardening.sh"
+    rm -f "$WORK_DIR/sub_ran.log"
+
+    local out
+    out=$(with_framework '
+        VERBOSE=0 FAIL_FAST=0
+        eval "$(sed -n "/^run_test_suite() {/,/^}/p" "$TESTS_DIR/run_tests.sh")"
+        # Called as run_tests.sh calls it, in a condition
+        if run_test_suite "Unit Tests" "'"$proj"'/tests/unit_tests.sh" run_unit_tests 2> /dev/null; then
+            echo "suite_exit=0"
+        else
+            echo "suite_exit=1"
+        fi
+    ')
+    grep -qx "suite_exit=1" <<< "$out"
+    report $? "run_test_suite fails the unit suite when a sub-script fails" "$(tail -3 <<< "$out")"
+    grep -qE "results: [0-9]+ passed, 1 failed" <<< "$out"
+    report $? "the failing sub-script is counted in the suite's results" \
+        "$(grep -E 'results:' <<< "$out")"
+    local ran
+    ran=$(sort -u "$WORK_DIR/sub_ran.log" 2> /dev/null | wc -l)
+    [[ $ran -eq ${#subs[@]} ]]
+    report $? "the sub-scripts after a failing one still run" "ran $ran of ${#subs[@]}"
+}
+
 # Suites that run the real scripts are only safe as long as something runs
 # them: a file nothing runs drifts until it is unsafe or broken (#271)
 test_isolated_suites_are_registered() {
@@ -429,6 +472,7 @@ test_exit_codes_skipped_by_default
 test_exit_codes_refuses_with_running_vpn
 test_process_safety_skipped_with_running_vpn
 test_suites_leave_running_vpn_and_home_alone
+test_failed_sub_script_is_counted
 test_isolated_suites_are_registered
 test_no_test_script_is_run_by_nothing
 test_mock_command_takes_effect
