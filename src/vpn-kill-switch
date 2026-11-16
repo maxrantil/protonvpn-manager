@@ -342,7 +342,11 @@ save_server_record() {
         run_privileged mv -f -- "$tmp" "$SERVER_RECORD" 2> /dev/null; then
         return 0
     fi
-    [[ -n $tmp ]] && run_privileged rm -f -- "$tmp" 2> /dev/null
+    # (A kill between mktemp and mv can leave the temp file; /run is
+    # cleared at boot and nothing reads it.)
+    if [[ -n $tmp ]]; then
+        run_privileged rm -f -- "$tmp" 2> /dev/null || true
+    fi
     echo -e "${YELLOW}Warning: could not record the VPN server in $SERVER_RECORD${NC}" >&2
     return 0
 }
