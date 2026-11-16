@@ -400,6 +400,76 @@ test_security_logs_security_events() {
     fi
 }
 
+# Run the hook's real check_kill_switch with a stubbed kill switch, VPN health
+# check and logger. Prints "rc=<status>", then every logged event, then
+# "health-checked" if vpn_is_healthy was called.
+# $1: kill switch is-enabled exit status, $2: vpn_is_healthy exit status
+run_check_kill_switch() {
+    local ks_status="$1" healthy_status="$2"
+    local work
+    work=$(mktemp -d)
+    printf '#!/bin/sh\nexit %s\n' "$ks_status" > "$work/kill-switch"
+    chmod +x "$work/kill-switch"
+
+    if ! grep -q '^check_kill_switch() {$' "$DISPATCHER_HOOK"; then
+        echo "check_kill_switch() not found in $DISPATCHER_HOOK"
+        rm -rf "$work"
+        return
+    fi
+
+    (
+        # shellcheck disable=SC1090  # function extracted from the hook under test
+        source <(sed -n '/^check_kill_switch() {$/,/^}$/p' "$DISPATCHER_HOOK")
+        # shellcheck disable=SC2034  # read by the sourced check_kill_switch
+        KILL_SWITCH="$work/kill-switch"
+        # shellcheck disable=SC2034
+        REAL_HOME="$work"
+        log_event() { printf '%s %s\n' "$1" "$2" >> "$work/events"; }
+        vpn_is_healthy() {
+            touch "$work/health-checked"
+            return "$healthy_status"
+        }
+        rc=0
+        check_kill_switch || rc=$?
+        echo "rc=$rc"
+        cat "$work/events" 2> /dev/null || true
+        [[ -e "$work/health-checked" ]] && echo "health-checked"
+    )
+    rm -rf "$work"
+}
+
+assert_check_kill_switch() {
+    local name="$1" ks_status="$2" healthy_status="$3" expected="$4"
+    start_test "$name"
+
+    local output
+    output=$(run_check_kill_switch "$ks_status" "$healthy_status")
+
+    if [[ "$output" == "$expected" ]]; then
+        log_test "PASS" "$CURRENT_TEST"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        log_test "FAIL" "$CURRENT_TEST: expected '$expected', got '$output'"
+        FAILED_TESTS+=("$CURRENT_TEST")
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+}
+
+test_kill_switch_off_vpn_healthy_logs_info() {
+    assert_check_kill_switch "Kill switch off, VPN healthy: no reconnect, INFO not SECURITY" \
+        1 0 $'rc=1\nINFO Kill switch not enabled; VPN up, no reconnect needed\nhealth-checked'
+}
+
+test_kill_switch_off_vpn_down_logs_refusal() {
+    assert_check_kill_switch "Kill switch off, VPN down: refusal logged" \
+        1 1 $'rc=1\nSECURITY Auto-reconnect blocked: kill switch not enabled\nhealth-checked'
+}
+
+test_kill_switch_on_passes_silently() {
+    assert_check_kill_switch "Kill switch on: passes, nothing logged, health not checked" \
+        0 1 "rc=0"
+}
+
 # ============================================================================
 # RUN ALL TESTS
 # ============================================================================
@@ -424,6 +494,9 @@ main() {
     test_dispatcher_hook_rejects_symlinks
     test_dispatcher_hook_validates_profile_path
     test_dispatcher_hook_checks_integrity_hash
+    test_kill_switch_off_vpn_healthy_logs_info
+    test_kill_switch_off_vpn_down_logs_refusal
+    test_kill_switch_on_passes_silently
 
     # Config management tests
     test_config_command_exists

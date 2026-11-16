@@ -137,6 +137,13 @@ check_kill_switch() {
     fi
 
     if ! HOME="$REAL_HOME" "$KILL_SWITCH" is-enabled 2>/dev/null; then
+        # The refusal is SECURITY only when the VPN looks down, so the log shows
+        # when it really went down. vpn_is_healthy (defined below) is a loose
+        # check, so the healthy case is still logged rather than dropped.
+        if vpn_is_healthy; then
+            log_event "INFO" "Kill switch not enabled; VPN up, no reconnect needed"
+            return 1
+        fi
         log_event "SECURITY" "Auto-reconnect blocked: kill switch not enabled"
         return 1
     fi
