@@ -1037,7 +1037,9 @@ test_kill_switch_trusted_server_sources() {
 	printf 'client\r\n# remote 203.0.113.5 9999\r\n; remote 203.0.113.5 9998\r\nproto udp\r\nport 4569\r\nremote 203.0.113.5 1194 # nearest\r\nremote 203.0.113.5\r\nport not-a-port\r\n' \
 		> "$KS_SESSION/profile.ovpn"
 	printf '2026-11-16 10:39:48 UDPv4 link remote: [AF_INET]203.0.113.5:1194\n' > "$KS_SESSION/openvpn.log"
+	# Explicit modes: a umask like CI's 0002 would leave them group-writable
 	chmod 600 "$KS_SESSION/profile.ovpn"
+	chmod 640 "$KS_SESSION/openvpn.log"
 	ks_refresh
 	ks_expect "-A VPN_KILL_SWITCH -d 203.0.113.5 -p udp -m multiport --dports 1194,4569 -j ACCEPT" \
 		"profiles with CRLF, comments and an invalid last line are parsed"
