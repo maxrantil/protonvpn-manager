@@ -375,9 +375,9 @@ test_failed_sub_script_is_counted() {
     # Every script unit_tests.sh runs becomes a stub that logs its own name;
     # only the hardening stub fails
     local -a subs=()
-    mapfile -t subs < <(grep -vE '^[[:space:]]*#' "$TESTS_DIR/unit_tests.sh" |
-        grep -oE '[A-Za-z0-9_/]+\.sh' | sed 's|^TEST_DIR/||' |
-        grep -vxE 'test_framework\.sh|unit_tests\.sh' | sort -u)
+    # The list unit_tests.sh loops over, as the registration tests read it
+    mapfile -t subs < <(sed -n '/local -a focused_suites=(/,/^    )/p' "$TESTS_DIR/unit_tests.sh" |
+        grep -oE '^[[:space:]]+[A-Za-z0-9_/]+\.sh$' | tr -d ' ')
     for rel in "${subs[@]}"; do
         mkdir -p "$proj/tests/$(dirname "$rel")"
         printf '#!/bin/bash\necho %q >> "%s"\n' "$rel" "$WORK_DIR/sub_ran.log" > "$proj/tests/$rel"
