@@ -144,8 +144,6 @@ chain_exists_v6() {
     run_ip6tables -L "$CHAIN_NAME_V6" -n &> /dev/null
 }
 
-# Get the current VPN server IP from the active connection
-# Returns the ACTUAL VPN server IP (the one traffic goes to before entering the tunnel)
 run_privileged() {
     if [[ $EUID -eq 0 ]]; then
         "$@"
@@ -170,9 +168,10 @@ session_file_trusted() {
         is_root_private "$SESSION_DIR" && is_root_private "$SESSION_DIR/$1"
 }
 
-# Session files are root-only (profile.ovpn is 600): read them as root
+# Session files are root-only (profile.ovpn is 600): read them as root.
+# Unreadable (no sudo, or removed by a disconnect meanwhile) reads as empty.
 read_session_file() {
-    run_privileged cat -- "$SESSION_DIR/$1" 2> /dev/null | tr -d '\r'
+    { run_privileged cat -- "$SESSION_DIR/$1" 2> /dev/null || true; } | tr -d '\r'
 }
 
 is_ipv4() {
@@ -213,12 +212,19 @@ normalize_proto() {
 profile_allow_for() {
     local ip=$1 profile key a b c proto port
     session_file_trusted profile.ovpn || return 0
-    profile=$(read_session_file profile.ovpn)
+    # Without comments: whole-line and trailing ones start with # or ;
+    profile=$(read_session_file profile.ovpn | sed -E 's/^[[:space:]]*[#;].*//; s/[[:space:]]+[#;].*//')
     local default_proto="udp" default_port="1194"
     while read -r key a _; do
         case "$key" in
-            proto) default_proto=$(normalize_proto "$a") || default_proto="" ;;
-            port | rport) is_port "$a" && default_port=$a ;;
+            proto)
+                default_proto=$(normalize_proto "$a") || default_proto=""
+                ;;
+            port | rport)
+                if is_port "$a"; then
+                    default_port=$a
+                fi
+                ;;
         esac
     done <<< "$profile"
     local -A ports=()
@@ -238,6 +244,9 @@ profile_allow_for() {
     for proto in udp tcp; do
         [[ -n ${ports[$proto]:-} ]] || continue
         # Over the multiport limit: keep the first 15
+        if [[ $(tr -cd , <<< "${ports[$proto]}" | wc -c) -ge 15 ]]; then
+            echo -e "${YELLOW}Warning: the profile lists more than 15 $proto ports for $ip; allowing the first 15${NC}" >&2
+        fi
         echo "$ip $proto $(cut -d, -f1-15 <<< "${ports[$proto]}")"
     done
 }
@@ -267,6 +276,7 @@ get_vpn_server_allow() {
     local explicit_ip=${1:-} ip="" allow=""
 
     if [[ -n $explicit_ip ]]; then
+        is_ipv4 "$explicit_ip" || return 0
         allow=$(profile_allow_for "$explicit_ip")
         if [[ -n $allow ]]; then
             echo "$allow"
@@ -281,7 +291,7 @@ get_vpn_server_allow() {
     if [[ -n $ip ]] && session_file_trusted profile.ovpn; then
         allow=$(profile_allow_for "$ip")
         if [[ -z $allow ]]; then
-            echo -e "${YELLOW}Warning: the session's server ($ip) is not in its profile; not allowing it${NC}" >&2
+            echo -e "${YELLOW}Warning: the session's server ($ip) is not in its profile (as an IPv4 udp/tcp remote); not allowing it${NC}" >&2
             return 0
         fi
         echo "$allow"
@@ -319,11 +329,22 @@ get_vpn_server_allow() {
     return 0
 }
 
-# Record what is allowed, as root, next to the session (see SERVER_RECORD)
+# Record what is allowed, as root, next to the session (see SERVER_RECORD).
+# Written to a temp file and renamed over the record, so a reader never
+# sees half a record; a failed write keeps the previous one.
 save_server_record() {
-    local allow=$1
-    [[ -n $allow ]] && is_root_private "$SESSION_DIR" && [[ -d $SESSION_DIR ]] || return 0
-    printf '%s\n' "$allow" | run_privileged install -m 600 /dev/stdin "$SERVER_RECORD" 2> /dev/null || true
+    local allow=$1 tmp=""
+    if [[ -z $allow || ! -d $SESSION_DIR ]] || ! is_root_private "$SESSION_DIR"; then
+        return 0
+    fi
+    if tmp=$(run_privileged mktemp "$SESSION_DIR/.kill_switch.server.XXXXXX" 2> /dev/null) &&
+        printf '%s\n' "$allow" | run_privileged install -m 600 /dev/stdin "$tmp" 2> /dev/null &&
+        run_privileged mv -f -- "$tmp" "$SERVER_RECORD" 2> /dev/null; then
+        return 0
+    fi
+    [[ -n $tmp ]] && run_privileged rm -f -- "$tmp" 2> /dev/null
+    echo -e "${YELLOW}Warning: could not record the VPN server in $SERVER_RECORD${NC}" >&2
+    return 0
 }
 
 # Get the default gateway IP
@@ -701,6 +722,7 @@ show_help() {
     echo ""
     echo "Commands:"
     echo "  enable [server_ip]  - Enable kill switch (requires active VPN connection)"
+    echo "                        (a server_ip the profile does not list is allowed on all ports)"
     echo "  enable --force      - Force enable without VPN check (DANGEROUS)"
     echo "  disable             - Disable kill switch (allows normal traffic)"
     echo "  refresh             - Update rules for current network (after WiFi change)"
@@ -731,7 +753,7 @@ case "${1:-}" in
         for arg in "${@:2}"; do
             if [[ "$arg" == "--force" ]]; then
                 FORCE_MODE="true"
-            elif [[ "$arg" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            elif is_ipv4 "$arg"; then
                 SERVER_IP="$arg"
             fi
         done

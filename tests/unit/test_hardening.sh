@@ -836,7 +836,10 @@ ks_setup() {
 	rm -rf "$KS_STUBS" "$KS_RULES" "$KS_SESSION"
 	mkdir -p "$KS_STUBS" "$KS_RULES" "$KS_SESSION" "$XDG_STATE_HOME/vpn"
 	rm -f "$KS_STATE"
-	printf '#!/bin/bash\n[[ $1 == -n ]] && shift\nexec "$@"\n' > "$KS_STUBS/sudo"
+	# sudo runs the (stubbed) command; with $KS_RULES/nocat it cannot read
+	# the profile
+	printf '#!/bin/bash\n[[ $1 == -n ]] && shift\n[[ -e "%s/nocat" && $1 == cat && $* == *profile.ovpn ]] && exit 1\nexec "$@"\n' \
+		"$KS_RULES" > "$KS_STUBS/sudo"
 	printf '#!/bin/bash\nexit 0\n' > "$KS_STUBS/iptables"
 	printf '#!/bin/bash\nexit 0\n' > "$KS_STUBS/ip6tables"
 	printf '#!/bin/bash\ncat > "%s/v4"\n' "$KS_RULES" > "$KS_STUBS/iptables-restore"
@@ -888,10 +891,16 @@ ks_session() {
 	chmod 640 "$KS_SESSION/openvpn.log"
 }
 
-ks_refresh() {
+# ks_run <vpn-kill-switch args...>: output in $KS_RULES/out, status in rc
+ks_run() {
 	rm -f "$KS_RULES/v4" "$KS_RULES/v6"
 	PATH="$KS_STUBS:$PATH" VPN_SESSION_DIR="$KS_SESSION" \
-		bash "$SRC_DIR/vpn-kill-switch" refresh > "$KS_RULES/out" 2>&1
+		bash "$SRC_DIR/vpn-kill-switch" "$@" > "$KS_RULES/out" 2>&1
+	echo $? > "$KS_RULES/rc"
+}
+
+ks_refresh() {
+	ks_run refresh
 }
 
 # The server ACCEPT lines of the last refresh (empty if none)
@@ -902,10 +911,12 @@ ks_server_rules() {
 ks_expect() { # <expected server rules> <name>
 	local got
 	got=$(ks_server_rules)
-	if [[ $got == "$1" ]] && grep -q -- "-A VPN_KILL_SWITCH -j DROP" "$KS_RULES/v4" 2> /dev/null; then
+	# The command must succeed: "no server rule" must not mean "crashed"
+	if [[ $got == "$1" && $(cat "$KS_RULES/rc" 2> /dev/null) == 0 ]] &&
+		grep -q -- "-A VPN_KILL_SWITCH -j DROP" "$KS_RULES/v4" 2> /dev/null; then
 		test_pass "$2"
 	else
-		test_fail "$2" "expected: '$1' got: '$got' ($(tail -3 "$KS_RULES/out" 2> /dev/null | tr '\n' ' '))"
+		test_fail "$2" "expected: '$1' got: '$got' rc=$(cat "$KS_RULES/rc" 2> /dev/null) ($(tail -3 "$KS_RULES/out" 2> /dev/null | tr '\n' ' '))"
 	fi
 }
 
@@ -976,9 +987,8 @@ test_kill_switch_trusted_server_sources() {
 
 	# An IP given to enable is deliberate: allowed as is if the profile
 	# does not list it
-	rm -f "$KS_RULES/v4" "$KS_SESSION/kill_switch.server"
-	PATH="$KS_STUBS:$PATH" VPN_SESSION_DIR="$KS_SESSION" \
-		bash "$SRC_DIR/vpn-kill-switch" enable 198.51.100.9 > "$KS_RULES/out" 2>&1
+	rm -f "$KS_SESSION/kill_switch.server"
+	ks_run enable 198.51.100.9
 	ks_expect "-A VPN_KILL_SWITCH -d 198.51.100.9 -j ACCEPT" \
 		"an IP given to enable that the profile does not list is allowed as given"
 	rm -f "$KS_RULES/tun0" "$KS_RULES/route" "$KS_SESSION/profile.ovpn" "$KS_SESSION/kill_switch.server"
@@ -1019,6 +1029,67 @@ test_kill_switch_trusted_server_sources() {
 	ks_refresh
 	ks_expect "-A VPN_KILL_SWITCH -d 198.51.100.7 -p tcp -m multiport --dports 443 -j ACCEPT" \
 		"malformed server record lines are dropped"
+	rm -f "$record"
+
+	# Profile parsing: CRLF, comment lines, a trailing comment, a remote
+	# without a port (the profile's port applies), an invalid last line
+	chmod 750 "$KS_SESSION"
+	printf 'client\r\n# remote 203.0.113.5 9999\r\n; remote 203.0.113.5 9998\r\nproto udp\r\nport 4569\r\nremote 203.0.113.5 1194 # nearest\r\nremote 203.0.113.5\r\nport not-a-port\r\n' \
+		> "$KS_SESSION/profile.ovpn"
+	printf '2026-11-16 10:39:48 UDPv4 link remote: [AF_INET]203.0.113.5:1194\n' > "$KS_SESSION/openvpn.log"
+	chmod 600 "$KS_SESSION/profile.ovpn"
+	ks_refresh
+	ks_expect "-A VPN_KILL_SWITCH -d 203.0.113.5 -p udp -m multiport --dports 1194,4569 -j ACCEPT" \
+		"profiles with CRLF, comments and an invalid last line are parsed"
+	rm -f "$KS_SESSION/kill_switch.server"
+
+	# The last line counts even without a newline
+	printf 'client\nproto tcp\nremote 203.0.113.5 443' > "$KS_SESSION/profile.ovpn"
+	ks_refresh
+	ks_expect "-A VPN_KILL_SWITCH -d 203.0.113.5 -p tcp -m multiport --dports 443 -j ACCEPT" \
+		"a profile's last line counts without a trailing newline"
+	rm -f "$KS_SESSION/kill_switch.server"
+
+	# More remotes than multiport takes: the first 15 ports, with a warning
+	local many=() n
+	for n in $(seq 1001 1017); do many+=("203.0.113.5 $n"); done
+	ks_session udp 203.0.113.5 1001 "${many[@]}"
+	ks_refresh
+	ks_expect "-A VPN_KILL_SWITCH -d 203.0.113.5 -p udp -m multiport --dports $(seq -s, 1001 1015) -j ACCEPT" \
+		"more than 15 ports: the first 15 are allowed"
+	grep -qi "15" "$KS_RULES/out"
+	report $? "dropping ports past 15 is reported" "dropping ports past 15 is reported" "$(cat "$KS_RULES/out")"
+	rm -f "$KS_SESSION/kill_switch.server"
+
+	# An IPv6-only profile allows nothing here, and says so
+	ks_session udp6 203.0.113.5 1194 "203.0.113.5 1194"
+	ks_refresh
+	ks_expect "" "an IPv6-only profile allows no server"
+	grep -q "not in its profile" "$KS_RULES/out"
+	report $? "a server the profile cannot allow is reported" \
+		"a server the profile cannot allow is reported" "$(cat "$KS_RULES/out")"
+
+	# A session file root cannot read (sudo fails, or it vanished mid-read)
+	ks_session udp 203.0.113.5 1194 "203.0.113.5 1194"
+	touch "$KS_RULES/nocat"
+	ks_refresh
+	ks_expect "" "an unreadable session file allows no server and does not abort"
+	rm -f "$KS_RULES/nocat"
+
+	# An out-of-range IP given to enable is not used
+	touch "$KS_RULES/tun0"
+	rm -f "$KS_SESSION/openvpn.log" "$KS_SESSION/profile.ovpn"
+	ks_run enable 256.1.1.1
+	ks_expect "" "an invalid IP given to enable is not allowed"
+
+	# disable removes the record
+	printf '198.51.100.7 udp 1194\n' > "$KS_SESSION/kill_switch.server"
+	chmod 600 "$KS_SESSION/kill_switch.server"
+	ks_run disable
+	local removed=1
+	[[ ! -e $KS_SESSION/kill_switch.server && $(cat "$KS_RULES/rc") == 0 ]] && removed=0
+	report "$removed" "disable removes the server record" "disable removes the server record" "$(cat "$KS_RULES/out")"
+	rm -f "$KS_RULES/tun0"
 	rm -rf "$KS_STUBS" "$KS_RULES" "$KS_SESSION" "$KS_STATE"
 }
 
