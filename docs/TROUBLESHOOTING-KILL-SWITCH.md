@@ -170,6 +170,13 @@ All state files are in `~/.local/state/vpn/`:
 | `reconnect.attempts` | Rate limiting tracker |
 | `vpn_manager.log` | General VPN manager log |
 
+The server the kill switch lets through is not taken from these user-owned
+files. Root records it in `/run/protonvpn-manager-session/kill_switch.server`
+(one `<ip> <proto> <ports>` line per protocol, mode 600). The record survives
+a disconnect, so a refresh after a drop still allows the reconnect, and is
+removed by `vpn kill-switch disable` or a reboot. If no trusted source names
+a server, the chain allows none and still ends in DROP; reconnect manually.
+
 ---
 
 ## Config File Location

@@ -119,7 +119,8 @@ vpn connect se --kill-switch
 vpn kill-switch status
 ```
 
-- [ ] Status shows ENABLED, plus a rule for the VPN server IP.
+- [ ] Status shows ENABLED, plus a rule for the VPN server IP limited to the
+      profile's protocol and ports (`-p udp -m multiport --dports ...`).
 - [ ] Browsing works, and DNS still resolves (through the VPN).
 - [ ] DNS to the router is blocked:
       ```bash
