@@ -48,11 +48,20 @@
   `docs/MACHINE-VALIDATION.md` §6 (rule limited by protocol and ports).
 - Read-only check against the live session: resolves to `<server> udp 4569,1194,5060,80,51820`,
   matching the profile.
+- **CI-only failure, fixed**: the record was never written on the GitHub runner, where
+  `install -m 600 /dev/stdin <file>` fails with "No such file or directory". A temporary
+  debug step (added and reverted on the branch) showed this. The record is now written
+  with `tee` into the `mktemp` file (already mode 600). A fixture also set its log mode
+  explicitly, since a 0002 umask made it group-writable. Note: `vpn-connector` also uses
+  `sudo install ... /dev/stdin` for the session files. That works on this machine, but
+  if it ever fails elsewhere, this is why.
+- **Pre-existing**: the `.github/workflows/release.yml` run fails on every branch (also
+  #287's); unrelated to these PRs and not investigated.
 
 ## 🎯 Current Project State
 
 - **Tests**: full suite with the VPN connected: 126 passed, 0 failed. The live OpenVPN
-  and firewall were untouched.
+  and firewall were untouched. CI: all checks green on `408fb22`.
 - **Branch**: pushed, clean
 - **Machine**: VPN connected (dk-120); kill switch off; `src/` installed at `41aad5b`
   (the #288 change is **not installed** yet)
@@ -79,7 +88,7 @@
 
 ## 🚀 Next Session Priorities
 
-1. CI green on #290; then Doctor Hubert approves the merge
+1. Doctor Hubert approves the merge of #290 (CI green)
 2. After the merge, install `vpn-kill-switch`:
    `sudo install -o root -g root -m 755 src/vpn-kill-switch /usr/local/bin/`
    Then run `docs/MACHINE-VALIDATION.md` §6: `vpn kill-switch enable` while connected,
