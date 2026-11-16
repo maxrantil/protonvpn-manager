@@ -24,16 +24,6 @@ jobs:
           dirname --version
           chmod --version
 
-      - name: Debug hardening tests (temporary)
-        run: |
-          cd tests
-          umask; id
-          d=$(mktemp -d); mkdir "$d/s"; chmod 700 "$d/s"
-          t=$(mktemp "$d/s/.x.XXXXXX"); echo "mktemp=$? $t"
-          printf 'a\n' | install -m 600 /dev/stdin "$t"; echo "install=$?"
-          mv -f -- "$t" "$d/s/rec"; echo "mv=$?"; ls -la "$d/s"
-          bash unit/test_hardening.sh < /dev/null 2>&1 | grep -A12 -E "✗.*recorded next|Results" || true
-
       - name: Run all tests
         run: |
           cd tests
