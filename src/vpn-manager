@@ -80,9 +80,7 @@ if [[ ! -f $VPN_LOG_FILE ]]; then
 fi
 if [[ -f $VPN_LOG_FILE && ! -L $VPN_LOG_FILE ]]; then
     chmod 600 "$VPN_LOG_FILE" 2> /dev/null || true
-    if [[ $EUID -eq 0 && -n "$REAL_USER" && -n "$REAL_GROUP" ]]; then
-        chown -h "$REAL_USER:$REAL_GROUP" "$VPN_LOG_FILE" 2> /dev/null || true
-    fi
+    give_to_real_user "$VPN_LOG_FILE"
 fi
 
 # Source centralized utilities and color management

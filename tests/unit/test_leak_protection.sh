@@ -238,6 +238,45 @@ test_root_run_leaves_state_to_user() {
     report $? "an unprivileged connect never chowns" "$(cat "$CALLS")"
 }
 
+# The kill switch saves its state as root too. When the user's group is not
+# known (id -gn failed), the file must still go to the user, in their login
+# group, rather than stay root's.
+run_kill_switch_save_state() { # $1 = REAL_GROUP
+    unshare -r bash -c "$(stubbed_source vpn-utils)
+        secure_user_dir() { mkdir -p \"\$1\"; }
+        chown() { echo \"chown:\$*\" >> \"\$CALLS\"; }
+        REAL_USER=alice REAL_GROUP='$1' VPN_INTERFACE=tun0
+        STATE_DIR='$XDG_STATE_HOME/vpn' STATE_FILE='$XDG_STATE_HOME/vpn/kill_switch.state'
+        eval \"\$(sed -n '/^save_state() {/,/^}/p' '$SRC_DIR/vpn-kill-switch')\"
+        save_state enabled 192.0.2.1" > /dev/null 2>&1
+}
+
+test_root_kill_switch_state_goes_to_user() {
+    local state="$XDG_STATE_HOME/vpn"
+    if ! unshare -r true 2> /dev/null; then
+        test_pass "kill switch state written as root stays the user's (skipped: no user namespace)"
+        return
+    fi
+    reset_state
+    run_kill_switch_save_state staff
+    grep -q "^chown:-h alice:staff $state/\.kill_switch\.state\." "$CALLS" && [[ -f $state/kill_switch.state ]]
+    report $? "kill switch state written as root is handed to the real user" "$(cat "$CALLS")"
+
+    reset_state
+    run_kill_switch_save_state ""
+    grep -q "^chown:-h alice: $state/\.kill_switch\.state\." "$CALLS"
+    report $? "with no known group, the state file still goes to the user (login group)" "$(cat "$CALLS")"
+}
+
+# Every file root writes for the user goes through give_to_real_user (or
+# secure_user_dir for directories), so the rules live in one place
+test_chown_only_in_utils() {
+    local inline
+    inline=$(grep -n '\bchown\b' "$SRC_DIR"/* | grep -v "^$SRC_DIR/vpn-utils:" | grep -v '^[^:]*:[0-9]*:[[:space:]]*#')
+    [[ -z $inline ]]
+    report $? "no inline chown outside vpn-utils (give_to_real_user)" "$inline"
+}
+
 test_tailscale_dns_left_alone() {
     reset_state
     echo "TAILSCALE_DNS=keep" > "$HOME/.config/vpn/config"
@@ -495,6 +534,8 @@ test_connect_blocks_ipv6
 test_connect_pauses_tailscale_dns
 test_tailscale_dns_left_alone
 test_root_run_leaves_state_to_user
+test_root_kill_switch_state_goes_to_user
+test_chown_only_in_utils
 test_release_restores
 test_release_respects_user_setting
 test_release_with_keep_kill_switch
