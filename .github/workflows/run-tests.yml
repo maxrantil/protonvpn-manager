@@ -24,6 +24,12 @@ jobs:
           dirname --version
           chmod --version
 
+      - name: Debug hardening tests (temporary)
+        run: |
+          cd tests
+          umask; id
+          bash unit/test_hardening.sh < /dev/null 2>&1 | grep -A4 -E "✗|Results" || true
+
       - name: Run all tests
         run: |
           cd tests
