@@ -330,15 +330,16 @@ get_vpn_server_allow() {
 }
 
 # Record what is allowed, as root, next to the session (see SERVER_RECORD).
-# Written to a temp file and renamed over the record, so a reader never
-# sees half a record; a failed write keeps the previous one.
+# Written to a temp file (mktemp: mode 600, owned by the writer) and renamed
+# over the record, so a reader never sees half a record; a failed write keeps
+# the previous one.
 save_server_record() {
     local allow=$1 tmp=""
     if [[ -z $allow || ! -d $SESSION_DIR ]] || ! is_root_private "$SESSION_DIR"; then
         return 0
     fi
     if tmp=$(run_privileged mktemp "$SESSION_DIR/.kill_switch.server.XXXXXX" 2> /dev/null) &&
-        printf '%s\n' "$allow" | run_privileged install -m 600 /dev/stdin "$tmp" 2> /dev/null &&
+        printf '%s\n' "$allow" | run_privileged tee -- "$tmp" > /dev/null 2>&1 &&
         run_privileged mv -f -- "$tmp" "$SERVER_RECORD" 2> /dev/null; then
         return 0
     fi
