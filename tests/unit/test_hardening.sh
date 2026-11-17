@@ -793,7 +793,7 @@ EOF
 	rc=$?
 	report "$rc" "refresh succeeds with the tunnel down" \
 		"refresh succeeds with the tunnel down" "rc=$rc: $out"
-	grep -q -- "-A VPN_KILL_SWITCH -d 203.0.113.9 -p udp -m multiport --dports 1194 -j ACCEPT" "$rules/v4" 2> /dev/null
+	grep -q -- "-A VPN_KILL_SWITCH -d 203.0.113.9 -p udp -m udp --dport 1194 -j ACCEPT" "$rules/v4" 2> /dev/null
 	report $? "refresh keeps the saved VPN server allowed" \
 		"refresh keeps the saved VPN server allowed" "$(cat "$rules/v4" 2> /dev/null)"
 	grep -q -- "-A VPN_KILL_SWITCH -j DROP" "$rules/v4" 2> /dev/null &&
@@ -903,6 +903,15 @@ ks_refresh() {
 	ks_run refresh
 }
 
+# The expected server rules: one per port, using only the udp/tcp match
+# (xt_multiport may be unloadable after a kernel upgrade without a reboot)
+ks_port_rules() { # <ip> <proto> <comma list of ports>
+	local port
+	for port in ${3//,/ }; do
+		echo "-A VPN_KILL_SWITCH -d $1 -p $2 -m $2 --dport $port -j ACCEPT"
+	done
+}
+
 # The server ACCEPT lines of the last refresh (empty if none)
 ks_server_rules() {
 	grep -E -- "^-A VPN_KILL_SWITCH -d [0-9.]+ " "$KS_RULES/v4" 2> /dev/null
@@ -922,7 +931,8 @@ ks_expect() { # <expected server rules> <name>
 
 test_kill_switch_trusted_server_sources() {
 	ks_setup
-	local udp_rule="-A VPN_KILL_SWITCH -d 203.0.113.5 -p udp -m multiport --dports 4569,1194,80 -j ACCEPT"
+	local udp_rule
+	udp_rule=$(ks_port_rules 203.0.113.5 udp 4569,1194,80)
 
 	# Session: root-owned profile and log; the state names another server
 	ks_session udp 203.0.113.5 4569 "203.0.113.5 4569" "203.0.113.5 1194" "203.0.113.5 80"
@@ -930,6 +940,10 @@ test_kill_switch_trusted_server_sources() {
 	chmod 600 "$KS_STATE"
 	ks_refresh
 	ks_expect "$udp_rule" "the root-owned session's server is allowed, limited to its protocol and ports"
+	local no_multiport=0
+	grep -q -- "multiport" "$KS_RULES/v4" "$KS_RULES/v6" 2> /dev/null && no_multiport=1
+	report "$no_multiport" "no rule needs the multiport match module" \
+		"no rule needs the multiport match module" "$(grep -h multiport "$KS_RULES/v4" "$KS_RULES/v6" 2> /dev/null)"
 
 	local recorded=1
 	[[ $(cat "$KS_SESSION/kill_switch.server" 2> /dev/null) == "203.0.113.5 udp 4569,1194,80" ]] &&
@@ -947,7 +961,7 @@ test_kill_switch_trusted_server_sources() {
 	# TCP profiles
 	ks_session tcp-client 203.0.113.6 443 "203.0.113.6 443" "203.0.113.6 7770"
 	ks_refresh
-	ks_expect "-A VPN_KILL_SWITCH -d 203.0.113.6 -p tcp -m multiport --dports 443,7770 -j ACCEPT" \
+	ks_expect "$(ks_port_rules 203.0.113.6 tcp 443,7770)" \
 		"a TCP session allows its server over TCP only"
 
 	# A log IP the profile does not list is not trusted
@@ -978,7 +992,7 @@ test_kill_switch_trusted_server_sources() {
 	ks_expect "" "the route table is ignored while tun0 is down"
 	touch "$KS_RULES/tun0"
 	ks_refresh
-	ks_expect "-A VPN_KILL_SWITCH -d 192.0.2.44 -p udp -m multiport --dports 1194 -j ACCEPT" \
+	ks_expect "$(ks_port_rules 192.0.2.44 udp 1194)" \
 		"the route table is used while tun0 is up"
 	rm -f "$KS_SESSION/kill_switch.server"
 	printf 'client\nproto udp\nremote 203.0.113.5 1194\n' > "$KS_SESSION/profile.ovpn"
@@ -996,8 +1010,8 @@ test_kill_switch_trusted_server_sources() {
 	# A remote's own protocol overrides the profile's: one rule per protocol
 	ks_session udp 203.0.113.5 1194 "203.0.113.5 1194" "203.0.113.5 443 tcp-client" "203.0.113.5 1194"
 	ks_refresh
-	ks_expect "-A VPN_KILL_SWITCH -d 203.0.113.5 -p udp -m multiport --dports 1194 -j ACCEPT
--A VPN_KILL_SWITCH -d 203.0.113.5 -p tcp -m multiport --dports 443 -j ACCEPT" \
+	ks_expect "$(ks_port_rules 203.0.113.5 udp 1194)
+$(ks_port_rules 203.0.113.5 tcp 443)" \
 		"a remote's own protocol gets its own rule (duplicate ports once)"
 	rm -f "$KS_SESSION/profile.ovpn" "$KS_SESSION/openvpn.log" "$KS_SESSION/kill_switch.server"
 
@@ -1027,7 +1041,7 @@ test_kill_switch_trusted_server_sources() {
 	printf '198.51.100.7 udp 1194,99999\n198.51.100.7 tcp 0\n198.51.100.7 udp 1194;x\n999.1.1.1 udp 1194\n198.51.100.7 tcp 443\n' > "$record"
 	chmod 600 "$record"
 	ks_refresh
-	ks_expect "-A VPN_KILL_SWITCH -d 198.51.100.7 -p tcp -m multiport --dports 443 -j ACCEPT" \
+	ks_expect "$(ks_port_rules 198.51.100.7 tcp 443)" \
 		"malformed server record lines are dropped"
 	rm -f "$record"
 
@@ -1041,23 +1055,23 @@ test_kill_switch_trusted_server_sources() {
 	chmod 600 "$KS_SESSION/profile.ovpn"
 	chmod 640 "$KS_SESSION/openvpn.log"
 	ks_refresh
-	ks_expect "-A VPN_KILL_SWITCH -d 203.0.113.5 -p udp -m multiport --dports 1194,4569 -j ACCEPT" \
+	ks_expect "$(ks_port_rules 203.0.113.5 udp 1194,4569)" \
 		"profiles with CRLF, comments and an invalid last line are parsed"
 	rm -f "$KS_SESSION/kill_switch.server"
 
 	# The last line counts even without a newline
 	printf 'client\nproto tcp\nremote 203.0.113.5 443' > "$KS_SESSION/profile.ovpn"
 	ks_refresh
-	ks_expect "-A VPN_KILL_SWITCH -d 203.0.113.5 -p tcp -m multiport --dports 443 -j ACCEPT" \
+	ks_expect "$(ks_port_rules 203.0.113.5 tcp 443)" \
 		"a profile's last line counts without a trailing newline"
 	rm -f "$KS_SESSION/kill_switch.server"
 
-	# More remotes than multiport takes: the first 15 ports, with a warning
+	# More than 15 ports: the first 15, with a warning
 	local many=() n
 	for n in $(seq 1001 1017); do many+=("203.0.113.5 $n"); done
 	ks_session udp 203.0.113.5 1001 "${many[@]}"
 	ks_refresh
-	ks_expect "-A VPN_KILL_SWITCH -d 203.0.113.5 -p udp -m multiport --dports $(seq -s, 1001 1015) -j ACCEPT" \
+	ks_expect "$(ks_port_rules 203.0.113.5 udp "$(seq -s, 1001 1015)")" \
 		"more than 15 ports: the first 15 are allowed"
 	grep -qi "15" "$KS_RULES/out"
 	report $? "dropping ports past 15 is reported" "dropping ports past 15 is reported" "$(cat "$KS_RULES/out")"
