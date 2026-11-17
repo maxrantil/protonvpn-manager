@@ -470,6 +470,151 @@ test_kill_switch_on_passes_silently() {
         0 1 "rc=0"
 }
 
+# Run the hook's real vpn_is_healthy against a fake /proc, PID file and
+# interface list; prints "rc=<status>". Nothing real is inspected, so the
+# result does not depend on a VPN this machine may have up.
+# $1: PID file ("trusted", "missing", "user-owned", "symlink")
+# $2: the PID's process ("ours", "stale" (none), "other-config", "not-openvpn",
+#     "user-run" (ours, but not running as root))
+# $3: tun0 ("up", "down", "missing")
+# $4: WireGuard ("none", "foreign")
+run_vpn_is_healthy() {
+    local pidfile_state="$1" process="$2" tun0="$3" wg="$4"
+    local work
+    work=$(mktemp -d)
+    mkdir -p "$work/bin" "$work/proc"
+
+    if ! grep -q '^vpn_is_healthy() {$' "$DISPATCHER_HOOK"; then
+        echo "vpn_is_healthy() not found in $DISPATCHER_HOOK"
+        rm -rf "$work"
+        return
+    fi
+
+    local pid=4242 profile="/run/protonvpn-manager-session/profile.ovpn"
+    case "$pidfile_state" in
+        trusted | user-owned) echo "$pid" > "$work/openvpn.pid" ;;
+        symlink)
+            echo "$pid" > "$work/elsewhere.pid"
+            ln -s "$work/elsewhere.pid" "$work/openvpn.pid"
+            ;;
+    esac
+    # stat -c %u: the PID file's owner, or the process's (its /proc dir)
+    local owner=0 proc_owner=0
+    [[ $pidfile_state == user-owned ]] && owner=1000
+    [[ $process == user-run ]] && proc_owner=1000
+    cat > "$work/bin/stat" << STUB
+#!/bin/bash
+[[ \$* == *"$work/proc/"* ]] && echo $proc_owner || echo $owner
+STUB
+
+    case "$process" in
+        ours | other-config | not-openvpn | user-run)
+            mkdir -p "$work/proc/$pid"
+            local comm=openvpn config="$profile"
+            [[ $process == not-openvpn ]] && comm="sleep"
+            [[ $process == other-config ]] && config=/etc/openvpn/client/work.conf
+            echo "$comm" > "$work/proc/$pid/comm"
+            printf '/usr/bin/openvpn\0--config\0%s\0--daemon\0' "$config" > "$work/proc/$pid/cmdline"
+            ;;
+    esac
+
+    # ip: tun0's state, and any WireGuard interface
+    local tun_line="" wg_line=""
+    [[ $tun0 == up ]] && tun_line="28: tun0: <POINTOPOINT,NOARP,UP,LOWER_UP> mtu 1500"
+    [[ $tun0 == down ]] && tun_line="28: tun0: <POINTOPOINT,NOARP> mtu 1500"
+    [[ $wg == foreign ]] && wg_line="9: wg0: <POINTOPOINT,NOARP,UP,LOWER_UP> mtu 1420"
+    cat > "$work/bin/ip" << STUB
+#!/bin/bash
+args="\$*"
+if [[ \$args == *"type wireguard"* ]]; then
+    [[ -n "$wg_line" ]] && echo "$wg_line"
+    exit 0
+fi
+if [[ \$args == *tun0* ]]; then
+    [[ -z "$tun_line" ]] && exit 1
+    # "up" lists the interface only when it is administratively up
+    [[ \$args == *" up"* && "$tun_line" != *",UP,"* ]] && exit 0
+    echo "$tun_line"
+    exit 0
+fi
+exit 0
+STUB
+    # wg and pgrep: a foreign WireGuard tunnel, and an openvpn running somewhere
+    printf '#!/bin/sh\n[ "%s" = foreign ] && echo "interface: wg0"\nexit 0\n' "$wg" > "$work/bin/wg"
+    printf '#!/bin/sh\necho 999\nexit 0\n' > "$work/bin/pgrep"
+    chmod +x "$work/bin/"*
+
+    (
+        # The hook's own shell options
+        set -euo pipefail
+        # shellcheck disable=SC1090  # function extracted from the hook under test
+        source <(sed -n '/^vpn_is_healthy() {$/,/^}$/p' "$DISPATCHER_HOOK")
+        # shellcheck disable=SC2034  # read by the sourced vpn_is_healthy
+        VPN_PID_FILE="$work/openvpn.pid"
+        # shellcheck disable=SC2034
+        VPN_PROC_DIR="$work/proc"
+        # shellcheck disable=SC2034
+        VPN_SESSION_PROFILE="$profile"
+        # shellcheck disable=SC2034
+        VPN_TUNNEL_INTERFACE=tun0
+        PATH="$work/bin:$PATH"
+        # Called as the hook calls it: as an if condition
+        if vpn_is_healthy > /dev/null 2>&1; then
+            echo "rc=0"
+        else
+            echo "rc=1"
+        fi
+    )
+    rm -rf "$work"
+}
+
+assert_vpn_is_healthy() {
+    local name="$1" expected="$2"
+    shift 2
+    start_test "$name"
+
+    local output
+    output=$(run_vpn_is_healthy "$@")
+
+    if [[ "$output" == "rc=$expected" ]]; then
+        log_test "PASS" "$CURRENT_TEST"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        log_test "FAIL" "$CURRENT_TEST: expected 'rc=$expected', got '$output'"
+        FAILED_TESTS+=("$CURRENT_TEST")
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+}
+
+test_vpn_is_healthy_only_for_this_tools_vpn() {
+    assert_vpn_is_healthy "Healthy: this tool's openvpn (root PID file) and tun0 up" 0 \
+        trusted ours up none
+    assert_vpn_is_healthy "Not healthy: stale openvpn PID file, no process, no tun0" 1 \
+        trusted stale missing none
+    assert_vpn_is_healthy "Not healthy: this tool's openvpn alive but no tun0" 1 \
+        trusted ours missing none
+    assert_vpn_is_healthy "Not healthy: tun0 exists but is down" 1 \
+        trusted ours down none
+    assert_vpn_is_healthy "Not healthy: a foreign tun0 and some openvpn, no PID file" 1 \
+        missing stale up none
+    assert_vpn_is_healthy "Not healthy: the PID is an openvpn with another config" 1 \
+        trusted other-config up none
+    assert_vpn_is_healthy "Not healthy: the PID is not openvpn" 1 \
+        trusted not-openvpn up none
+    assert_vpn_is_healthy "Not healthy: a PID file not owned by root" 1 \
+        user-owned ours up none
+    assert_vpn_is_healthy "Not healthy: a symlinked PID file" 1 \
+        symlink ours up none
+    assert_vpn_is_healthy "Not healthy: only a foreign WireGuard interface" 1 \
+        missing stale missing foreign
+    assert_vpn_is_healthy "Not healthy: a foreign WireGuard interface and no tun0" 1 \
+        trusted ours missing foreign
+    assert_vpn_is_healthy "Not healthy: tun0 up but the PID file's process is gone" 1 \
+        trusted stale up none
+    assert_vpn_is_healthy "Not healthy: the PID is an openvpn a user runs (reused PID)" 1 \
+        trusted user-run up none
+}
+
 # ============================================================================
 # RUN ALL TESTS
 # ============================================================================
@@ -497,6 +642,7 @@ main() {
     test_kill_switch_off_vpn_healthy_logs_info
     test_kill_switch_off_vpn_down_logs_refusal
     test_kill_switch_on_passes_silently
+    test_vpn_is_healthy_only_for_this_tools_vpn
 
     # Config management tests
     test_config_command_exists
