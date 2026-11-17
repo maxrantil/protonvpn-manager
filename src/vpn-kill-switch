@@ -186,7 +186,7 @@ is_port() {
     [[ $1 =~ ^[0-9]{1,5}$ ]] && ((10#$1 >= 1 && 10#$1 <= 65535))
 }
 
-# A comma list of 1-15 ports (the iptables multiport limit)
+# A comma list of 1-15 ports (one rule each, so the list is kept short)
 is_port_list() {
     local IFS=, port n=0
     [[ $1 =~ ^[0-9,]+$ && $1 != *,, && $1 != ,* && $1 != *, ]] || return 1
@@ -243,7 +243,7 @@ profile_allow_for() {
     done <<< "$profile"
     for proto in udp tcp; do
         [[ -n ${ports[$proto]:-} ]] || continue
-        # Over the multiport limit: keep the first 15
+        # Over the 15-port limit: keep the first 15
         if [[ $(tr -cd , <<< "${ports[$proto]}" | wc -c) -ge 15 ]]; then
             echo -e "${YELLOW}Warning: the profile lists more than 15 $proto ports for $ip; allowing the first 15${NC}" >&2
         fi
@@ -424,16 +424,21 @@ enable_kill_switch() {
 -A $CHAIN_NAME -o lo -j ACCEPT
 -A $CHAIN_NAME -i lo -j ACCEPT
 -A $CHAIN_NAME -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT"
-    # Limited to the profile's protocol and ports; an IP given on the
-    # command line that the profile does not list is allowed as such
+    # Limited to the profile's protocol and ports, one rule per port: the
+    # udp/tcp match is always loaded, while xt_multiport can be unloadable
+    # after a kernel upgrade without a reboot. An IP given on the command
+    # line that the profile does not list is allowed as such
     while read -r allow_ip allow_proto allow_ports; do
         [[ -n $allow_ip ]] || continue
         if [[ $allow_proto == any ]]; then
             v4+="
 -A $CHAIN_NAME -d $allow_ip -j ACCEPT"
         else
-            v4+="
--A $CHAIN_NAME -d $allow_ip -p $allow_proto -m multiport --dports $allow_ports -j ACCEPT"
+            local allow_port
+            for allow_port in ${allow_ports//,/ }; do
+                v4+="
+-A $CHAIN_NAME -d $allow_ip -p $allow_proto -m $allow_proto --dport $allow_port -j ACCEPT"
+            done
         fi
     done <<< "$server_allow"
     v4+="
