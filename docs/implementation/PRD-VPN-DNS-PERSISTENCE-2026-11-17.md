@@ -3,7 +3,7 @@
 **Document Version**: 0.2 (draft, revised after agent review)
 **Date**: 2026-11-17
 **Author**: Doctor Hubert (with Claude Code assistance)
-**Status**: Approved 2026-11-17 (FR6 on by default, opt-out); S1 spike done (NM part), Tailscale part pending
+**Status**: Approved 2026-11-17 (FR6 on by default, opt-out); S1 spike done (NM and Tailscale parts)
 **Related Issue**: #295 (related: #294)
 
 ---
@@ -101,8 +101,36 @@ Layer 1 is built only if S1 confirms it works.
   `reload dns-full`.
 - **Back to symlink mode**: NM leaves its `NetworkManager` entry in openresolv. Uninstall
   must run `resolvconf -f -d NetworkManager` (FR2).
-- **Not yet tested**: Tailscale's mode flip (CorpDNS was paused at the time), wifi off/on,
-  DHCP renew.
+- **Tailscale part (2026-11-17, Tailscale 1.102.5, two runs, auto-teardown)**:
+  - With the drop-in on, a restarted tailscaled picks **openresolv mode**, because resolv.conf
+    carries resolvconf's header. It registers an exclusive `tailscale` entry and never creates
+    `/etc/resolv.pre-tailscale-backup.conf`.
+  - An exclusive entry added later wins over the VPN's: re-enabling Tailscale DNS while
+    connected switched resolv.conf to `100.100.100.100`. So the pause is still needed, and FR6
+    is what stops tailscaled's upstream queries from leaking.
+  - The mode is chosen when tailscaled **starts**, not when the pause happens.
+    - A tailscaled restart during a session makes the recorded mode stale
+      (`mode=direct` recorded, openresolv in use).
+    - Without the drop-in, the direct-mode restore then copies NetworkManager's file over
+      resolv.conf, which openresolv won't rewrite, so MagicDNS breaks after disconnect.
+    - With the drop-in, NetworkManager's entry keeps resolv.conf under openresolv, so both
+      modes restore.
+  - Real `vpn disconnect` with the drop-in on:
+    - resolv.conf = Tailscale (`100.100.100.100`)
+    - MagicDNS short names resolve
+    - no backup file left
+  - Then `vpn connect`: Tailscale paused, `mode=resolvconf` recorded, resolv.conf = VPN only.
+  - Wifi re-activation (`nmcli connection up`, DHCP renew) and `reload dns-full` with the
+    VPN up:
+    - resolv.conf stayed on the VPN's DNS throughout
+    - **0 port-53 packets** left wlan0 (IPv4 and IPv6, iptables counters)
+  - Side finding: after the wifi re-activation the tunnel stopped passing traffic (lookups
+    timed out, tun0 UP) until `vpn reconnect`. This looks like #294 (server host route lost),
+    not a DNS issue.
+  - Open: a later reconnect (after teardown, NetworkManager back in symlink mode) recorded
+    `mode=direct` again although tailscaled had been in openresolv mode. Cause not
+    established. The PDR covers this with a test, and the restore works for both records
+    once the drop-in is on.
 
 ### Functional
 
@@ -244,5 +272,5 @@ only DNS that would leak while the VPN is up, so name resolution through the LAN
 - [x] Doctor Hubert approves A + B + FR4/FR5 (2026-11-17)
 - [x] Doctor Hubert decides FR6: yes, on by default, opt-out with BLOCK_DNS_LEAKS=false (2026-11-17)
 - [x] S1 spike, NetworkManager part (2026-11-17, see S1 results)
-- [ ] S1 spike, Tailscale part (mode flip, backup file)
+- [x] S1 spike, Tailscale part (2026-11-17, see S1 results)
 - [ ] Then PDR (6 core agents)
