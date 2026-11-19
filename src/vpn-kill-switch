@@ -486,20 +486,23 @@ COMMIT"
     done <<< "$server_allow"
     [[ -n "$have_tailscale" ]] && echo "  Allowing Tailscale traffic: tailscale0"
     [[ -n "$default_gw" ]] && echo "  Allowing DNS to gateway (KILL_SWITCH_ALLOW_LAN_DNS): $default_gw"
+    # The kill switch's jump goes first; the DNS guard is put back ahead of
+    # it right after each family loads (also when the other family fails).
+    # A failed re-pin is warned about but never stops the kill switch.
     if ! run_iptables_restore <<< "$v4"; then
         echo -e "${RED}Error: Failed to apply IPv4 kill switch rules${NC}" >&2
         return 1
     fi
+    pin_output_order v4 || true
 
     echo "  Setting up IPv6 rules..."
-    if ! run_ip6tables_restore <<< "$v6"; then
+    local v6_loaded=0
+    run_ip6tables_restore <<< "$v6" && v6_loaded=1
+    pin_output_order v6 || true
+    if [[ $v6_loaded -ne 1 ]]; then
         echo -e "${RED}Error: Failed to apply IPv6 kill switch rules${NC}" >&2
         return 1
     fi
-
-    # The kill switch's jump goes first; the DNS guard must stay ahead of it
-    pin_output_order v4
-    pin_output_order v6
 
     # Save state (the user's state file shows the server; only the root
     # record is trusted to allow it again)
@@ -615,33 +618,47 @@ COMMIT"
 # Keep the DNS guard's jump first in OUTPUT, ahead of the kill switch's and
 # the IPv6 guard's ACCEPTs (ESTABLISHED, gateway:53, link-local), which would
 # otherwise let port 53 out. The others keep their relative order. Reads
-# OUTPUT once and changes it only when the order is wrong, in one transaction.
+# OUTPUT once and changes it only when the order is wrong or a jump is
+# duplicated: one transaction deletes every jump and inserts one first.
+# Returns: 1 (with a warning) when the guard is in OUTPUT but could not be put first
 # Args: $1 = v4 | v6
 pin_output_order() {
-    local runner restore out first jump="-A OUTPUT -j $DNS_GUARD_CHAIN"
+    local runner restore out first count body i jump="-A OUTPUT -j $DNS_GUARD_CHAIN"
     runner=$(guard_runner "$1")
     restore=$(guard_restore "$1")
     out=$("$runner" -S OUTPUT 2> /dev/null) || return 0
-    grep -qxF -- "$jump" <<< "$out" || return 0
+    count=$(grep -cxF -- "$jump" <<< "$out") || true
+    [[ $count -gt 0 ]] || return 0
     first=$(grep -m1 '^-A OUTPUT ' <<< "$out")
-    [[ $first == "$jump" ]] && return 0
-    "$restore" 2> /dev/null << EOF
-*filter
--D OUTPUT -j $DNS_GUARD_CHAIN
+    [[ $first == "$jump" && $count -eq 1 ]] && return 0
+    body="*filter"
+    for ((i = 0; i < count; i++)); do
+        body+="
+-D OUTPUT -j $DNS_GUARD_CHAIN"
+    done
+    body+="
 -I OUTPUT 1 -j $DNS_GUARD_CHAIN
-COMMIT
-EOF
+COMMIT"
+    if ! "$restore" 2> /dev/null <<< "$body"; then
+        echo -e "${YELLOW}Warning: could not put the DNS guard first in OUTPUT (${1/v/IPv}); DNS may leak${NC}" >&2
+        return 1
+    fi
+    return 0
 }
 
-# Remove a guard chain: every OUTPUT jump, then the chain; no-op when absent
+# Remove a guard chain: every OUTPUT jump, then the chain; no-op when absent.
+# A chain whose jump could not be removed is left whole (flushing it would
+# leave a jump to an empty chain). Never aborts the caller under set -e.
+# Returns: 1 when a jump or the chain could not be removed
 # Args: $1 = v4 | v6, $2 = chain
 guard_chain_off() {
     local runner
     runner=$(guard_runner "$1")
-    remove_output_jumps "$runner" "$2" || true
+    remove_output_jumps "$runner" "$2" || return 1
     if "$runner" -L "$2" -n &> /dev/null; then
-        "$runner" -F "$2"
-        "$runner" -X "$2"
+        if ! "$runner" -F "$2" || ! "$runner" -X "$2"; then
+            return 1
+        fi
     fi
     return 0
 }
@@ -698,9 +715,10 @@ dns_guard_on() {
     for family in v4 v6; do
         unreach=icmp-port-unreachable
         if [[ $family == v6 ]]; then
+            # Without ip6tables there is no IPv6 firewall to guard (status
+            # agrees: only IPv4 is required then)
             if ! command -v ip6tables &> /dev/null; then
                 echo -e "${YELLOW}Warning: ip6tables not found; DNS over IPv6 is not blocked${NC}" >&2
-                rc=1
                 continue
             fi
             unreach=icmp6-port-unreachable
@@ -711,7 +729,7 @@ dns_guard_on() {
 -p udp -m udp --dport 53 -j REJECT --reject-with $unreach
 -p tcp -m tcp --dport 53 -j REJECT --reject-with tcp-reset"; then
             [[ $GUARD_DROPPED == 1 ]] && dropped=1
-            pin_output_order "$family"
+            pin_output_order "$family" || rc=1
         else
             echo -e "${RED}Error: Failed to block DNS outside the tunnel (${family/v/IPv})${NC}" >&2
             rc=1
@@ -728,18 +746,21 @@ dns_guard_on() {
 # when absent. The kill switch's disable leaves it: it belongs to the connection.
 dns_guard_off() {
     check_privileges || return 1
+    local rc=0
     if command -v iptables &> /dev/null; then
-        guard_chain_off v4 "$DNS_GUARD_CHAIN"
+        guard_chain_off v4 "$DNS_GUARD_CHAIN" || rc=1
     fi
     if command -v ip6tables &> /dev/null; then
-        guard_chain_off v6 "$DNS_GUARD_CHAIN"
+        guard_chain_off v6 "$DNS_GUARD_CHAIN" || rc=1
     fi
-    return 0
+    [[ $rc -eq 0 ]] || echo -e "${YELLOW}Warning: could not remove the DNS guard completely; run: vpn-kill-switch dns-guard off${NC}" >&2
+    return $rc
 }
 
-# Print on, off, "on (not first in OUTPUT)" or "on (IPv4 only)"/"on (IPv6
-# only)". Exit 0 only when the jump is first in OUTPUT in every family that
-# has a firewall tool; 1 when off; 2 otherwise.
+# Print on, off, unknown, "on (not first in OUTPUT)" or "on (IPv4 only)"/
+# "on (IPv6 only)". Exit 0 only when the jump is first in OUTPUT in every
+# family that has a firewall tool; 1 only when it is known to be off;
+# 2 otherwise (unknown: the firewall could not be read, never taken as off).
 dns_guard_status() {
     local family runner out jump="-A OUTPUT -j $DNS_GUARD_CHAIN"
     local -a present=() missing=()
@@ -749,7 +770,10 @@ dns_guard_status() {
             command -v ip6tables &> /dev/null || continue
         fi
         runner=$(guard_runner "$family")
-        out=$("$runner" -S OUTPUT 2> /dev/null) || out=""
+        if ! out=$("$runner" -S OUTPUT 2> /dev/null); then
+            echo "unknown"
+            return 2
+        fi
         if grep -qxF -- "$jump" <<< "$out"; then
             present+=("$family")
             [[ $(grep -m1 '^-A OUTPUT ' <<< "$out") == "$jump" ]] || not_first=1

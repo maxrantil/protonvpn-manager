@@ -15,6 +15,11 @@
 # Failure injection (files in $FAKE_FW_DIR):
 #   no_reject        any rule with "-j REJECT" fails (module cannot load)
 #   no_restore_<fam> every restore of that family fails
+#   restore_fails_on a restore whose input contains this file's text fails
+#   fail_S_<fam>     -S of that family fails (no privileges, xtables lock)
+#   fail_X_<fam>     -X of that family fails
+# Rules are checked like the real tool where tests depend on it: a
+# --reject-with of the other family, or tcp-reset without -p tcp, fails.
 # Every call is appended to $FAKE_FW_DIR/calls as "<tool> <args>".
 
 set -u
@@ -80,6 +85,12 @@ fw_apply() {
                     echo "iptables: No chain/target/match by that name." >&2
                     return 1
                 fi
+                if [[ $rule == *"--reject-with icmp6-"* && $fam == v4 ]] ||
+                    [[ $rule == *"--reject-with icmp-"* && $fam == v6 ]] ||
+                    [[ $rule == *"--reject-with tcp-reset"* && $rule != *"-p tcp "* ]]; then
+                    echo "iptables: Bad reject-with for this rule." >&2
+                    return 1
+                fi
                 local target=""
                 [[ $rule =~ -j\ ([A-Za-z0-9_]+) ]] && target=${BASH_REMATCH[1]}
                 case "$target" in
@@ -140,6 +151,11 @@ fw_save() {
 if [[ $tool == *-restore ]]; then
     [[ " $* " == *" --noflush "* ]] || { echo "fake-firewall: restore without --noflush is not supported" >&2; exit 2; }
     [[ -f $FAKE_FW_DIR/no_restore_$fam ]] && { echo "$tool: line 1 failed" >&2; exit 1; }
+    input=$(cat)
+    if [[ -s $FAKE_FW_DIR/restore_fails_on && $input == *"$(cat "$FAKE_FW_DIR/restore_fails_on")"* ]]; then
+        echo "$tool: line 1 failed" >&2
+        exit 1
+    fi
     work=$(mktemp -d "$FAKE_FW_DIR/.txn.XXXXXX")
     cp -a "$STATE/." "$work/"
     lineno=0
@@ -162,7 +178,7 @@ if [[ $tool == *-restore ]]; then
             rm -rf "$work"
             exit 1
         fi
-    done
+    done <<< "$input"
     if [[ $committed -ne 1 ]]; then
         echo "$tool: COMMIT expected at line $((lineno + 1))" >&2
         rm -rf "$work"
@@ -174,13 +190,20 @@ if [[ $tool == *-restore ]]; then
 fi
 
 case "${1:-}" in
-    -S) fw_save "${2:-}" ;;
+    -S)
+        [[ -f $FAKE_FW_DIR/fail_S_$fam ]] && { echo "iptables: Permission denied (you must be root)" >&2; exit 4; }
+        fw_save "${2:-}"
+        ;;
     -L)
         [[ -n ${2:-} && ${2:-} != -* ]] || { fw_save; exit $?; }
         fw_save "$2" > /dev/null || exit 1
         fw_save "$2" | grep '^-A' || true
         ;;
-    -C | -D | -I | -A | -N | -F | -X) fw_apply "$STATE" "$@" ;;
+    -X)
+        [[ -f $FAKE_FW_DIR/fail_X_$fam ]] && { echo "iptables: Resource temporarily unavailable." >&2; exit 4; }
+        fw_apply "$STATE" "$@"
+        ;;
+    -C | -D | -I | -A | -N | -F) fw_apply "$STATE" "$@" ;;
     *)
         echo "fake-firewall: unsupported call: $*" >&2
         exit 2

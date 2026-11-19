@@ -368,8 +368,8 @@ test_dns_guard_without_ip6tables() {
     local out rc=0
     rm -f "$FAKES/ip6tables" "$FAKES/ip6tables-restore"
     out=$(ks dns-guard on 2>&1) || rc=$?
-    [[ $rc -ne 0 && $out == *"ip6tables not found"* ]]
-    report $? "dns-guard on warns without ip6tables" "rc=$rc $out"
+    [[ $rc -eq 0 && $out == *"ip6tables not found"* ]]
+    report $? "dns-guard on warns but succeeds without ip6tables (no IPv6 firewall to guard)" "rc=$rc $out"
     [[ $(fw_rules v4 VPN_DNS_GUARD) == "$(dns_rules_expected icmp-port-unreachable)" ]]
     report $? "without ip6tables the IPv4 DNS guard still loads" "$(fw_rules v4)"
     out=$(ks dns-guard status 2> /dev/null)
@@ -378,6 +378,94 @@ test_dns_guard_without_ip6tables() {
     report $? "dns-guard off works without ip6tables" "$(fw_rules v4)"
     ln -s "$PROJECT_ROOT/tests/fakes/fake-firewall" "$FAKES/ip6tables"
     ln -s "$PROJECT_ROOT/tests/fakes/fake-firewall" "$FAKES/ip6tables-restore"
+}
+
+fake() { # $1 = tool, rest = arguments: call the fake directly
+    local tool=$1
+    shift
+    env PATH="$SANDBOX_PATH" FAKE_FW_DIR="$FW" "$FAKES/$tool" "$@"
+}
+
+test_dns_guard_family_specific_rejects() {
+    reset_fw
+    ks dns-guard on > /dev/null 2>&1
+    ! fw_rules v4 VPN_DNS_GUARD | grep -q icmp6 && ! fw_rules v6 VPN_DNS_GUARD | grep -q -- '-with icmp-'
+    report $? "each family rejects with its own ICMP type" "$(fw_rules v4 VPN_DNS_GUARD; fw_rules v6 VPN_DNS_GUARD)"
+    ! fw_rules v4 VPN_DNS_GUARD | grep -- tcp-reset | grep -vq -- '-p tcp '
+    report $? "tcp-reset only on the tcp rule"
+}
+
+test_dns_guard_existing_chain_without_jump() {
+    reset_fw
+    fake iptables -N VPN_DNS_GUARD
+    fake iptables -A VPN_DNS_GUARD -j RETURN
+    ks dns-guard on > /dev/null 2>&1
+    [[ $(fw_rules v4 VPN_DNS_GUARD) == "$(dns_rules_expected icmp-port-unreachable)" &&
+        $(jumps v4 VPN_DNS_GUARD) -eq 1 ]]
+    report $? "a leftover chain without its jump is refilled and jumped to" "$(fw_rules v4)"
+}
+
+test_pin_collapses_duplicate_jumps() {
+    reset_fw
+    ks dns-guard on > /dev/null 2>&1
+    ks enable --force 192.0.2.1 > /dev/null 2>&1
+    fake iptables -A OUTPUT -j VPN_DNS_GUARD
+    fake iptables -D OUTPUT -j VPN_DNS_GUARD
+    fake iptables -A OUTPUT -j VPN_DNS_GUARD
+    # OUTPUT is now: kill switch, guard, guard
+    ks dns-guard on > /dev/null 2>&1
+    [[ $(fw_rules v4 OUTPUT | sed -n 2p) == "-A OUTPUT -j VPN_DNS_GUARD" && $(jumps v4 VPN_DNS_GUARD) -eq 1 ]]
+    report $? "re-pinning leaves a single DNS guard jump, first" "$(fw_rules v4 OUTPUT)"
+}
+
+test_pin_failure() {
+    local out rc
+    reset_fw
+    ks dns-guard on > /dev/null 2>&1
+    echo "-D OUTPUT -j VPN_DNS_GUARD" > "$FW/restore_fails_on"
+    out=$(ks enable --force 192.0.2.1 2>&1) && rc=0 || rc=$?
+    [[ $rc -eq 0 && $out == *"Kill switch enabled"* ]]
+    report $? "a failed re-pin does not abort enabling the kill switch" "rc=$rc $out"
+    grep -q '^status=enabled' "$WORK_DIR/home/.local/state/vpn/kill_switch.state" 2> /dev/null
+    report $? "the kill switch state is saved despite a failed re-pin"
+    [[ $out == *"DNS guard"* ]]
+    report $? "a failed re-pin is warned about" "$out"
+    out=$(ks dns-guard on 2>&1) && rc=0 || rc=$?
+    [[ $rc -ne 0 && $out != *"DNS blocked outside the tunnel"* ]]
+    report $? "dns-guard on fails when the guard cannot be put first" "rc=$rc $out"
+}
+
+test_kill_switch_partial_load_keeps_guard_first() {
+    reset_fw
+    ks dns-guard on > /dev/null 2>&1
+    touch "$FW/no_restore_v6"
+    ks enable --force 192.0.2.1 > /dev/null 2>&1
+    [[ $(fw_rules v4 OUTPUT | sed -n 2p) == "-A OUTPUT -j VPN_DNS_GUARD" ]]
+    report $? "the DNS guard stays first in IPv4 when the IPv6 kill switch fails to load" "$(fw_rules v4 OUTPUT)"
+}
+
+test_dns_guard_off_failures() {
+    local rc
+    reset_fw
+    ks dns-guard on > /dev/null 2>&1
+    touch "$FW/fail_X_v4"
+    ks dns-guard off > /dev/null 2>&1 && rc=0 || rc=$?
+    [[ $rc -ne 0 ]]
+    report $? "dns-guard off reports a chain it could not delete"
+    ! fw_rules v6 | grep -q VPN_DNS_GUARD
+    report $? "a failure in IPv4 still removes the IPv6 guard" "$(fw_rules v6)"
+    [[ $(jumps v4 VPN_DNS_GUARD) -eq 0 ]]
+    report $? "the IPv4 jump is gone even when its chain could not be deleted" "$(fw_rules v4 OUTPUT)"
+}
+
+test_dns_guard_status_unreadable() {
+    local out rc
+    reset_fw
+    ks dns-guard on > /dev/null 2>&1
+    touch "$FW/fail_S_v4"
+    out=$(ks dns-guard status 2> /dev/null) && rc=0 || rc=$?
+    [[ $rc -eq 2 && $out == unknown ]]
+    report $? "dns-guard status is unknown, not off, when the firewall cannot be read" "rc=$rc out=$out"
 }
 
 echo -e "${T_BLUE}========================================${T_NC}"
@@ -399,6 +487,13 @@ test_dns_guard_first_in_every_order
 test_dns_guard_status
 test_dns_guard_off
 test_dns_guard_without_ip6tables
+test_dns_guard_family_specific_rejects
+test_dns_guard_existing_chain_without_jump
+test_pin_collapses_duplicate_jumps
+test_pin_failure
+test_kill_switch_partial_load_keeps_guard_first
+test_dns_guard_off_failures
+test_dns_guard_status_unreadable
 
 echo ""
 echo -e "${T_BLUE}Results: $TESTS_PASSED/$TESTS_RUN passed${T_NC}"
