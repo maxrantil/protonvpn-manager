@@ -235,6 +235,117 @@ release_vpn_network_state() {
     "$kill_switch" disable
 }
 
+# Read KEY=value from the user's ~/.config/vpn/config (quotes stripped),
+# the file vpn-connector reads its opt-outs from. Never run as root for
+# another user's file: only unprivileged status code uses it.
+# Args: $1 = key, $2 = default
+vpn_config_value() {
+    local key="$1" default="${2:-}" value="" file="${VPN_CONFIG_DIR:-$HOME/.config/vpn}/config"
+    if [[ -f $file && ! -L $file ]]; then
+        value=$(grep -E "^${key}=" "$file" 2> /dev/null | tail -1 | cut -d= -f2- | tr -d "\"'") || true
+    fi
+    echo "${value:-$default}"
+}
+
+# The nameserver addresses in resolv.conf-style text on stdin, each once,
+# in file order, on one line. Comments, search, domain and options lines are
+# skipped. Bash builtins only.
+nameserver_set() {
+    local line set=""
+    local -A seen=()
+    while IFS= read -r line || [[ -n $line ]]; do
+        [[ $line =~ ^[[:space:]]*nameserver[[:space:]]+([^[:space:]#\;]+) ]] || continue
+        [[ -z ${seen[${BASH_REMATCH[1]}]:-} ]] || continue
+        seen[${BASH_REMATCH[1]}]=1
+        set+="${set:+ }${BASH_REMATCH[1]}"
+    done
+    [[ -z $set ]] || echo "$set"
+}
+
+# Do two nameserver_set lines hold the same addresses (in any order)?
+same_nameservers() {
+    local -a a b
+    local -A in_a=()
+    local ns
+    read -ra a <<< "$1"
+    read -ra b <<< "$2"
+    [[ ${#a[@]} -eq ${#b[@]} ]] || return 1
+    for ns in "${a[@]}"; do in_a[$ns]=1; done
+    for ns in "${b[@]}"; do [[ -n ${in_a[$ns]:-} ]] || return 1; done
+    return 0
+}
+
+# Is resolv.conf off the VPN's DNS? Compares the nameservers of the VPN's
+# resolvconf entry (tun0.protonvpn) with resolv.conf's, as sets. Read-only and
+# unprivileged. Skipped silently (returns 1) without openresolv, without the
+# entry, or with TAILSCALE_DNS=keep (Tailscale then owns resolv.conf on purpose).
+# An empty or unreadable resolv.conf is a mismatch.
+# Output on a mismatch: "expected: <set>" and "actual: <set>" lines
+# Returns: 0 on a mismatch, 1 otherwise
+vpn_dns_mismatch() {
+    local resolv="${VPN_RESOLV_CONF:-/etc/resolv.conf}" version entry expected actual=""
+    command -v resolvconf > /dev/null 2>&1 || return 1
+    version=$(resolvconf --version 2> /dev/null) || true
+    [[ $version == *openresolv* ]] || return 1
+    [[ "$(vpn_config_value TAILSCALE_DNS pause)" != "keep" ]] || return 1
+    entry=$(resolvconf -l tun0.protonvpn 2> /dev/null) || true
+    expected=$(nameserver_set <<< "$entry")
+    [[ -n $expected ]] || return 1
+    if [[ -f $resolv && -r $resolv ]]; then
+        actual=$(nameserver_set < "$resolv")
+    fi
+    same_nameservers "$expected" "$actual" && return 1
+    echo "expected: $expected"
+    echo "actual: $actual"
+    return 0
+}
+
+# DNS state for vpn status and vpn-doctor, computed once: the DNS guard's
+# state from the kill switch (read without a password prompt) and the
+# resolv.conf check. Read-only.
+# Args: $1 = yes | no (this tool's VPN is running)
+# Sets: VPN_DNS_GUARD (the kill switch's status text: on, off, unknown,
+#       "on (not first in OUTPUT)", ...) and VPN_DNS_WARNINGS (array)
+# Uses $VPN_DIR of the calling script.
+vpn_dns_state() {
+    local running="$1" kill_switch out rc=0 report actual
+    kill_switch="${VPN_DIR:-$(dirname "$(realpath "${BASH_SOURCE[0]}")")}/vpn-kill-switch"
+    VPN_DNS_GUARD=unknown
+    VPN_DNS_WARNINGS=()
+    if [[ -x $kill_switch ]]; then
+        out=$("$kill_switch" dns-guard status 2> /dev/null) || rc=$?
+        out=$(head -1 <<< "$out")
+        # unknown stays unknown: an unreadable firewall is never "off"
+        case "$rc:$out" in
+            0:on | 1:off | "2:on ("*) VPN_DNS_GUARD=$out ;;
+            *) rc=2 ;;
+        esac
+    else
+        rc=2
+    fi
+
+    if [[ $running != yes ]]; then
+        if [[ $VPN_DNS_GUARD == on* ]]; then
+            VPN_DNS_WARNINGS+=("DNS is blocked by a leftover DNS guard. Fix: vpn cleanup")
+        fi
+        return 0
+    fi
+
+    if report=$(vpn_dns_mismatch); then
+        actual=$(sed -n 's/^actual: //p' <<< "$report")
+        VPN_DNS_WARNINGS+=("DNS is not using the VPN (resolv.conf: ${actual:-no nameserver}). Fix: sudo resolvconf -u")
+    fi
+    if [[ $VPN_DNS_GUARD == off ]]; then
+        if [[ "$(vpn_config_value BLOCK_DNS_LEAKS true)" != "false" ]]; then
+            VPN_DNS_WARNINGS+=("DNS guard is off while connected: DNS can leak outside the tunnel. Fix: vpn-kill-switch dns-guard on")
+        fi
+    elif [[ $VPN_DNS_GUARD == "on ("*")" ]]; then
+        local detail=${VPN_DNS_GUARD#on (}
+        VPN_DNS_WARNINGS+=("DNS guard is incomplete (${detail%)}): DNS can leak outside the tunnel. Fix: vpn-kill-switch dns-guard on")
+    fi
+    return 0
+}
+
 # Export functions for use in other scripts
 export -f notify_event
 export -f log_message
@@ -247,3 +358,8 @@ export -f tailscale_dns_record
 export -f give_to_real_user
 export -f pause_tailscale_dns
 export -f restore_tailscale_dns
+export -f vpn_config_value
+export -f nameserver_set
+export -f same_nameservers
+export -f vpn_dns_mismatch
+export -f vpn_dns_state
