@@ -230,6 +230,156 @@ test_kill_switch_enable_disable() {
     report $? "kill switch disable removes both chains" "$(fw_rules v4; fw_rules v6)"
 }
 
+# ---------------------------------------------------------------------------
+# DNS guard (FR6): no port 53 outside lo, the tunnel and Tailscale
+# ---------------------------------------------------------------------------
+dns_rules_expected() { # $1 = icmp-port-unreachable | icmp6-port-unreachable | drop
+    local udp_end="REJECT --reject-with $1" tcp_end="REJECT --reject-with tcp-reset"
+    if [[ $1 == drop ]]; then
+        udp_end=DROP
+        tcp_end=DROP
+    fi
+    printf '%s\n' "-N VPN_DNS_GUARD" \
+        "-A VPN_DNS_GUARD -o lo -j RETURN" \
+        "-A VPN_DNS_GUARD -o tun+ -j RETURN" \
+        "-A VPN_DNS_GUARD -o tailscale0 -j RETURN" \
+        "-A VPN_DNS_GUARD -p udp -m udp --dport 53 -j $udp_end" \
+        "-A VPN_DNS_GUARD -p tcp -m tcp --dport 53 -j $tcp_end"
+}
+
+test_dns_guard_rules() {
+    reset_fw
+    ks dns-guard on > /dev/null 2>&1
+    report $? "dns-guard on succeeds"
+    [[ $(fw_rules v4 VPN_DNS_GUARD) == "$(dns_rules_expected icmp-port-unreachable)" ]]
+    report $? "IPv4: RETURN for lo, tun+, tailscale0; udp and tcp 53 rejected" "$(fw_rules v4 VPN_DNS_GUARD)"
+    [[ $(fw_rules v6 VPN_DNS_GUARD) == "$(dns_rules_expected icmp6-port-unreachable)" ]]
+    report $? "IPv6: the same rules, with icmp6-port-unreachable" "$(fw_rules v6 VPN_DNS_GUARD)"
+    ! fw_rules v4 | grep -q -- multiport && ! fw_rules v6 | grep -q -- multiport
+    report $? "the DNS guard uses no multiport match (#291)"
+    ! fw_rules v4 VPN_DNS_GUARD | grep -q -- "wg" && ! fw_rules v6 VPN_DNS_GUARD | grep -q -- "wg"
+    report $? "WireGuard interfaces are not exempt (left to #223)"
+    ks dns-guard on > /dev/null 2>&1
+    [[ $(jumps v4 VPN_DNS_GUARD) -eq 1 && $(jumps v6 VPN_DNS_GUARD) -eq 1 ]]
+    report $? "dns-guard on twice keeps a single jump per family" "$(fw_rules v4 OUTPUT; fw_rules v6 OUTPUT)"
+}
+
+test_dns_guard_drop_fallback() {
+    reset_fw
+    touch "$FW/no_reject"
+    local out
+    out=$(ks dns-guard on 2>&1)
+    report $? "dns-guard on succeeds without REJECT support" "$out"
+    [[ $(fw_rules v4 VPN_DNS_GUARD) == "$(dns_rules_expected drop)" &&
+        $(fw_rules v6 VPN_DNS_GUARD) == "$(dns_rules_expected drop)" ]]
+    report $? "without REJECT the DNS guard drops port 53" "$(fw_rules v4 VPN_DNS_GUARD)"
+    [[ $out == *"DROP"* ]]
+    report $? "the DROP fallback is noted" "$out"
+}
+
+test_dns_guard_restore_fails() {
+    reset_fw
+    touch "$FW/no_restore_v6"
+    ! ks dns-guard on > /dev/null 2>&1
+    report $? "dns-guard on fails when one family cannot be loaded"
+    ! fw_rules v6 | grep -q VPN_DNS_GUARD
+    report $? "the failed family has no half-applied chain or jump" "$(fw_rules v6)"
+    [[ $(fw_rules v4 VPN_DNS_GUARD) == "$(dns_rules_expected icmp-port-unreachable)" ]]
+    report $? "the other family is still guarded" "$(fw_rules v4)"
+}
+
+# The guard must reject before the kill switch's ESTABLISHED and gateway:53
+# ACCEPTs and the IPv6 guard's link-local ACCEPT, whatever loads first
+test_dns_guard_first_in_every_order() {
+    local -a steps=("enable --force 192.0.2.1" "ipv6-guard on" "dns-guard on")
+    local -a orders=("0 1 2" "0 2 1" "1 0 2" "1 2 0" "2 0 1" "2 1 0")
+    local order i bad=""
+    for order in "${orders[@]}"; do
+        reset_fw
+        for i in $order; do
+            # shellcheck disable=SC2086  # each step is a command and its arguments
+            ks ${steps[$i]} > /dev/null 2>&1
+        done
+        [[ $(fw_rules v4 OUTPUT | sed -n 2p) == "-A OUTPUT -j VPN_DNS_GUARD" &&
+            $(fw_rules v6 OUTPUT | sed -n 2p) == "-A OUTPUT -j VPN_DNS_GUARD" ]] || bad+=" [$order]"
+        [[ $(jumps v4 VPN_KILL_SWITCH) -eq 1 && $(jumps v6 VPN_IPV6_GUARD) -eq 1 ]] || bad+=" [$order: other jump lost]"
+    done
+    [[ -z $bad ]]
+    report $? "the DNS guard is first in OUTPUT for every order of kill switch, IPv6 and DNS guard" "bad:$bad"
+    reset_fw
+    ks dns-guard on > /dev/null 2>&1
+    ks enable --force 192.0.2.1 > /dev/null 2>&1
+    ks refresh > /dev/null 2>&1
+    [[ $(fw_rules v4 OUTPUT | sed -n 2p) == "-A OUTPUT -j VPN_DNS_GUARD" ]]
+    report $? "the DNS guard stays first after a kill switch refresh" "$(fw_rules v4 OUTPUT)"
+}
+
+test_dns_guard_status() {
+    reset_fw
+    local out rc
+    out=$(ks dns-guard status 2> /dev/null) && rc=0 || rc=$?
+    [[ $rc -eq 1 && $out == off ]]
+    report $? "dns-guard status: off" "rc=$rc out=$out"
+    ks dns-guard on > /dev/null 2>&1
+    out=$(ks dns-guard status 2> /dev/null) && rc=0 || rc=$?
+    [[ $rc -eq 0 && $out == on ]]
+    report $? "dns-guard status: on" "rc=$rc out=$out"
+    env PATH="$SANDBOX_PATH" FAKE_FW_DIR="$FW" "$FAKES/iptables" -I OUTPUT 1 -j ACCEPT
+    out=$(ks dns-guard status 2> /dev/null) && rc=0 || rc=$?
+    [[ $rc -ne 0 && $out == "on (not first in OUTPUT)" ]]
+    report $? "dns-guard status: on but not first in OUTPUT is not healthy" "rc=$rc out=$out"
+    reset_fw
+    ks dns-guard on > /dev/null 2>&1
+    env PATH="$SANDBOX_PATH" FAKE_FW_DIR="$FW" "$FAKES/ip6tables" -D OUTPUT -j VPN_DNS_GUARD
+    out=$(ks dns-guard status 2> /dev/null) && rc=0 || rc=$?
+    [[ $rc -ne 0 && $out == "on (IPv4 only)" ]]
+    report $? "dns-guard status: one family missing is not healthy" "rc=$rc out=$out"
+}
+
+test_dns_guard_off() {
+    reset_fw
+    ks dns-guard on > /dev/null 2>&1
+    ks enable --force 192.0.2.1 > /dev/null 2>&1
+    env PATH="$SANDBOX_PATH" FAKE_FW_DIR="$FW" "$FAKES/iptables" -A OUTPUT -j VPN_DNS_GUARD
+    ks dns-guard off > /dev/null 2>&1
+    report $? "dns-guard off succeeds"
+    ! fw_rules v4 | grep -q VPN_DNS_GUARD && ! fw_rules v6 | grep -q VPN_DNS_GUARD
+    report $? "dns-guard off removes every jump and both chains" "$(fw_rules v4; fw_rules v6)"
+    [[ $(jumps v4 VPN_KILL_SWITCH) -eq 1 ]]
+    report $? "dns-guard off leaves the kill switch alone" "$(fw_rules v4 OUTPUT)"
+    : > "$FW/calls"
+    ks dns-guard off > /dev/null 2>&1
+    report $? "dns-guard off is a no-op when the guard is absent"
+    ! grep -qE -- ' -(F|X|D) ' "$FW/calls"
+    report $? "an absent guard is not flushed or deleted" "$(cat "$FW/calls")"
+    reset_fw
+    ks dns-guard on > /dev/null 2>&1
+    ks enable --force 192.0.2.1 > /dev/null 2>&1
+    ks disable > /dev/null 2>&1
+    [[ $(jumps v4 VPN_DNS_GUARD) -eq 1 ]]
+    report $? "kill switch disable leaves the DNS guard (it belongs to the connection)" "$(fw_rules v4 OUTPUT)"
+    ks emergency > /dev/null 2>&1
+    ! fw_rules v4 | grep -q VPN_DNS_GUARD && ! fw_rules v6 | grep -q VPN_DNS_GUARD
+    report $? "emergency removes the DNS guard" "$(fw_rules v4; fw_rules v6)"
+}
+
+test_dns_guard_without_ip6tables() {
+    reset_fw
+    local out rc=0
+    rm -f "$FAKES/ip6tables" "$FAKES/ip6tables-restore"
+    out=$(ks dns-guard on 2>&1) || rc=$?
+    [[ $rc -ne 0 && $out == *"ip6tables not found"* ]]
+    report $? "dns-guard on warns without ip6tables" "rc=$rc $out"
+    [[ $(fw_rules v4 VPN_DNS_GUARD) == "$(dns_rules_expected icmp-port-unreachable)" ]]
+    report $? "without ip6tables the IPv4 DNS guard still loads" "$(fw_rules v4)"
+    out=$(ks dns-guard status 2> /dev/null)
+    report $? "dns-guard status is on with IPv4 only when ip6tables is missing" "$out"
+    ks dns-guard off > /dev/null 2>&1 && ! fw_rules v4 | grep -q VPN_DNS_GUARD
+    report $? "dns-guard off works without ip6tables" "$(fw_rules v4)"
+    ln -s "$PROJECT_ROOT/tests/fakes/fake-firewall" "$FAKES/ip6tables"
+    ln -s "$PROJECT_ROOT/tests/fakes/fake-firewall" "$FAKES/ip6tables-restore"
+}
+
 echo -e "${T_BLUE}========================================${T_NC}"
 echo -e "${T_BLUE}Guard Chain Test Suite${T_NC}"
 echo -e "${T_BLUE}========================================${T_NC}"
@@ -242,6 +392,13 @@ test_ipv6_guard_status_and_off
 test_ipv6_guard_without_ip6tables
 test_emergency_removes_guards
 test_kill_switch_enable_disable
+test_dns_guard_rules
+test_dns_guard_drop_fallback
+test_dns_guard_restore_fails
+test_dns_guard_first_in_every_order
+test_dns_guard_status
+test_dns_guard_off
+test_dns_guard_without_ip6tables
 
 echo ""
 echo -e "${T_BLUE}Results: $TESTS_PASSED/$TESTS_RUN passed${T_NC}"
