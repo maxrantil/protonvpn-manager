@@ -3,7 +3,7 @@
 **Document Version**: 0.2 (revised after the 6-agent review)
 **Date**: 2026-11-17
 **Author**: Doctor Hubert (with Claude Code assistance)
-**Status**: Draft, awaiting Doctor Hubert's decisions (Q1-Q4) and approval
+**Status**: Approved 2026-11-19 (Q1-Q4 decided as recommended)
 **PRD**: `docs/implementation/PRD-VPN-DNS-PERSISTENCE-2026-11-17.md` (approved, S1 done)
 **Issue**: #295 (related: #294)
 
@@ -461,6 +461,10 @@ Root-run code never reads these.
 
 ## 10. Questions for Doctor Hubert
 
+**Decided 2026-11-19: Doctor Hubert took the recommendation on all four** (Q1 guard wins;
+Q2 `--uninstall-nm-dns` / `--no-nm-dns`; Q3 `install.sh` installs `40-vpn-dns-repair`;
+Q4 the hook removes a leftover guard only when the kill switch is off).
+
 - **Q1, `KILL_SWITCH_ALLOW_LAN_DNS=true` vs. the guard.** Recommendation (architecture and
   security agree; this changes v0.1's proposal):
   - The guard wins.
@@ -498,5 +502,5 @@ Root-run code never reads these.
 ## 12. Approval
 
 - [x] Agent review (6 core agents, v0.1)
-- [ ] Doctor Hubert: Q1-Q4
-- [ ] Doctor Hubert: PDR approval
+- [x] Doctor Hubert: Q1-Q4 (2026-11-19, all as recommended)
+- [x] Doctor Hubert: PDR approval (2026-11-19)
