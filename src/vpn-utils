@@ -346,6 +346,39 @@ vpn_dns_state() {
     return 0
 }
 
+# Is this tool's VPN up? Shared by the NetworkManager dispatcher hooks
+# (50-vpn-reconnect, 40-vpn-dns-repair). They run as root and set its fixed
+# constants after sourcing this file: VPN_PID_FILE, VPN_SESSION_PROFILE,
+# VPN_TUNNEL_INTERFACE and VPN_PROC_DIR (sourcing sets none of them, so
+# vpn-manager's own VPN_PID_FILE is left alone).
+vpn_is_healthy() {
+    # Healthy only when this tool's OpenVPN is running and its tunnel is up.
+    # Another program's openvpn, tun0 or WireGuard interface does not count;
+    # this tool does not bring up WireGuard yet (#223), so none counts.
+    local pid arg prev="" ours=""
+    # The PID file openvpn writes as root: a regular file root owns
+    [[ -f $VPN_PID_FILE && ! -L $VPN_PID_FILE ]] || return 1
+    [[ $(stat -c %u -- "$VPN_PID_FILE" 2> /dev/null) == 0 ]] || return 1
+    pid=$(head -c 16 "$VPN_PID_FILE" 2> /dev/null | tr -cd '0-9') || return 1
+    [[ -n $pid ]] || return 1
+
+    # That PID is a live openvpn running as root (a user's process that
+    # reused the PID does not count), started with this tool's profile
+    [[ $(stat -c %u -- "$VPN_PROC_DIR/$pid" 2> /dev/null) == 0 ]] || return 1
+    [[ $(cat "$VPN_PROC_DIR/$pid/comm" 2> /dev/null) == openvpn ]] || return 1
+    while IFS= read -r -d '' arg; do
+        if [[ $prev == --config && $arg == "$VPN_SESSION_PROFILE" ]]; then
+            ours=1
+            break
+        fi
+        prev=$arg
+    done 2> /dev/null < "$VPN_PROC_DIR/$pid/cmdline"
+    [[ -n $ours ]] || return 1
+
+    # ...and the tunnel is administratively up
+    [[ -n $(ip -o link show dev "$VPN_TUNNEL_INTERFACE" up 2> /dev/null) ]]
+}
+
 # Export functions for use in other scripts
 export -f notify_event
 export -f log_message
@@ -363,3 +396,4 @@ export -f nameserver_set
 export -f same_nameservers
 export -f vpn_dns_mismatch
 export -f vpn_dns_state
+export -f vpn_is_healthy
