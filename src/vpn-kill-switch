@@ -560,6 +560,66 @@ disable_kill_switch() {
     return 0
 }
 
+# Guard chains: chains that only exist while a VPN is connected and sit in
+# OUTPUT next to the kill switch, independent of it (the IPv6 guard, the DNS
+# guard). Shared so each is loaded and removed the same way.
+
+# The firewall tools for a family. Args: $1 = v4 | v6
+guard_runner() { [[ $1 == v6 ]] && echo run_ip6tables || echo run_iptables; }
+guard_restore() { [[ $1 == v6 ]] && echo run_ip6tables_restore || echo run_iptables_restore; }
+
+# Load a guard chain with ONE restore transaction: the chain is declared
+# (created, or flushed and refilled atomically) and its OUTPUT jump inserted
+# first unless one exists. REJECT targets fall back to DROP when the REJECT
+# module cannot load (e.g. kernel upgraded but not rebooted yet); then
+# GUARD_DROPPED=1. A failed transaction changes nothing.
+# Args: $1 = v4 | v6, $2 = chain, $3 = rules, one per line, without "-A <chain>"
+GUARD_DROPPED=0
+guard_chain_on() {
+    local family=$1 chain=$2 rules=$3 runner restore jump="" body attempt rule
+    runner=$(guard_runner "$family")
+    restore=$(guard_restore "$family")
+    GUARD_DROPPED=0
+    if ! "$runner" -C OUTPUT -j "$chain" 2> /dev/null; then
+        jump="
+-I OUTPUT 1 -j $chain"
+    fi
+    for attempt in reject drop; do
+        body="*filter
+:$chain - [0:0]"
+        while IFS= read -r rule; do
+            [[ -n $rule ]] || continue
+            if [[ $attempt == drop ]]; then
+                rule=$(sed -E 's/-j REJECT( --reject-with [^ ]+)?$/-j DROP/' <<< "$rule")
+            fi
+            body+="
+-A $chain $rule"
+        done <<< "$rules"
+        body+="$jump
+COMMIT"
+        if "$restore" 2> /dev/null <<< "$body"; then
+            [[ $attempt == drop ]] && GUARD_DROPPED=1
+            return 0
+        fi
+        # Nothing to fall back to without a REJECT rule
+        [[ $rules == *"-j REJECT"* ]] || return 1
+    done
+    return 1
+}
+
+# Remove a guard chain: every OUTPUT jump, then the chain; no-op when absent
+# Args: $1 = v4 | v6, $2 = chain
+guard_chain_off() {
+    local runner
+    runner=$(guard_runner "$1")
+    remove_output_jumps "$runner" "$2" || true
+    if "$runner" -L "$2" -n &> /dev/null; then
+        "$runner" -F "$2"
+        "$runner" -X "$2"
+    fi
+    return 0
+}
+
 # IPv6 guard: while a VPN is connected, block outgoing IPv6 outside the
 # tunnel. ProtonVPN's OpenVPN tunnels carry only IPv4, so without this IPv6
 # leaves over the physical interface with the ISP's address. Independent of
@@ -574,28 +634,16 @@ ipv6_guard_on() {
         echo -e "${YELLOW}Warning: ip6tables not found; IPv6 is not blocked${NC}" >&2
         return 1
     fi
-    local jump="" final
-    if ! run_ip6tables -C OUTPUT -j "$IPV6_GUARD_CHAIN" 2> /dev/null; then
-        jump="
--I OUTPUT 1 -j $IPV6_GUARD_CHAIN"
+    if guard_chain_on v6 "$IPV6_GUARD_CHAIN" "-o lo -j ACCEPT
+-d fe80::/10 -j ACCEPT
+-d ff00::/8 -j ACCEPT
+-o tun+ -j ACCEPT
+-o tailscale0 -j ACCEPT
+-o virbr+ -j ACCEPT
+-j REJECT --reject-with icmp6-adm-prohibited"; then
+        echo "IPv6 blocked outside the tunnel"
+        return 0
     fi
-    for final in "REJECT --reject-with icmp6-adm-prohibited" "DROP"; do
-        if run_ip6tables_restore 2> /dev/null << EOF; then
-*filter
-:$IPV6_GUARD_CHAIN - [0:0]
--A $IPV6_GUARD_CHAIN -o lo -j ACCEPT
--A $IPV6_GUARD_CHAIN -d fe80::/10 -j ACCEPT
--A $IPV6_GUARD_CHAIN -d ff00::/8 -j ACCEPT
--A $IPV6_GUARD_CHAIN -o tun+ -j ACCEPT
--A $IPV6_GUARD_CHAIN -o tailscale0 -j ACCEPT
--A $IPV6_GUARD_CHAIN -o virbr+ -j ACCEPT
--A $IPV6_GUARD_CHAIN -j $final$jump
-COMMIT
-EOF
-            echo "IPv6 blocked outside the tunnel"
-            return 0
-        fi
-    done
     echo -e "${RED}Error: Failed to block IPv6${NC}" >&2
     return 1
 }
@@ -604,12 +652,7 @@ EOF
 ipv6_guard_off() {
     command -v ip6tables &> /dev/null || return 0
     check_privileges || return 1
-    remove_output_jumps run_ip6tables "$IPV6_GUARD_CHAIN" || true
-    if run_ip6tables -L "$IPV6_GUARD_CHAIN" -n &> /dev/null; then
-        run_ip6tables -F "$IPV6_GUARD_CHAIN"
-        run_ip6tables -X "$IPV6_GUARD_CHAIN"
-    fi
-    return 0
+    guard_chain_off v6 "$IPV6_GUARD_CHAIN"
 }
 
 ipv6_guard_is_on() {
