@@ -65,6 +65,12 @@ for tool in iptables ip6tables iptables-restore ip6tables-restore; do
 done
 cat > "$FAKES/sudo" << 'EOF'
 #!/bin/bash
+# $FAKE_FW_DIR/sudo_needs_password: no cached credentials. -n then fails;
+# without -n the real sudo would prompt, which is recorded instead
+if [[ -e $FAKE_FW_DIR/sudo_needs_password ]]; then
+    [[ $1 == -n ]] || echo "sudo-prompt:$*" >> "$CALLS"
+    exit 1
+fi
 [[ $1 == -n ]] && shift
 case "$1" in
     true | iptables | ip6tables | iptables-restore | ip6tables-restore) exec "$@" ;;
@@ -468,6 +474,20 @@ test_dns_guard_status_unreadable() {
     report $? "dns-guard status is unknown, not off, when the firewall cannot be read" "rc=$rc out=$out"
 }
 
+# vpn status asks for the guard's state unattended: never a password prompt
+test_dns_guard_status_never_prompts() {
+    reset_fw
+    ks dns-guard on > /dev/null 2>&1
+    touch "$FW/sudo_needs_password"
+    local out rc
+    out=$(ks dns-guard status 2> /dev/null) && rc=0 || rc=$?
+    [[ $rc -eq 2 && $out == unknown ]]
+    report $? "dns-guard status without sudo credentials is unknown (exit 2)" "rc=$rc out=$out"
+    ! grep -q '^sudo-prompt:' "$CALLS"
+    report $? "dns-guard status never runs sudo in a way that prompts" "$(cat "$CALLS")"
+    rm -f "$FW/sudo_needs_password"
+}
+
 echo -e "${T_BLUE}========================================${T_NC}"
 echo -e "${T_BLUE}Guard Chain Test Suite${T_NC}"
 echo -e "${T_BLUE}========================================${T_NC}"
@@ -494,6 +514,7 @@ test_pin_failure
 test_kill_switch_partial_load_keeps_guard_first
 test_dns_guard_off_failures
 test_dns_guard_status_unreadable
+test_dns_guard_status_never_prompts
 
 echo ""
 echo -e "${T_BLUE}Results: $TESTS_PASSED/$TESTS_RUN passed${T_NC}"

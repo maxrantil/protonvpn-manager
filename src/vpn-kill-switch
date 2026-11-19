@@ -757,20 +757,33 @@ dns_guard_off() {
     return $rc
 }
 
+# OUTPUT as iptables -S prints it, for status reports: sudo -n, so an
+# unattended caller (vpn status, vpn-doctor) never waits at a password
+# prompt; without credentials this fails. Args: $1 = v4 | v6
+read_output_chain() {
+    local tool=iptables
+    [[ $1 == v6 ]] && tool=ip6tables
+    if [[ $EUID -eq 0 ]]; then
+        "$tool" -S OUTPUT
+    else
+        sudo -n "$tool" -S OUTPUT
+    fi
+}
+
 # Print on, off, unknown, "on (not first in OUTPUT)" or "on (IPv4 only)"/
 # "on (IPv6 only)". Exit 0 only when the jump is first in OUTPUT in every
 # family that has a firewall tool; 1 only when it is known to be off;
-# 2 otherwise (unknown: the firewall could not be read, never taken as off).
+# 2 otherwise (unknown: the firewall could not be read, e.g. no sudo
+# credentials; never taken as off).
 dns_guard_status() {
-    local family runner out jump="-A OUTPUT -j $DNS_GUARD_CHAIN"
+    local family out jump="-A OUTPUT -j $DNS_GUARD_CHAIN"
     local -a present=() missing=()
     local not_first=0
     for family in v4 v6; do
         if [[ $family == v6 ]]; then
             command -v ip6tables &> /dev/null || continue
         fi
-        runner=$(guard_runner "$family")
-        if ! out=$("$runner" -S OUTPUT 2> /dev/null); then
+        if ! out=$(read_output_chain "$family" 2> /dev/null); then
             echo "unknown"
             return 2
         fi
