@@ -226,6 +226,7 @@ run_unit_tests() {
         unit/test_leak_protection.sh
         unit/test_dns_guard.sh
         unit/test_dns_mismatch.sh
+        unit/test_dns_repair_hook.sh
         unit/test_process_detection.sh
         unit/test_profile_resolution.sh
         unit/test_country_selection.sh

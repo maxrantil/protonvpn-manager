@@ -1,0 +1,187 @@
+#!/bin/bash
+# ABOUTME: NetworkManager dispatcher hook: on dns-change, rebuilds resolv.conf from openresolv while this tool's VPN is up (#295)
+# ABOUTME: Runs as root with no user context; also removes a DNS guard left behind with no VPN and the kill switch off
+
+# NetworkManager rewrites resolv.conf with the router's DNS while the VPN is
+# up (#295). openresolv still holds the VPN's exclusive entry, so
+# `resolvconf -u` puts the VPN's DNS back; it is idempotent and needs no
+# comparison first. The DNS guard keeps lookups leak-free in between.
+#
+# Deliberately separate from 50-vpn-reconnect: no user is resolved, no file
+# in a home directory is read, and no user log is written (syslog only:
+# journalctl -t vpn-dns-repair).
+
+set -euo pipefail
+
+# The interface ($1) is ignored: dns-change arrives with an empty one
+ACTION="${2:-}"
+
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
+[[ $ACTION == dns-change ]] || exit 0
+
+# Never sources user-writable code: no development-mode fallback
+VPN_DIR=/usr/local/bin
+[[ -f $VPN_DIR/vpn-utils ]] || exit 0
+# shellcheck source=src/vpn-utils
+source "$VPN_DIR/vpn-utils"
+
+# Fixed paths, set after sourcing (tests reassign them)
+RESOLV_CONF=/etc/resolv.conf
+RUN_DIR=/run/protonvpn-manager
+LOCK_FILE=$RUN_DIR/dns-repair.lock
+TIMES_FILE=$RUN_DIR/dns-repair.times
+# This tool's OpenVPN, for vpn_is_healthy (vpn-utils)
+VPN_PID_FILE=/var/run/openvpn.pid
+VPN_SESSION_PROFILE=/run/protonvpn-manager-session/profile.ovpn
+VPN_TUNNEL_INTERFACE=tun0
+VPN_PROC_DIR=/proc
+
+# Rate limit: at most this many repairs within this many seconds
+RATE_MAX=3
+RATE_WINDOW=10
+
+# Log to syslog only; never fails the hook
+# Args: $1 = level, $2 = message
+dns_log() {
+    logger -t vpn-dns-repair -- "[$1] $2" 2> /dev/null || true
+}
+
+# Has this hook already repaired RATE_MAX times within RATE_WINDOW seconds?
+# The times file keeps at most the last RATE_MAX epoch seconds: lines that
+# are not plain numbers and timestamps in the future (clock moved back) are
+# dropped. A limited run is not recorded.
+# Returns: 0 when limited
+rate_limited() {
+    local now line t recent=0
+    local -a kept=()
+    now=$(date +%s)
+    if [[ -f $TIMES_FILE && ! -L $TIMES_FILE ]]; then
+        while IFS= read -r line || [[ -n $line ]]; do
+            [[ $line =~ ^[1-9][0-9]{0,11}$ ]] || continue
+            ((line <= now)) || continue
+            kept+=("$line")
+        done < "$TIMES_FILE"
+    fi
+    [[ ${#kept[@]} -le $RATE_MAX ]] || kept=("${kept[@]: -RATE_MAX}")
+    for t in "${kept[@]}"; do
+        ((now - t < RATE_WINDOW)) && recent=$((recent + 1))
+    done
+    if ((recent >= RATE_MAX)); then
+        write_times "${kept[@]}"
+        return 0
+    fi
+    kept+=("$now")
+    [[ ${#kept[@]} -le $RATE_MAX ]] || kept=("${kept[@]: -RATE_MAX}")
+    write_times "${kept[@]}"
+    return 1
+}
+
+# Replace the times file (in the root-only RUN_DIR) with the given entries
+write_times() {
+    rm -f "$TIMES_FILE"
+    (umask 077 && printf '%s\n' "$@" > "$TIMES_FILE") 2> /dev/null || true
+}
+
+# A DNS guard left behind with no VPN (OpenVPN exited on its own: resume,
+# crash) blocks all DNS until `vpn cleanup`. Removed only when no openvpn
+# runs at all, the VPN's entry is gone (the caller checked) and the kill
+# switch is off in every family; with the kill switch on, the guard stays
+# (fail closed). Anything unreadable keeps the guard. Uses iptables directly,
+# the way `vpn-kill-switch dns-guard off` does (every jump, then the chain):
+# the kill switch script would bring in a user context this hook avoids.
+remove_leftover_dns_guard() {
+    local rc=0 family tool out line
+    local -A jumps=() chain=()
+    pgrep -x openvpn > /dev/null 2>&1 || rc=$?
+    [[ $rc -eq 1 ]] || return 0
+
+    for family in v4 v6; do
+        tool=iptables
+        if [[ $family == v6 ]]; then
+            command -v ip6tables > /dev/null 2>&1 || continue
+            tool=ip6tables
+        fi
+        out=$("$tool" -S 2> /dev/null) || return 0
+        jumps[$family]=0
+        chain[$family]=0
+        while IFS= read -r line; do
+            case "$line" in
+                "-A OUTPUT -j VPN_KILL_SWITCH" | "-A OUTPUT -j VPN_KILL_SWITCH_V6") return 0 ;;
+                "-A OUTPUT -j VPN_DNS_GUARD") jumps[$family]=$((jumps[$family] + 1)) ;;
+                "-N VPN_DNS_GUARD") chain[$family]=1 ;;
+            esac
+        done <<< "$out"
+    done
+
+    local found=0 failed=0 i
+    for family in "${!jumps[@]}"; do
+        [[ ${jumps[$family]} -gt 0 || ${chain[$family]} -eq 1 ]] || continue
+        found=1
+        tool=iptables
+        [[ $family == v6 ]] && tool=ip6tables
+        for ((i = 0; i < jumps[$family]; i++)); do
+            if ! "$tool" -D OUTPUT -j VPN_DNS_GUARD 2> /dev/null; then
+                # A chain whose jump remains is left whole
+                failed=1
+                continue 2
+            fi
+        done
+        if [[ ${chain[$family]} -eq 1 ]]; then
+            if ! "$tool" -F VPN_DNS_GUARD 2> /dev/null || ! "$tool" -X VPN_DNS_GUARD 2> /dev/null; then
+                failed=1
+            fi
+        fi
+    done
+    [[ $found -eq 1 ]] || return 0
+    if [[ $failed -eq 1 ]]; then
+        dns_log WARN "Could not remove the leftover DNS guard completely; DNS may stay blocked. Fix: vpn cleanup"
+    else
+        dns_log INFO "Removed a leftover DNS guard (no VPN running, kill switch off)"
+    fi
+    return 0
+}
+
+# Cheapest checks first. Always returns 0: a failed repair never fails
+# NetworkManager's dispatcher run.
+repair_vpn_dns() {
+    if [[ -L $RESOLV_CONF ]]; then
+        dns_log WARN "resolv.conf is a symlink; not touching it"
+        return 0
+    fi
+
+    # Command substitution, not a pipeline (pipefail)
+    local entry
+    entry=$(resolvconf -l tun0.protonvpn 2> /dev/null) || true
+    if [[ -z $entry ]]; then
+        remove_leftover_dns_guard
+        return 0
+    fi
+
+    vpn_is_healthy || return 0
+
+    if ! (umask 077 && mkdir -p "$RUN_DIR") 2> /dev/null ||
+        [[ ! -d $RUN_DIR || -L $RUN_DIR || ! -O $RUN_DIR ]]; then
+        dns_log WARN "Refusing to use $RUN_DIR (not a root-owned directory)"
+        return 0
+    fi
+    exec 9> "$LOCK_FILE"
+    # Another repair is running
+    flock -n 9 || return 0
+
+    if rate_limited; then
+        dns_log WARN "dns-change loop suspected: $RATE_MAX repairs within ${RATE_WINDOW}s; skipping"
+        return 0
+    fi
+
+    if resolvconf -u 9>&- 2> /dev/null; then
+        dns_log INFO "resolv.conf rebuilt from openresolv (VPN DNS)"
+    else
+        dns_log ERROR "resolvconf -u failed; DNS may not use the VPN. Fix: sudo resolvconf -u"
+    fi
+    return 0
+}
+
+repair_vpn_dns
+exit 0
