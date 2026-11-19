@@ -8,6 +8,7 @@ source "$TEST_DIR/../test_framework.sh"
 
 # PROJECT_DIR is set by test_framework.sh to project root
 DISPATCHER_HOOK="$PROJECT_DIR/etc/NetworkManager/dispatcher.d/50-vpn-reconnect"
+VPN_UTILS="$PROJECT_DIR/src/vpn-utils"
 VPN_MANAGER="$PROJECT_DIR/src/vpn-manager"
 VPN_CONNECTOR="$PROJECT_DIR/src/vpn-connector"
 # shellcheck disable=SC2034  # KILL_SWITCH used by test functions for reference
@@ -470,7 +471,8 @@ test_kill_switch_on_passes_silently() {
         0 1 "rc=0"
 }
 
-# Run the hook's real vpn_is_healthy against a fake /proc, PID file and
+# Run the real vpn_is_healthy (vpn-utils, shared by the dispatcher hooks)
+# against a fake /proc, PID file and
 # interface list; prints "rc=<status>". Nothing real is inspected, so the
 # result does not depend on a VPN this machine may have up.
 # $1: PID file ("trusted", "missing", "user-owned", "symlink")
@@ -484,8 +486,8 @@ run_vpn_is_healthy() {
     work=$(mktemp -d)
     mkdir -p "$work/bin" "$work/proc"
 
-    if ! grep -q '^vpn_is_healthy() {$' "$DISPATCHER_HOOK"; then
-        echo "vpn_is_healthy() not found in $DISPATCHER_HOOK"
+    if ! grep -q '^vpn_is_healthy() {$' "$VPN_UTILS"; then
+        echo "vpn_is_healthy() not found in $VPN_UTILS"
         rm -rf "$work"
         return
     fi
@@ -547,8 +549,9 @@ STUB
     (
         # The hook's own shell options
         set -euo pipefail
-        # shellcheck disable=SC1090  # function extracted from the hook under test
-        source <(sed -n '/^vpn_is_healthy() {$/,/^}$/p' "$DISPATCHER_HOOK")
+        # As the hooks do: source the library, then set the fixed constants
+        # shellcheck source=src/vpn-utils
+        source "$VPN_UTILS"
         # shellcheck disable=SC2034  # read by the sourced vpn_is_healthy
         VPN_PID_FILE="$work/openvpn.pid"
         # shellcheck disable=SC2034
@@ -615,6 +618,22 @@ test_vpn_is_healthy_only_for_this_tools_vpn() {
         trusted user-run up none
 }
 
+# The health check lives in vpn-utils, shared with 40-vpn-dns-repair; the
+# reconnect hook keeps its fixed constants and uses the shared function
+test_vpn_is_healthy_shared() {
+    start_test "vpn_is_healthy is shared from vpn-utils, not defined in the hook"
+    if ! grep -q '^vpn_is_healthy() {$' "$DISPATCHER_HOOK" &&
+        grep -q '^vpn_is_healthy() {$' "$VPN_UTILS" &&
+        grep -q '^VPN_PID_FILE="/var/run/openvpn.pid"$' "$DISPATCHER_HOOK"; then
+        log_test "PASS" "$CURRENT_TEST"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        log_test "FAIL" "$CURRENT_TEST"
+        FAILED_TESTS+=("$CURRENT_TEST")
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+}
+
 # ============================================================================
 # RUN ALL TESTS
 # ============================================================================
@@ -643,6 +662,7 @@ main() {
     test_kill_switch_off_vpn_down_logs_refusal
     test_kill_switch_on_passes_silently
     test_vpn_is_healthy_only_for_this_tools_vpn
+    test_vpn_is_healthy_shared
 
     # Config management tests
     test_config_command_exists

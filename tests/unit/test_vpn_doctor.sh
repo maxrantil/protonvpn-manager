@@ -71,6 +71,19 @@ EOF
 		printf '#!/bin/bash\necho "%s 2.6.0 stub"\n' "$cmd" > "$WORK/bin/$cmd"
 		chmod 755 "$WORK/bin/$cmd"
 	done
+	# sudo: never the real one. `sudo -n ip(6)tables -S OUTPUT` (the DNS
+	# guard's status) prints an OUTPUT chain, with the guard when
+	# FAKE_DNS_GUARD=on; without FAKE_DNS_GUARD there are no credentials.
+	# resolvconf knows no entries, so the resolv.conf check is skipped.
+	cat > "$WORK/bin/sudo" << 'EOF'
+#!/bin/bash
+[[ $1 == -n && $3 == -S && $4 == OUTPUT && -n ${FAKE_DNS_GUARD:-} ]] || exit 1
+echo "-P OUTPUT ACCEPT"
+[[ $FAKE_DNS_GUARD == on ]] && echo "-A OUTPUT -j VPN_DNS_GUARD"
+exit 0
+EOF
+	printf '#!/bin/bash\n[[ $1 == --version ]] && echo "openresolv 3.13.2"\nexit 0\n' > "$WORK/bin/resolvconf"
+	chmod 755 "$WORK/bin/sudo" "$WORK/bin/resolvconf"
 }
 
 # Run the doctor; sets OUT and RC
@@ -79,17 +92,18 @@ run_doctor() {
 	shift
 	OUT=$(env -u VPN_CONFIG_DIR -u LOCATIONS_DIR HOME="$WORK/home" \
 		XDG_STATE_HOME="$WORK/home/.local/state" PATH="$WORK/bin:$PATH" \
-		FAKE_OPENVPN_PIDS="$pids" FAKE_PGREP_BROKEN="${FAKE_PGREP_BROKEN:-}" NO_COLOR=1 \
+		FAKE_OPENVPN_PIDS="$pids" FAKE_PGREP_BROKEN="${FAKE_PGREP_BROKEN:-}" \
+		FAKE_DNS_GUARD="${FAKE_DNS_GUARD:-}" NO_COLOR=1 \
 		bash "$DOCTOR" --no-network "$@" 2>&1 < /dev/null)
 	RC=$?
 }
 
 expect_complete_run() {
 	local name="$1"
-	if [[ $OUT == *"[5/5]"* && $OUT == *"Diagnostic Summary"* ]]; then
-		test_pass "$name: all 5 checks and the summary are printed"
+	if [[ $OUT == *"[6/6]"* && $OUT == *"Diagnostic Summary"* ]]; then
+		test_pass "$name: all 6 checks and the summary are printed"
 	else
-		test_fail "$name: all 5 checks and the summary are printed" "rc=$RC; last lines:\n$(tail -5 <<< "$OUT")"
+		test_fail "$name: all 6 checks and the summary are printed" "rc=$RC; last lines:\n$(tail -5 <<< "$OUT")"
 	fi
 }
 
@@ -167,6 +181,39 @@ if [[ $OUT == *"No VPN processes running"* ]]; then
 	test_pass "broken pgrep: treated as no VPN processes"
 else
 	test_fail "broken pgrep: treated as no VPN processes" "$(grep -A3 'Process Health' <<< "$OUT")"
+fi
+
+echo ""
+echo -e "${T_BLUE}DNS leak protection (#295)${T_NC}"
+setup_env
+run_doctor "" --verbose
+expect_rc "DNS guard unreadable (no sudo)" 0
+if [[ $OUT == *"DNS guard: unknown"* ]]; then
+	test_pass "DNS guard unreadable: shown as unknown, not as a problem"
+else
+	test_fail "DNS guard unreadable: shown as unknown, not as a problem" "$(grep -A3 'DNS' <<< "$OUT")"
+fi
+FAKE_DNS_GUARD=on run_doctor "4242" --verbose
+expect_rc "connected, guard on" 0
+if [[ $OUT == *"DNS guard: on"* ]]; then
+	test_pass "connected, guard on: reported"
+else
+	test_fail "connected, guard on: reported" "$(grep -A3 'DNS' <<< "$OUT")"
+fi
+FAKE_DNS_GUARD=on run_doctor ""
+expect_complete_run "leftover guard"
+expect_rc "leftover guard" 2
+if [[ $OUT == *"leftover DNS guard. Fix: vpn cleanup"* ]]; then
+	test_pass "disconnected with the guard on: leftover guard warning"
+else
+	test_fail "disconnected with the guard on: leftover guard warning" "$(grep -A3 'DNS' <<< "$OUT")"
+fi
+FAKE_DNS_GUARD=off run_doctor "4242"
+expect_rc "connected, guard off" 2
+if [[ $OUT == *"DNS guard is off while connected"* ]]; then
+	test_pass "connected with the guard off: warns"
+else
+	test_fail "connected with the guard off: warns" "$(grep -A3 'DNS' <<< "$OUT")"
 fi
 
 echo ""

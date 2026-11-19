@@ -42,7 +42,8 @@ LOCK_FILE="$RUN_DIR/reconnect.lock"
 ATTEMPTS_FILE="$RUN_DIR/reconnect.attempts"
 
 # This tool's OpenVPN, as vpn-connector starts it (root-written PID file,
-# session profile). Fixed paths: the hook runs as root and trusts no env.
+# session profile), for vpn_is_healthy (vpn-utils). Fixed paths, set after
+# sourcing: the hook runs as root and trusts no env.
 VPN_PID_FILE="/var/run/openvpn.pid"
 VPN_SESSION_PROFILE="/run/protonvpn-manager-session/profile.ovpn"
 VPN_TUNNEL_INTERFACE="tun0"
@@ -145,7 +146,7 @@ check_kill_switch() {
 
     if ! HOME="$REAL_HOME" "$KILL_SWITCH" is-enabled 2>/dev/null; then
         # The refusal is SECURITY only when the VPN looks down, so the log shows
-        # when it really went down. vpn_is_healthy (defined below) counts only
+        # when it really went down. vpn_is_healthy (vpn-utils) counts only
         # this tool's VPN; the healthy case is still logged rather than dropped.
         if vpn_is_healthy; then
             log_event "INFO" "Kill switch not enabled; VPN up, no reconnect needed"
@@ -250,35 +251,6 @@ validate_profile() {
 
     echo "$profile"
     return 0
-}
-
-# === VPN HEALTH CHECK ===
-vpn_is_healthy() {
-    # Healthy only when this tool's OpenVPN is running and its tunnel is up.
-    # Another program's openvpn, tun0 or WireGuard interface does not count;
-    # this tool does not bring up WireGuard yet (#223), so none counts.
-    local pid arg prev="" ours=""
-    # The PID file openvpn writes as root: a regular file root owns
-    [[ -f $VPN_PID_FILE && ! -L $VPN_PID_FILE ]] || return 1
-    [[ $(stat -c %u -- "$VPN_PID_FILE" 2> /dev/null) == 0 ]] || return 1
-    pid=$(head -c 16 "$VPN_PID_FILE" 2> /dev/null | tr -cd '0-9') || return 1
-    [[ -n $pid ]] || return 1
-
-    # That PID is a live openvpn running as root (a user's process that
-    # reused the PID does not count), started with this tool's profile
-    [[ $(stat -c %u -- "$VPN_PROC_DIR/$pid" 2> /dev/null) == 0 ]] || return 1
-    [[ $(cat "$VPN_PROC_DIR/$pid/comm" 2> /dev/null) == openvpn ]] || return 1
-    while IFS= read -r -d '' arg; do
-        if [[ $prev == --config && $arg == "$VPN_SESSION_PROFILE" ]]; then
-            ours=1
-            break
-        fi
-        prev=$arg
-    done 2> /dev/null < "$VPN_PROC_DIR/$pid/cmdline"
-    [[ -n $ours ]] || return 1
-
-    # ...and the tunnel is administratively up
-    [[ -n $(ip -o link show dev "$VPN_TUNNEL_INTERFACE" up 2> /dev/null) ]]
 }
 
 # === RECONNECT ===

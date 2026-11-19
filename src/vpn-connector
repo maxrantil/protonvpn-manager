@@ -575,9 +575,11 @@ clear_stale_vpn_state() {
 }
 
 # While connected nothing may leave outside the tunnel: block IPv6 (the
-# tunnel carries none) and send DNS to the VPN even when Tailscale manages
-# DNS. Opt-outs in ~/.config/vpn/config: BLOCK_IPV6=false, TAILSCALE_DNS=keep.
-# Undone by release_vpn_network_state (disconnect, stale state, interrupt).
+# tunnel carries none), send DNS to the VPN even when Tailscale manages DNS,
+# and reject DNS outside the tunnel whoever rewrites resolv.conf (#295).
+# Opt-outs in ~/.config/vpn/config: BLOCK_IPV6=false, TAILSCALE_DNS=keep,
+# BLOCK_DNS_LEAKS=false. Undone by release_vpn_network_state (disconnect,
+# stale state, interrupt).
 apply_leak_protection() {
     local kill_switch="$VPN_DIR/vpn-kill-switch"
     if [[ "$(connector_config_value BLOCK_IPV6 true)" != "false" && -x $kill_switch ]]; then
@@ -585,6 +587,14 @@ apply_leak_protection() {
     fi
     if [[ "$(connector_config_value TAILSCALE_DNS pause)" != "keep" ]]; then
         pause_tailscale_dns || true
+    fi
+    # After the pause: tailscaled's own upstream queries are rejected too
+    if [[ "$(connector_config_value BLOCK_DNS_LEAKS true)" != "false" && -x $kill_switch ]]; then
+        "$kill_switch" dns-guard on || echo "WARNING: DNS may leak outside the tunnel" >&2
+        # The guard wins: KILL_SWITCH_ALLOW_LAN_DNS only applies while the tunnel is down
+        if [[ "$(connector_config_value KILL_SWITCH_ALLOW_LAN_DNS false)" == "true" ]]; then
+            echo "Note: LAN DNS is blocked while connected; for LAN DNS while connected, set BLOCK_DNS_LEAKS=false"
+        fi
     fi
 }
 
