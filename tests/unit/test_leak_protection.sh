@@ -73,6 +73,7 @@ cat > "$STUB_DIR/vpn-kill-switch" << 'EOF'
 #!/bin/bash
 echo "kill-switch:$*" >> "$CALLS"
 [[ $1 == is-enabled ]] && exit 1
+[[ $1 == dns-guard && $2 == on && -f $WORK_DIR/dns_guard_fails ]] && exit 1
 exit 0
 EOF
 cat > "$PATH_STUBS/tailscale" << 'EOF'
@@ -128,7 +129,7 @@ chmod +x "$STUB_DIR"/* "$PATH_STUBS"/*
 reset_state() {
     : > "$CALLS"
     echo true > "$TS_CORPDNS"
-    rm -f "$TS_DOWN" "$PAUSED" "$WORK_DIR/rc_ifaces" "$WORK_DIR/ts_no_takeover"
+    rm -f "$TS_DOWN" "$PAUSED" "$WORK_DIR/rc_ifaces" "$WORK_DIR/ts_no_takeover" "$WORK_DIR/dns_guard_fails"
     : > "$HOME/.config/vpn/config"
     # What openresolv leaves after the VPN entry is removed and NetworkManager
     # does not use resolvconf: a file without nameservers
@@ -166,6 +167,9 @@ run_release() {
 
 called() { grep -qxF -- "$1" "$CALLS"; }
 
+# Line number of the first call $1 (0 when absent)
+call_line() { grep -nxF -- "$1" "$CALLS" | head -1 | cut -d: -f1 | grep . || echo 0; }
+
 # ---------------------------------------------------------------------------
 # On connect
 # ---------------------------------------------------------------------------
@@ -180,6 +184,46 @@ test_connect_blocks_ipv6() {
     run_connection_success
     ! called "kill-switch:ipv6-guard on"
     report $? "BLOCK_IPV6=false leaves IPv6 alone" "$(cat "$CALLS")"
+}
+
+# FR6: DNS outside the tunnel is rejected while connected, loaded after the
+# IPv6 guard and after Tailscale DNS is paused
+test_connect_guards_dns() {
+    reset_state
+    run_connection_success
+    local v6 ts dns
+    v6=$(call_line "kill-switch:ipv6-guard on")
+    ts=$(call_line "tailscale:set --accept-dns=false")
+    dns=$(call_line "kill-switch:dns-guard on")
+    [[ $dns -gt 0 && $dns -gt $v6 && $dns -gt $ts ]]
+    report $? "a successful connect loads the DNS guard after the IPv6 guard and Tailscale pause" "$(cat "$CALLS")"
+
+    reset_state
+    echo "BLOCK_DNS_LEAKS=false" > "$HOME/.config/vpn/config"
+    run_connection_success
+    ! called "kill-switch:dns-guard on"
+    report $? "BLOCK_DNS_LEAKS=false skips the DNS guard" "$(cat "$CALLS")"
+
+    local out
+    reset_state
+    touch "$WORK_DIR/dns_guard_fails"
+    out=$(bash -c "$(stubbed_source vpn-connector)
+        handle_connection_success prof 1 1 ''" 2>&1)
+    [[ $out == *"WARNING: DNS may leak outside the tunnel"* ]]
+    report $? "a DNS guard that fails to load is warned about" "$out"
+
+    # Q1: the guard wins over KILL_SWITCH_ALLOW_LAN_DNS while connected
+    reset_state
+    echo "KILL_SWITCH_ALLOW_LAN_DNS=true" > "$HOME/.config/vpn/config"
+    out=$(bash -c "$(stubbed_source vpn-connector)
+        handle_connection_success prof 1 1 ''" 2>&1)
+    called "kill-switch:dns-guard on" && [[ $out == *"set BLOCK_DNS_LEAKS=false"* ]]
+    report $? "KILL_SWITCH_ALLOW_LAN_DNS=true keeps the guard and says how to get LAN DNS" "$out"
+    reset_state
+    out=$(bash -c "$(stubbed_source vpn-connector)
+        handle_connection_success prof 1 1 ''" 2>&1)
+    [[ $out != *"BLOCK_DNS_LEAKS"* ]]
+    report $? "no LAN DNS note without KILL_SWITCH_ALLOW_LAN_DNS" "$out"
 }
 
 test_connect_pauses_tailscale_dns() {
@@ -311,6 +355,11 @@ test_release_restores() {
     report $? "release clears the pause record" "still there: $PAUSED"
     called "kill-switch:ipv6-guard off"
     report $? "release removes the IPv6 block" "$(cat "$CALLS")"
+    local dns ts
+    dns=$(call_line "kill-switch:dns-guard off")
+    ts=$(call_line "tailscale:set --accept-dns=true")
+    [[ $dns -gt 0 && $dns -lt $ts ]]
+    report $? "release removes the DNS guard before Tailscale takes DNS back" "$(cat "$CALLS")"
 }
 
 test_release_respects_user_setting() {
@@ -330,6 +379,8 @@ test_release_with_keep_kill_switch() {
         release_vpn_network_state" > /dev/null 2>&1
     called "tailscale:set --accept-dns=true" && called "kill-switch:ipv6-guard off"
     report $? "VPN_KEEP_KILL_SWITCH=1 still restores DNS and removes the IPv6 block" "$(cat "$CALLS")"
+    called "kill-switch:dns-guard off"
+    report $? "VPN_KEEP_KILL_SWITCH=1 still removes the DNS guard" "$(cat "$CALLS")"
 }
 
 # After disconnect, openresolv rebuilds resolv.conf from its own entries only.
@@ -531,6 +582,7 @@ echo -e "${T_BLUE}Leak Protection Test Suite${T_NC}"
 echo -e "${T_BLUE}========================================${T_NC}"
 
 test_connect_blocks_ipv6
+test_connect_guards_dns
 test_connect_pauses_tailscale_dns
 test_tailscale_dns_left_alone
 test_root_run_leaves_state_to_user

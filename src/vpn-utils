@@ -210,17 +210,23 @@ restore_tailscale_dns() {
 }
 
 # Undo what a VPN session leaves in the network config once no VPN runs:
-# the VPN's DNS entry, paused Tailscale DNS, the IPv6 block and the kill
-# switch. Callers that keep the kill switch on purpose (sleep/reconnect
-# hooks) set VPN_KEEP_KILL_SWITCH=1; it blocks IPv6 and DNS leaks itself.
+# the VPN's DNS entry, the DNS guard, paused Tailscale DNS, the IPv6 block
+# and the kill switch. Callers that keep the kill switch on purpose
+# (sleep/reconnect hooks) set VPN_KEEP_KILL_SWITCH=1; it blocks IPv6 and DNS
+# leaks itself (the DNS guard is removed anyway; the reconnect loads it again).
 # Uses $VPN_DIR of the calling script.
 release_vpn_network_state() {
+    # Callers set VPN_DIR; the fallback is this library's own directory
+    local kill_switch="${VPN_DIR:-$(dirname "$(realpath "${BASH_SOURCE[0]}")")}/vpn-kill-switch"
     clear_vpn_dns
+    # Before DNS goes back to the system and Tailscale, which use port 53
+    # outside the tunnel
+    if [[ -x $kill_switch ]]; then
+        "$kill_switch" dns-guard off > /dev/null 2>&1 || true
+    fi
     # Before Tailscale takes resolv.conf back, so it keeps a working upstream
     restore_system_dns || true
     restore_tailscale_dns || true
-    # Callers set VPN_DIR; the fallback is this library's own directory
-    local kill_switch="${VPN_DIR:-$(dirname "$(realpath "${BASH_SOURCE[0]}")")}/vpn-kill-switch"
     [[ -x $kill_switch ]] || return 0
     "$kill_switch" ipv6-guard off > /dev/null 2>&1 || true
     [[ ${VPN_KEEP_KILL_SWITCH:-} == 1 ]] && return 0
