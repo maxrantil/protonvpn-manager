@@ -187,6 +187,12 @@ test_sets() {
     mismatch
     [[ $RC_ -eq 1 ]]
     report $? "a nameserver listed twice still matches" "rc=$RC_ out=$OUT"
+
+    printf 'nameserver FD00::1\n' > "$RC/entries/tun0.protonvpn"
+    printf 'nameserver fd00::1\n' > "$RESOLV"
+    mismatch
+    [[ $RC_ -eq 1 ]]
+    report $? "IPv6 addresses compare case-insensitively" "rc=$RC_ out=$OUT"
 }
 
 test_comments_and_search() {

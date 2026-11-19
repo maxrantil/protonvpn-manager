@@ -485,6 +485,8 @@ test_dns_guard_status_never_prompts() {
     report $? "dns-guard status without sudo credentials is unknown (exit 2)" "rc=$rc out=$out"
     ! grep -q '^sudo-prompt:' "$CALLS"
     report $? "dns-guard status never runs sudo in a way that prompts" "$(cat "$CALLS")"
+    [[ $(jumps v4 VPN_DNS_GUARD) -eq 1 ]]
+    report $? "an unreadable status leaves the guard in place" "$(fw_rules v4 OUTPUT)"
     rm -f "$FW/sudo_needs_password"
 }
 

@@ -178,6 +178,39 @@ test_hook_static() {
     source_line=$(grep -n '^source ' "$HOOK" | head -1 | cut -d: -f1)
     check "the action is checked before vpn-utils is sourced" "action=$action_line source=$source_line" \
         test -n "$action_line" -a -n "$source_line" -a "${action_line:-0}" -lt "${source_line:-0}"
+    # Fixed constants, assigned after sourcing (vpn-utils must not override them)
+    local name value line
+    for name in RESOLV_CONF=/etc/resolv.conf RUN_DIR=/run/protonvpn-manager \
+        VPN_PID_FILE=/var/run/openvpn.pid VPN_SESSION_PROFILE=/run/protonvpn-manager-session/profile.ovpn \
+        VPN_TUNNEL_INTERFACE=tun0 VPN_PROC_DIR=/proc; do
+        value=${name#*=}
+        line=$(grep -nxF "${name%%=*}=$value" "$HOOK" | head -1 | cut -d: -f1)
+        check "the hook sets ${name%%=*}=$value after sourcing vpn-utils" "line=$line source=$source_line" \
+            test -n "$line" -a "${line:-0}" -gt "${source_line:-0}"
+    done
+    check "vpn-utils is sourced only when root-owned and not writable by others" "" \
+        grep -q 'root_owned_safe "$VPN_DIR/vpn-utils"' "$HOOK"
+}
+
+# root_owned_safe: what the hook trusts enough to source or lock in
+test_root_owned_safe() {
+    local out
+    out=$(env -i PATH="$SANDBOX_PATH" HOOK="$HOOK" WORK="$WORK" "$BASH" -c '
+        source <(sed -n "/^root_owned_safe() {\$/,/^}\$/p" "$HOOK")
+        mkdir -p "$WORK/mine"
+        ln -sfn /usr "$WORK/usr-link"
+        for p in /usr /tmp "$WORK/mine" "$WORK/usr-link"; do
+            root_owned_safe "$p" && echo "$p=yes" || echo "$p=no"
+        done' 2>&1)
+    if [[ $EUID -ne 0 ]]; then
+        check "root_owned_safe: a root-owned 755 directory is trusted" "$out" grep -qx "/usr=yes" <<< "$out"
+        check "root_owned_safe: a user-owned directory is refused" "$out" grep -qx "$WORK/mine=no" <<< "$out"
+    else
+        echo "  (skipped: running as root, a user-owned path cannot be made here)"
+    fi
+    check "root_owned_safe: a world-writable directory is refused" "$out" grep -qx "/tmp=no" <<< "$out"
+    check "root_owned_safe: a symlink is refused" "$out" grep -qx "$WORK/usr-link=no" <<< "$out"
+    rm -rf "$WORK/mine" "$WORK/usr-link"
 }
 
 test_other_actions() {
@@ -239,24 +272,54 @@ test_lock_dir() {
         out=$(RUN_DIR_OVERRIDE=/usr run_repair)
         check "lock directory owned by someone else: refused" "$out; $(cat "$STATE/calls")" \
             test "$out" == "rc=0" -a "$(repairs)" -eq 0
+    else
+        echo "  (skipped: lock directory owned by someone else; running as root)"
     fi
+
+    reset_state
+    mkdir -p "$WORK/run"
+    chmod 770 "$WORK/run"
+    out=$(run_repair)
+    check "lock directory writable by its group: refused" "$out; $(cat "$STATE/calls")" \
+        test "$out" == "rc=0" -a "$(repairs)" -eq 0
+
+    reset_state
+    : > "$WORK/notadir"
+    out=$(RUN_DIR_OVERRIDE="$WORK/notadir/run" run_repair)
+    check "lock directory cannot be created: returns 0, no repair" "$out; $(cat "$STATE/calls")" \
+        test "$out" == "rc=0" -a "$(repairs)" -eq 0
+    rm -f "$WORK/notadir"
+
+    reset_state
+    mkdir -p "$WORK/run/dns-repair.lock"
+    out=$(run_repair)
+    check "lock file cannot be opened: returns 0, no repair" "$out; $(cat "$STATE/calls")" \
+        test "$out" == "rc=0" -a "$(repairs)" -eq 0
+    check "lock file cannot be opened: logged" "$(cat "$STATE/log")" grep -q 'lock' "$STATE/log"
 
     reset_state
     out=$(run_repair 'mkdir -p "$RUN_DIR"; exec 8> "$LOCK_FILE"; flock -n 8')
     check "lock held by another repair: skipped" "$out; $(cat "$STATE/calls")" \
         test "$out" == "rc=0" -a "$(repairs)" -eq 0
+    check "lock held by another repair: the skipped run is not recorded" "$(ls -A "$WORK/run")" \
+        test ! -e "$WORK/run/dns-repair.times"
+    out=$(run_repair)
+    check "after the lock is released, the next run repairs" "$out; $(cat "$STATE/calls")" test "$(repairs)" -eq 1
 }
 
 test_rate_limit() {
     local out now i
     reset_state
-    for i in 1 2 3 4; do
+    for i in 1 2 3; do
         out=$(run_repair)
     done
+    cp "$WORK/run/dns-repair.times" "$WORK/times.before"
+    out=$(run_repair)
     check "4 runs in a row: the 4th is rate limited" "$(cat "$STATE/calls")" test "$(repairs)" -eq 3
     check "a limited run logs a suspected loop" "$(cat "$STATE/log")" grep -q 'dns-change loop suspected' "$STATE/log"
-    check "a limited run is not recorded" "$(cat "$WORK/run/dns-repair.times")" \
-        test "$(wc -l < "$WORK/run/dns-repair.times")" -eq 3
+    check "a limited run is not recorded (times file unchanged)" "$(cat "$WORK/run/dns-repair.times")" \
+        cmp -s "$WORK/times.before" "$WORK/run/dns-repair.times"
+    rm -f "$WORK/times.before"
 
     reset_state
     now=$(date +%s)
@@ -277,7 +340,7 @@ test_rate_limit() {
     printf '%s\n' abc '1;id' '$(id)' '' ' 12' 0012 -5 > "$WORK/run/dns-repair.times"
     out=$(run_repair)
     check "a corrupt times file: bad lines dropped, repair runs" "$out; $(cat "$WORK/run/dns-repair.times")" \
-        test "$(repairs)" -eq 1 -a "$(grep -cvE '^[1-9][0-9]*$' "$WORK/run/dns-repair.times")" -eq 0
+        test "$(repairs)" -eq 1 -a -s "$WORK/run/dns-repair.times" -a "$(grep -cvE '^[1-9][0-9]*$' "$WORK/run/dns-repair.times")" -eq 0
 
     reset_state
     mkdir -p "$WORK/run"
@@ -383,6 +446,32 @@ test_leftover_guard() {
     out=$(run_repair)
     check "a chain that cannot be removed: returns 0" "$out" test "$out" == "rc=0"
     check "a chain that cannot be removed: warned with the fix" "$(cat "$STATE/log")" grep -q 'vpn cleanup' "$STATE/log"
+
+    reset_state
+    rm "$STATE/entry" "$STATE/healthy"
+    plant_guard
+    touch "$FW/fail_D_v4"
+    out=$(run_repair)
+    check "a jump that cannot be removed: its chain is left whole" "$out; $(fw iptables -S)" \
+        bash -c '[[ $("$@" -S VPN_DNS_GUARD 2> /dev/null | wc -l) -eq 2 ]]' _ env PATH="$SANDBOX_PATH" FAKE_FW_DIR="$FW" "$FAKES/iptables"
+    check "a jump that cannot be removed: warned with the fix" "$(cat "$STATE/log")" grep -q 'vpn cleanup' "$STATE/log"
+
+    reset_state
+    rm "$STATE/entry" "$STATE/healthy"
+    fw iptables -N VPN_DNS_GUARD
+    fw ip6tables -N VPN_DNS_GUARD
+    out=$(run_repair)
+    check "a leftover chain without a jump: removed" "$out; $(fw iptables -S; fw ip6tables -S)" guard_gone
+
+    reset_state
+    rm "$STATE/entry" "$STATE/healthy"
+    fw iptables -N VPN_DNS_GUARD
+    fw iptables -I OUTPUT 1 -j VPN_DNS_GUARD
+    mv "$FAKES/ip6tables" "$WORK/ip6tables.off"
+    out=$(run_repair)
+    mv "$WORK/ip6tables.off" "$FAKES/ip6tables"
+    check "no ip6tables, IPv4 guard left over: removed" "$out; $(fw iptables -S)" \
+        bash -c '! "$@" -S | grep -q VPN_DNS_GUARD' _ env PATH="$SANDBOX_PATH" FAKE_FW_DIR="$FW" "$FAKES/iptables"
 }
 
 cp "$FAKES/resolvconf" "$WORK/resolvconf.keep"
@@ -393,6 +482,7 @@ echo -e "${T_BLUE}========================================${T_NC}"
 
 test_hook_file
 test_hook_static
+test_root_owned_safe
 test_other_actions
 if [[ -f $HOOK ]]; then
     test_repair

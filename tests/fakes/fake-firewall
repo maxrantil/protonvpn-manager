@@ -18,6 +18,7 @@
 #   restore_fails_on a restore whose input contains this file's text fails
 #   fail_S_<fam>     -S of that family fails (no privileges, xtables lock)
 #   fail_X_<fam>     -X of that family fails
+#   fail_D_<fam>     -D of that family fails
 # Rules are checked like the real tool where tests depend on it: a
 # --reject-with of the other family, or tcp-reset without -p tcp, fails.
 # Every call is appended to $FAKE_FW_DIR/calls as "<tool> <args>".
@@ -110,6 +111,7 @@ fw_apply() {
                 -C) grep -qxF -- "$rule" "$file" || return 1 ;;
                 -D)
                     local line
+                    [[ -e $FAKE_FW_DIR/fail_D_$fam ]] && { echo "iptables: Resource temporarily unavailable." >&2; return 4; }
                     line=$(grep -nxF -- "$rule" "$file" | head -1 | cut -d: -f1)
                     [[ -n $line ]] || { echo "iptables: Bad rule (does a matching rule exist in that chain?)." >&2; return 1; }
                     sed -i "${line}d" "$file"

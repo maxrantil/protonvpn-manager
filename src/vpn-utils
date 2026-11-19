@@ -237,7 +237,10 @@ release_vpn_network_state() {
 
 # Read KEY=value from the user's ~/.config/vpn/config (quotes stripped),
 # the file vpn-connector reads its opt-outs from. Never run as root for
-# another user's file: only unprivileged status code uses it.
+# another user's file: only unprivileged status code uses it. Same contract
+# as vpn-kill-switch's config_value and vpn-connector's
+# connector_config_value (last value wins, symlinked file ignored);
+# vpn-manager's get_config_value differs.
 # Args: $1 = key, $2 = default
 vpn_config_value() {
     local key="$1" default="${2:-}" value="" file="${VPN_CONFIG_DIR:-$HOME/.config/vpn}/config"
@@ -248,18 +251,19 @@ vpn_config_value() {
 }
 
 # The nameserver addresses in resolv.conf-style text on stdin, each once,
-# in file order, on one line. Comments, search, domain and options lines are
-# skipped. Bash builtins only.
+# in file order, lowercased (IPv6 hex digits), on one line. Comments,
+# search, domain and options lines are skipped. Bash builtins only.
 nameserver_set() {
-    local line set=""
+    local line address joined=""
     local -A seen=()
     while IFS= read -r line || [[ -n $line ]]; do
         [[ $line =~ ^[[:space:]]*nameserver[[:space:]]+([^[:space:]#\;]+) ]] || continue
-        [[ -z ${seen[${BASH_REMATCH[1]}]:-} ]] || continue
-        seen[${BASH_REMATCH[1]}]=1
-        set+="${set:+ }${BASH_REMATCH[1]}"
+        address=${BASH_REMATCH[1],,}
+        [[ -z ${seen[$address]:-} ]] || continue
+        seen[$address]=1
+        joined+="${joined:+ }$address"
     done
-    [[ -z $set ]] || echo "$set"
+    [[ -z $joined ]] || echo "$joined"
 }
 
 # Do two nameserver_set lines hold the same addresses (in any order)?
@@ -318,10 +322,7 @@ vpn_dns_state() {
         # unknown stays unknown: an unreadable firewall is never "off"
         case "$rc:$out" in
             0:on | 1:off | "2:on ("*) VPN_DNS_GUARD=$out ;;
-            *) rc=2 ;;
         esac
-    else
-        rc=2
     fi
 
     if [[ $running != yes ]]; then

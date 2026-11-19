@@ -21,9 +21,21 @@ export PATH
 
 [[ $ACTION == dns-change ]] || exit 0
 
+# Root may trust a path only when root owns it, it is not a symlink and
+# neither its group nor others can write it
+# Args: $1 = path
+root_owned_safe() {
+    local owner_mode
+    [[ -e $1 && ! -L $1 ]] || return 1
+    owner_mode=$(stat -c '%u %a' -- "$1" 2> /dev/null) || return 1
+    [[ ${owner_mode%% *} == 0 ]] || return 1
+    (((8#${owner_mode#* } & 8#022) == 0))
+}
+
 # Never sources user-writable code: no development-mode fallback
 VPN_DIR=/usr/local/bin
 [[ -f $VPN_DIR/vpn-utils ]] || exit 0
+root_owned_safe "$VPN_DIR" && root_owned_safe "$VPN_DIR/vpn-utils" || exit 0
 # shellcheck source=src/vpn-utils
 source "$VPN_DIR/vpn-utils"
 
@@ -151,7 +163,9 @@ repair_vpn_dns() {
         return 0
     fi
 
-    # Command substitution, not a pipeline (pipefail)
+    # Command substitution, not a pipeline (pipefail). A missing or failing
+    # resolvconf reads as "no entry": that only leads to the leftover-guard
+    # checks, which keep the guard unless everything says no VPN is up.
     local entry
     entry=$(resolvconf -l tun0.protonvpn 2> /dev/null) || true
     if [[ -z $entry ]]; then
@@ -161,12 +175,18 @@ repair_vpn_dns() {
 
     vpn_is_healthy || return 0
 
+    # Ours and private: nobody else may plant the lock or the times file
     if ! (umask 077 && mkdir -p "$RUN_DIR") 2> /dev/null ||
-        [[ ! -d $RUN_DIR || -L $RUN_DIR || ! -O $RUN_DIR ]]; then
-        dns_log WARN "Refusing to use $RUN_DIR (not a root-owned directory)"
+        [[ ! -d $RUN_DIR || -L $RUN_DIR || ! -O $RUN_DIR ]] ||
+        (((8#$(stat -c %a -- "$RUN_DIR") & 8#022) != 0)); then
+        dns_log WARN "Refusing to use $RUN_DIR (not a private directory owned by this user)"
         return 0
     fi
-    exec 9> "$LOCK_FILE"
+    # A failed redirection on exec would end the hook with an error
+    if ! { exec 9> "$LOCK_FILE"; } 2> /dev/null; then
+        dns_log WARN "Cannot open the lock file $LOCK_FILE; skipping"
+        return 0
+    fi
     # Another repair is running
     flock -n 9 || return 0
 
