@@ -200,6 +200,14 @@ restore_tailscale_dns() {
             grep -q '^nameserver 100\.100\.100\.100' "$resolv" 2> /dev/null && return 0
             sleep 0.5
         done
+        # The record's mode can be stale (tailscaled picks its mode when it
+        # starts): in resolvconf mode Tailscale registers its entry, but
+        # nothing rebuilds resolv.conf. Its entry is exclusive, so one rebuild
+        # hands resolv.conf over; nothing is deleted (#295 R3).
+        if [[ -n $(resolvconf -l tailscale 2> /dev/null) ]]; then
+            sudo resolvconf -u 2> /dev/null || true
+            grep -q '^nameserver 100\.100\.100\.100' "$resolv" 2> /dev/null && return 0
+        fi
         echo "WARNING: Tailscale DNS is on again, but Tailscale has not taken over resolv.conf:" >&2
         echo "  MagicDNS names (*.ts.net) won't resolve. If it persists, restart tailscaled" >&2
         echo "  (e.g. sudo sv restart tailscaled)." >&2
