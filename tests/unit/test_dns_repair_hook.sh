@@ -308,9 +308,9 @@ test_lock_dir() {
 }
 
 test_rate_limit() {
-    local out now i
+    local out now
     reset_state
-    for i in 1 2 3; do
+    for _ in 1 2 3; do
         out=$(run_repair)
     done
     cp "$WORK/run/dns-repair.times" "$WORK/times.before"

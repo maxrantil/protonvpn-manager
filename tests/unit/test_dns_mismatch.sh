@@ -365,6 +365,7 @@ status_lines() {
         set -euo pipefail
         # shellcheck disable=SC2034  # read by the sourced show_dns_state
         YELLOW="" BOLD="" NC=""
+        # shellcheck disable=SC2034  # read by the sourced show_dns_state
         vpn_dns_state() {
             VPN_DNS_GUARD="on (not first in OUTPUT)"
             VPN_DNS_WARNINGS=()

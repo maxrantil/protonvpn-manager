@@ -44,9 +44,13 @@ ATTEMPTS_FILE="$RUN_DIR/reconnect.attempts"
 # This tool's OpenVPN, as vpn-connector starts it (root-written PID file,
 # session profile), for vpn_is_healthy (vpn-utils). Fixed paths, set after
 # sourcing: the hook runs as root and trusts no env.
+# shellcheck disable=SC2034  # read by vpn_is_healthy
 VPN_PID_FILE="/var/run/openvpn.pid"
+# shellcheck disable=SC2034  # read by vpn_is_healthy
 VPN_SESSION_PROFILE="/run/protonvpn-manager-session/profile.ovpn"
+# shellcheck disable=SC2034  # read by vpn_is_healthy
 VPN_TUNNEL_INTERFACE="tun0"
+# shellcheck disable=SC2034  # read by vpn_is_healthy
 VPN_PROC_DIR="/proc"
 
 # Run a command as the real user

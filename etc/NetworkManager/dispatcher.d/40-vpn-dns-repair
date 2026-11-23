@@ -45,9 +45,13 @@ RUN_DIR=/run/protonvpn-manager
 LOCK_FILE=$RUN_DIR/dns-repair.lock
 TIMES_FILE=$RUN_DIR/dns-repair.times
 # This tool's OpenVPN, for vpn_is_healthy (vpn-utils)
+# shellcheck disable=SC2034  # read by vpn_is_healthy
 VPN_PID_FILE=/var/run/openvpn.pid
+# shellcheck disable=SC2034  # read by vpn_is_healthy
 VPN_SESSION_PROFILE=/run/protonvpn-manager-session/profile.ovpn
+# shellcheck disable=SC2034  # read by vpn_is_healthy
 VPN_TUNNEL_INTERFACE=tun0
+# shellcheck disable=SC2034  # read by vpn_is_healthy
 VPN_PROC_DIR=/proc
 
 # Rate limit: at most this many repairs within this many seconds
