@@ -34,10 +34,14 @@ SYSTEM_CONF="/etc/protonvpn-manager.conf"
 # resolv.conf, and the dispatcher hook that repairs resolv.conf on dns-change
 NM_CONF_DIR="/etc/NetworkManager/conf.d"
 NM_MAIN_CONF="/etc/NetworkManager/NetworkManager.conf"
+# NetworkManager reads these too (distribution and runtime defaults)
+NM_OTHER_CONF_DIRS=(/usr/lib/NetworkManager/conf.d /run/NetworkManager/conf.d)
 NM_DISPATCHER_DIR="/etc/NetworkManager/dispatcher.d"
 NM_DNS_DROPIN="protonvpn-manager-dns.conf"
 DNS_REPAIR_HOOK="40-vpn-dns-repair"
 RESOLV_CONF="/etc/resolv.conf"
+# The VPN's resolvconf entry (<tunnel>.protonvpn, from vpn-dns-update)
+VPN_DNS_ENTRY="tun0.protonvpn"
 
 # Colors for output
 RED='\033[0;31m'
@@ -125,9 +129,18 @@ nm_dns_skip_reason() {
 		echo "$NM_CONF_DIR is a symlink"
 		return 0
 	fi
-	# Never override an rc-manager the user set; this tool's own drop-in is
+	if [[ -L $NM_DISPATCHER_DIR ]]; then
+		echo "$NM_DISPATCHER_DIR is a symlink"
+		return 0
+	fi
+	# Never override an rc-manager set elsewhere; this tool's own drop-in is
 	# not a foreign one
-	for file in "$NM_MAIN_CONF" "$NM_CONF_DIR"/*.conf; do
+	local -a files=("$NM_MAIN_CONF" "$NM_CONF_DIR"/*.conf)
+	local dir
+	for dir in "${NM_OTHER_CONF_DIRS[@]}"; do
+		files+=("$dir"/*.conf)
+	done
+	for file in "${files[@]}"; do
 		[[ -f $file && $file != "$NM_CONF_DIR/$NM_DNS_DROPIN" ]] || continue
 		if [[ ! -r $file ]]; then
 			echo "cannot read $file (it may set rc-manager)"
@@ -141,72 +154,129 @@ nm_dns_skip_reason() {
 	return 1
 }
 
+# Create a root-owned directory unless it exists (an existing one keeps its
+# owner and mode). Args: $1 = directory
+ensure_root_dir() {
+	[[ -d $1 ]] || sudo install -d -o root -g root -m 755 "$1"
+}
+
+# Write a root-owned file atomically: a dot-named temp file in the same
+# directory (NetworkManager skips dot files in conf.d and dispatcher.d), then
+# a rename over the target. Args: $1 = mode, $2 = source, $3 = target.
+# Returns 1, with the temp file removed, when either step fails.
+install_root_file() {
+	local mode=$1 src=$2 dest=$3 tmp
+	tmp="$(dirname "$dest")/.$(basename "$dest").tmp"
+	if sudo install -T -o root -g root -m "$mode" "$src" "$tmp" && sudo mv -T "$tmp" "$dest"; then
+		return 0
+	fi
+	sudo rm -f "$tmp" || true
+	return 1
+}
+
+# Whether the VPN's resolvconf entry is registered (read as root)
+vpn_dns_registered() {
+	[[ -n $(sudo resolvconf -l "$VPN_DNS_ENTRY" 2>/dev/null) ]]
+}
+
 # Install the NetworkManager DNS drop-in and the 40-vpn-dns-repair hook.
-# Skips with a message where it can't apply; never fails the installer.
+# Skips with a message where it can't apply. Never fails the installer: a
+# step that fails warns and leaves NetworkManager's config as it was.
 install_nm_dns() {
 	local reason src_dropin="etc/NetworkManager/conf.d/$NM_DNS_DROPIN"
-	local dropin="$NM_CONF_DIR/$NM_DNS_DROPIN" tmp="$NM_CONF_DIR/.$NM_DNS_DROPIN.tmp"
+	local dropin="$NM_CONF_DIR/$NM_DNS_DROPIN" backup="$NM_CONF_DIR/.$NM_DNS_DROPIN.previous"
+	local undo_hint="Undo with: ./install.sh --uninstall-nm-dns"
 	if reason=$(nm_dns_skip_reason); then
 		log_warning "Skipping NetworkManager DNS setup: $reason"
 		log_warning "NetworkManager may overwrite the VPN's DNS while connected; 'vpn status' warns when it does"
 		return 0
 	fi
 
-	# The hook first: on its own it only repairs resolv.conf while this
-	# tool's VPN is up
-	[[ -d $NM_DISPATCHER_DIR ]] || sudo install -d -o root -g root -m 755 "$NM_DISPATCHER_DIR"
-	sudo install -o root -g root -m 755 "etc/NetworkManager/dispatcher.d/$DNS_REPAIR_HOOK" \
-		"$NM_DISPATCHER_DIR/$DNS_REPAIR_HOOK"
+	# The hook first (on its own it only repairs resolv.conf while this
+	# tool's VPN is up): no drop-in without its hook
+	if ! ensure_root_dir "$NM_DISPATCHER_DIR" ||
+		! install_root_file 755 "etc/NetworkManager/dispatcher.d/$DNS_REPAIR_HOOK" \
+			"$NM_DISPATCHER_DIR/$DNS_REPAIR_HOOK"; then
+		log_warning "Could not install $NM_DISPATCHER_DIR/$DNS_REPAIR_HOOK; NetworkManager DNS left unchanged"
+		return 0
+	fi
 	log_info "Installed: $NM_DISPATCHER_DIR/$DNS_REPAIR_HOOK"
 
 	if cmp -s "$src_dropin" "$dropin"; then
 		log_info "Unchanged: $dropin"
-	else
-		[[ -d $NM_CONF_DIR ]] || sudo install -d -o root -g root -m 755 "$NM_CONF_DIR"
-		# Atomic: written to a dot-named temp file (NetworkManager loads only
-		# *.conf), then renamed over the drop-in
-		sudo install -T -o root -g root -m 644 "$src_dropin" "$tmp"
-		if ! sudo mv -T "$tmp" "$dropin"; then
-			sudo rm -f "$tmp"
-			log_warning "Could not write $dropin; NetworkManager DNS left unchanged"
-			return 0
-		fi
-		if ! sudo nmcli general reload conf; then
-			sudo rm -f "$dropin"
-			log_warning "NetworkManager did not reload its config; removed $dropin again"
-			return 0
-		fi
-		log_info "Installed: $dropin (NetworkManager hands its DNS to resolvconf)"
-		# Installed while connected: put the VPN's exclusive entry back in force
-		if [[ -n $(resolvconf -l tun0.protonvpn 2>/dev/null) ]]; then
-			sudo resolvconf -u || log_warning "resolvconf -u failed; run: sudo resolvconf -u"
-		fi
+		log_info "$undo_hint"
+		return 0
 	fi
-	log_info "Undo with: ./install.sh --uninstall-nm-dns"
+	if ! ensure_root_dir "$NM_CONF_DIR"; then
+		log_warning "Could not create $NM_CONF_DIR; NetworkManager DNS left unchanged"
+		return 0
+	fi
+	# An older drop-in of ours is kept until the reload succeeds
+	sudo rm -f "$backup" || true
+	if [[ -f $dropin ]] && ! sudo cp -p "$dropin" "$backup"; then
+		log_warning "Could not back up $dropin; NetworkManager DNS left unchanged"
+		return 0
+	fi
+	if ! install_root_file 644 "$src_dropin" "$dropin"; then
+		sudo rm -f "$backup" || true
+		log_warning "Could not write $dropin; NetworkManager DNS left unchanged"
+		return 0
+	fi
+	if ! sudo nmcli general reload conf; then
+		if [[ -f $backup ]]; then
+			sudo mv -T "$backup" "$dropin" || true
+		else
+			sudo rm -f "$dropin" || true
+		fi
+		log_warning "NetworkManager did not reload its config; $dropin put back as it was"
+		return 0
+	fi
+	sudo rm -f "$backup" || true
+	log_info "Installed: $dropin (NetworkManager hands its DNS to resolvconf)"
+	# Installed while connected: put the VPN's exclusive entry back in force
+	if vpn_dns_registered; then
+		sudo resolvconf -u || log_warning "resolvconf -u failed; run: sudo resolvconf -u"
+	fi
+	log_info "$undo_hint"
 }
 
 # Undo install_nm_dns: remove the drop-in and the hook, and give resolv.conf
-# back to NetworkManager. Safe to run when nothing is installed.
+# back to NetworkManager. Does nothing when neither is installed (an
+# rc-manager=resolvconf the user set stays theirs); never fails the installer.
 uninstall_nm_dns() {
 	local dropin="$NM_CONF_DIR/$NM_DNS_DROPIN" hook="$NM_DISPATCHER_DIR/$DNS_REPAIR_HOOK"
-	sudo rm -f "$dropin" "$hook"
-	log_info "Removed (if present): $dropin and $hook"
-	if command -v nmcli &>/dev/null; then
-		sudo nmcli general reload conf ||
-			log_warning "NetworkManager did not reload its config (is it running?)"
+	local tunnel="${VPN_DNS_ENTRY%%.*}"
+	if [[ ! -e $dropin && ! -e $hook ]]; then
+		log_info "NetworkManager DNS setup not installed; nothing to undo"
+		return 0
+	fi
+	if ! sudo rm -f "$dropin" "$hook"; then
+		log_warning "Could not remove $dropin and $hook"
+		return 0
+	fi
+	log_info "Removed: $dropin and $hook"
+	# resolv.conf is only touched once NetworkManager runs its own DNS again
+	if ! command -v nmcli &>/dev/null || ! sudo nmcli general reload conf; then
+		log_warning "NetworkManager did not reload its config (is it running?). Once it runs: sudo nmcli general reload conf && sudo resolvconf -f -d NetworkManager"
+		return 0
 	fi
 	command -v resolvconf &>/dev/null || return 0
-	# NetworkManager leaves its resolvconf entry behind when it leaves
-	# resolvconf mode
-	sudo resolvconf -f -d NetworkManager || true
-	if [[ -n $(resolvconf -l tun0.protonvpn 2>/dev/null) ]]; then
-		# Connected: rebuild resolv.conf from the VPN's exclusive entry
+	if vpn_dns_registered; then
+		# Connected: drop NetworkManager's leftover entry (it leaves one behind
+		# when it leaves resolvconf mode); the VPN's exclusive entry stays
+		sudo resolvconf -f -d NetworkManager || true
 		sudo resolvconf -u || log_warning "resolvconf -u failed; run: sudo resolvconf -u"
-	elif command -v nmcli &>/dev/null; then
-		# Not connected: openresolv has no entry left, so -u would write a
-		# resolv.conf with no nameserver. NetworkManager writes its own back.
+	elif [[ -n $(ip -o link show dev "$tunnel" up 2>/dev/null) ]]; then
+		# A tunnel without a readable entry: neither rebuild from openresolv
+		# (it may have no entry left) nor let NetworkManager's DNS in
+		log_warning "$tunnel is up but its resolvconf entry could not be read; NetworkManager's entry is kept. After 'vpn disconnect': sudo resolvconf -f -d NetworkManager"
+	else
+		# Not connected: once NetworkManager's entry goes openresolv has none
+		# left, so -u would write a resolv.conf with no nameserver.
+		# NetworkManager writes its own back instead.
+		sudo resolvconf -f -d NetworkManager || true
 		sudo nmcli general reload dns-full ||
-			log_warning "NetworkManager did not rewrite resolv.conf; check: cat $RESOLV_CONF"
+			log_warning "NetworkManager did not rewrite $RESOLV_CONF; run: sudo nmcli general reload dns-full"
 	fi
 }
 
@@ -259,7 +329,7 @@ main() {
 	local nm_dns=install
 	if [[ $# -gt 1 ]]; then
 		log_error "Too many options: $*"
-		usage
+		usage >&2
 		exit 1
 	fi
 	case "${1:-}" in
@@ -267,6 +337,7 @@ main() {
 	--no-nm-dns) nm_dns=undo ;;
 	--uninstall-nm-dns)
 		uninstall_nm_dns
+		log_info "NetworkManager DNS setup undone (see any warnings above)"
 		return 0
 		;;
 	-h | --help)
@@ -275,7 +346,7 @@ main() {
 		;;
 	*)
 		log_error "Unknown option: $1"
-		usage
+		usage >&2
 		exit 1
 		;;
 	esac
