@@ -251,9 +251,13 @@ release_vpn_network_state() {
 # DNS guard rejects every other server: #295 FR5). Run on connect and by
 # `vpn cleanup`. Leaves everything alone while a VPN runs; hooks that hold the
 # kill switch across a reconnect set VPN_KEEP_KILL_SWITCH=1.
+# A tun0 that still exists counts as a running VPN too: pgrep cannot see a
+# root OpenVPN when /proc is mounted with hidepid, and the tunnel only goes
+# away with its process (or `vpn cleanup`, which removes it first).
 # Uses $VPN_DIR of the calling script.
 clear_stale_vpn_state() {
-    if pgrep -x openvpn > /dev/null 2>&1 || ip -o link show type wireguard 2> /dev/null | grep -q .; then
+    if pgrep -x openvpn > /dev/null 2>&1 || ip link show tun0 > /dev/null 2>&1 ||
+        ip -o link show type wireguard 2> /dev/null | grep -q .; then
         return 0
     fi
     local kill_switch="$VPN_DIR/vpn-kill-switch"

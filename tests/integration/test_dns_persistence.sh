@@ -42,9 +42,15 @@ report() {
 
 WORK_DIR=$(mktemp -d)
 DECOY_PID=""
+FAKE_PIDS="$WORK_DIR/fake_pids" # every fake OpenVPN started, also from subshells
 cleanup_work_dir() {
+    local pid
     [[ -n $DECOY_PID ]] && kill "$DECOY_PID" 2> /dev/null
-    [[ -n $FAKE_OPENVPN_PID ]] && kill "$FAKE_OPENVPN_PID" 2> /dev/null
+    if [[ -f $FAKE_PIDS ]]; then
+        while read -r pid; do
+            [[ -n $pid ]] && kill "$pid" 2> /dev/null
+        done < "$FAKE_PIDS"
+    fi
     rm -rf "$WORK_DIR"
 }
 trap cleanup_work_dir EXIT
@@ -121,9 +127,9 @@ cat > "$FAKES/sudo" << 'EOF'
 case "$1" in
     true | iptables | ip6tables | iptables-restore | ip6tables-restore | resolvconf | ip) exec "$@" ;;
     install | rm)
-        # Only paths inside the test directory
+        # Only paths inside the test directory, never through ..
         for a in "${@:2}"; do
-            [[ $a != */* || $a == "$WORK_DIR"/* ]] || { echo "sudo:$*" >> "$CALLS"; exit 1; }
+            [[ ($a != */* || $a == "$WORK_DIR"/*) && $a != *..* ]] || { echo "sudo:$*" >> "$CALLS"; exit 1; }
         done
         exec "$@"
         ;;
@@ -184,18 +190,32 @@ DECOY_PID=$!
 # A stand-in OpenVPN: argv says ".../openvpn --config ...", but its kernel
 # command name is sleep, so nothing ever escalates to sudo for it. Started
 # from a subshell so that, once signalled, it is reaped and leaves no zombie.
+# Its argv matches the real pgrep pattern, so it must never outlive the run:
+# every PID goes to $FAKE_PIDS for the EXIT trap, and it exits on its own
+# after 2 minutes at the latest.
 FAKE_OPENVPN_PID=""
 start_fake_openvpn() {
     mkdir -p "$WORK_DIR/fake"
     FAKE_OPENVPN_PID=$(
-        bash -c 'exec -a "$0 --config $1" sleep 600' "$WORK_DIR/fake/openvpn" \
+        bash -c 'exec -a "$0 --config $1" sleep 120' "$WORK_DIR/fake/openvpn" \
             "$WORK_DIR/session/profile.ovpn" > /dev/null 2>&1 &
         echo $!
     )
+    echo "$FAKE_OPENVPN_PID" >> "$FAKE_PIDS"
     echo "$FAKE_OPENVPN_PID" >> "$PROCS"
 }
 
+# Stop every fake OpenVPN of the current state ($PROCS)
+stop_fake_openvpns() {
+    local pid
+    while read -r pid; do
+        [[ -n $pid ]] && kill "$pid" 2> /dev/null
+    done < "$PROCS"
+    return 0
+}
+
 reset_state() {
+    [[ -f $PROCS ]] && stop_fake_openvpns
     rm -rf "${WORK_DIR:?}"/{fw,links,rc_entries,home,run,session}
     mkdir -p "$FW" "$LINKS" "$RC_DIR" "$WORK_DIR/home/.config/vpn" "$WORK_DIR/run" "$WORK_DIR/session"
     chmod 700 "$WORK_DIR/run"
@@ -314,7 +334,8 @@ test_cleanup_after_kill_9() {
     report $? "vpn cleanup leaves no kill switch $what" "$(fw_rules v4)"
     ! grep -q "$VPN_NS" "$RESOLV" && grep -qx "nameserver $LAN_NS" "$RESOLV"
     report $? "resolv.conf is back on the system's DNS $what" "$(cat "$RESOLV")"
-    kill -0 "$DECOY_PID" 2> /dev/null && ! grep -qE '^(sudo:)?(kill|pkill)' "$CALLS"
+    # kill is a builtin: only the decoy surviving proves it was not signalled
+    kill -0 "$DECOY_PID" 2> /dev/null && ! grep -qE '^(sudo:kill|pkill)' "$CALLS"
     report $? "the stale PID file's process is never signalled $what" "$(cat "$CALLS")"
     [[ -e $RC_DIR/NetworkManager || $1 == no-nm-entry ]]
     report $? "NetworkManager's own entry is left alone $what" "$(ls "$RC_DIR")"
@@ -334,6 +355,21 @@ test_cleanup_foreign_resolv_conf() {
     report $? "foreign resolv.conf: it keeps the system's DNS" "$(cat "$RESOLV")"
 }
 
+# The PID file names an OpenVPN that still runs (the tunnel died, the process
+# hangs): cleanup verifies it through ps, stops it, and only then releases
+test_cleanup_stops_hung_openvpn() {
+    kill_9_state with-nm-entry kill-switch
+    start_fake_openvpn
+    echo "$FAKE_OPENVPN_PID" > "$PID_FILE"
+    local rc=0
+    run_src vpn cleanup > /dev/null 2>&1 || rc=$?
+    [[ $rc -eq 0 && ! -d /proc/$FAKE_OPENVPN_PID ]] && kill -0 "$DECOY_PID" 2> /dev/null
+    report $? "cleanup stops the OpenVPN the PID file names, and nothing else" "exit $rc; $(cat "$CALLS")"
+    [[ ! -e $RC_DIR/tun0.protonvpn ]] && ! dns_guard_present && ! ks is-enabled > /dev/null 2>&1
+    report $? "after stopping it, cleanup releases the entry, the guard and the kill switch" \
+        "$(ls "$RC_DIR"; fw_rules v4)"
+}
+
 # A WireGuard tunnel is a VPN that is still up: its state is not stale
 test_cleanup_keeps_state_of_running_wireguard() {
     kill_9_state with-nm-entry no-kill-switch
@@ -342,6 +378,31 @@ test_cleanup_keeps_state_of_running_wireguard() {
     [[ -e $RC_DIR/tun0.protonvpn ]] && dns_guard_present
     report $? "cleanup leaves DNS and the guard alone while a WireGuard tunnel is up" \
         "$(ls "$RC_DIR"; fw_rules v4)"
+}
+
+# The stale-state check on connect: a tun0 that still exists means a VPN may
+# still run where pgrep cannot see it (root OpenVPN with /proc hidepid), so
+# its protection stays (fail closed)
+STALE_DRIVER="$WORK_DIR/stale-driver"
+cat > "$STALE_DRIVER" << 'EOF'
+#!/bin/bash
+# shellcheck disable=SC1091
+source "$1/vpn-utils"
+VPN_DIR=$1
+clear_stale_vpn_state
+EOF
+test_stale_check_keeps_state_while_tun0_exists() {
+    kill_9_state with-nm-entry kill-switch
+    touch "$LINKS/tun0"
+    run_src "$STALE_DRIVER" "$SRC_DIR" > /dev/null 2>&1
+    [[ -e $RC_DIR/tun0.protonvpn ]] && dns_guard_present && ks is-enabled > /dev/null 2>&1
+    report $? "stale check: tun0 still there with no visible openvpn keeps DNS, guard and kill switch" \
+        "$(ls "$RC_DIR"; fw_rules v4)"
+
+    rm -f "$LINKS/tun0"
+    run_src "$STALE_DRIVER" "$SRC_DIR" > /dev/null 2>&1
+    [[ ! -e $RC_DIR/tun0.protonvpn ]] && ! dns_guard_present
+    report $? "stale check: with tun0 gone the state is released" "$(ls "$RC_DIR"; fw_rules v4)"
 }
 
 # ---------------------------------------------------------------------------
@@ -382,6 +443,7 @@ test_connect_sequence() {
     report $? "connect: one jump to the DNS guard per family" "$(output_jumps v4; output_jumps v6)"
     output_jumps v4 | grep -qx VPN_KILL_SWITCH && output_jumps v6 | grep -qx VPN_IPV6_GUARD
     report $? "connect: the kill switch and the IPv6 guard are on too" "$(output_jumps v4; output_jumps v6); $out"
+    stop_fake_openvpns
 }
 
 test_disconnect_removes_everything() {
@@ -408,6 +470,8 @@ test_cleanup_after_kill_9 with-nm-entry kill-switch
 test_cleanup_after_kill_9 no-nm-entry no-kill-switch
 test_cleanup_foreign_resolv_conf
 test_cleanup_keeps_state_of_running_wireguard
+test_cleanup_stops_hung_openvpn
+test_stale_check_keeps_state_while_tun0_exists
 test_connect_sequence
 test_disconnect_removes_everything
 

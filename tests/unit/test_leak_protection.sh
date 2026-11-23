@@ -499,7 +499,8 @@ test_tailscale_restore_stale_record() {
     report $? "the rebuild gives resolv.conf to Tailscale, with no warning" "$out; $(cat "$VPN_RESOLV_CONF")"
 
     out=$(run_stale_record_restore no-entry rebuild-works)
-    [[ $(rebuilds_after_restore) -eq 0 ]] && grep -qi "magicdns" <<< "$out"
+    called "tailscale:set --accept-dns=true" && [[ $(rebuilds_after_restore) -eq 0 ]] &&
+        grep -qi "magicdns" <<< "$out"
     report $? "no Tailscale entry: no resolvconf -u, the warning stays" "$(cat "$CALLS"); $out"
 
     out=$(run_stale_record_restore entry rebuild-fails)
