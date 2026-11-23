@@ -309,6 +309,15 @@ test_skip_conditions() {
     printf '[main]\nrc-manager=unmanaged\n' > "$WORK/run/conf.d/10-tool.conf"
     expect_skip "rc-manager in the runtime conf.d" "rc-manager is already set in .*/run/conf\.d/10-tool\.conf"
 
+    # dns=none: the user manages resolv.conf, so NetworkManager hands nothing on
+    reset_state
+    printf '[main]\ndns=none\n' > "$ETC/NetworkManager.conf"
+    expect_skip "dns=none in NetworkManager.conf" "dns=none is set in .*/NetworkManager\.conf"
+
+    reset_state
+    printf '[main]\n  dns = none\n' > "$ETC/conf.d/90-mine.conf"
+    expect_skip "dns=none in a conf.d file" "dns=none is set in .*/90-mine\.conf"
+
     # Could hide an rc-manager; root reads it fine, so only test unprivileged
     if [[ $EUID -ne 0 ]]; then
         reset_state
@@ -327,6 +336,11 @@ test_not_skipped() {
     printf '[main]\n#rc-manager=symlink\n' > "$ETC/NetworkManager.conf"
     out=$(run_installer install_nm_dns)
     check "a commented-out rc-manager is not a skip" "$out" test -f "$DROPIN"
+
+    reset_state
+    printf '[main]\ndns=default\n#dns=none\n' > "$ETC/NetworkManager.conf"
+    out=$(run_installer install_nm_dns)
+    check "dns=default (or a commented-out dns=none) is not a skip" "$out" test -f "$DROPIN"
 
     reset_state
     printf '[main]\nrc-manager=resolvconf\n' > "$DROPIN"

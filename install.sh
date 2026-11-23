@@ -133,8 +133,8 @@ nm_dns_skip_reason() {
 		echo "$NM_DISPATCHER_DIR is a symlink"
 		return 0
 	fi
-	# Never override an rc-manager set elsewhere; this tool's own drop-in is
-	# not a foreign one
+	# Never override an rc-manager set elsewhere, nor a dns=none; this tool's
+	# own drop-in is not a foreign one
 	local -a files=("$NM_MAIN_CONF" "$NM_CONF_DIR"/*.conf)
 	local dir
 	for dir in "${NM_OTHER_CONF_DIRS[@]}"; do
@@ -148,6 +148,11 @@ nm_dns_skip_reason() {
 		fi
 		if grep -qE '^[[:space:]]*rc-manager[[:space:]]*=' "$file"; then
 			echo "rc-manager is already set in $file"
+			return 0
+		fi
+		# The user manages resolv.conf; NetworkManager has no DNS to hand on
+		if grep -qE '^[[:space:]]*dns[[:space:]]*=[[:space:]]*none[[:space:]]*$' "$file"; then
+			echo "dns=none is set in $file (resolv.conf is managed by hand)"
 			return 0
 		fi
 	done
