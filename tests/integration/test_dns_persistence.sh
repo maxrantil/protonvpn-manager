@@ -44,6 +44,7 @@ WORK_DIR=$(mktemp -d)
 DECOY_PID=""
 cleanup_work_dir() {
     [[ -n $DECOY_PID ]] && kill "$DECOY_PID" 2> /dev/null
+    [[ -n $FAKE_OPENVPN_PID ]] && kill "$FAKE_OPENVPN_PID" 2> /dev/null
     rm -rf "$WORK_DIR"
 }
 trap cleanup_work_dir EXIT
@@ -152,14 +153,23 @@ fi
 echo "ip:$*" >> "$CALLS"
 exit 0
 EOF
+# Only the test's fake OpenVPN processes exist ($PROCS, while still alive)
 cat > "$FAKES/pgrep" << 'EOF'
 #!/bin/bash
-[[ $* == *openvpn* && -s $PROCS ]] && { cat "$PROCS"; exit 0; }
-exit 1
+[[ $* == *openvpn* ]] || exit 1
+found=1
+while read -r pid; do
+    [[ -n $pid && -d /proc/$pid ]] && { echo "$pid"; found=0; }
+done < "$PROCS"
+exit $found
 EOF
+# ps -p <pid> [-o args=]: only for those processes; process lists are empty
 cat > "$FAKES/ps" << 'EOF'
 #!/bin/bash
-exit 1
+[[ $1 == -p ]] || exit 1
+grep -qx -- "$2" "$PROCS" && [[ -d /proc/$2 ]] || exit 1
+[[ $* == *args=* ]] && tr '\0' ' ' < "/proc/$2/cmdline"
+exit 0
 EOF
 for tool in pkill kill logger notify-send; do
     printf '#!/bin/bash\necho "%s:$*" >> "$CALLS"\n' "$tool" > "$FAKES/$tool"
@@ -170,6 +180,20 @@ SANDBOX_PATH="$FAKES:$SYSBIN"
 # A process that is not OpenVPN, for the stale PID file: it must survive
 sleep 600 &
 DECOY_PID=$!
+
+# A stand-in OpenVPN: argv says ".../openvpn --config ...", but its kernel
+# command name is sleep, so nothing ever escalates to sudo for it. Started
+# from a subshell so that, once signalled, it is reaped and leaves no zombie.
+FAKE_OPENVPN_PID=""
+start_fake_openvpn() {
+    mkdir -p "$WORK_DIR/fake"
+    FAKE_OPENVPN_PID=$(
+        bash -c 'exec -a "$0 --config $1" sleep 600' "$WORK_DIR/fake/openvpn" \
+            "$WORK_DIR/session/profile.ovpn" > /dev/null 2>&1 &
+        echo $!
+    )
+    echo "$FAKE_OPENVPN_PID" >> "$PROCS"
+}
 
 reset_state() {
     rm -rf "${WORK_DIR:?}"/{fw,links,rc_entries,home,run,session}
@@ -184,9 +208,12 @@ reset_state() {
 }
 
 # Run a script from src/ in the sandbox, unprivileged (through the fake sudo)
-# Args: $1 = script, rest = its arguments
+# Args: $1 = script in src/ (or an absolute path), rest = its arguments;
+# extra environment via RUN_ENV (array)
+RUN_ENV=()
 run_src() {
-    local script=$1
+    local script=$SRC_DIR/$1
+    [[ $1 == /* ]] && script=$1
     shift
     env -i HOME="$WORK_DIR/home" PATH="$SANDBOX_PATH" TERM=dumb \
         FAKE_FW_DIR="$FW" CALLS="$CALLS" LINKS="$LINKS" PROCS="$PROCS" \
@@ -196,7 +223,7 @@ run_src() {
         VPN_SESSION_DIR="$WORK_DIR/session" VPN_CONFIG_DIR="$WORK_DIR/home/.config/vpn" \
         VPN_RESOLV_CONF="$RESOLV" VPN_NM_RESOLV_CONF="$NM_RESOLV" VPN_PID_FILE="$PID_FILE" \
         VPN_DNS_HELPER="$WORK_DIR/no-dns-helper" VPN_TAILSCALE_TAKEOVER_WAIT=1 \
-        "$BASH" "$SRC_DIR/$script" "$@"
+        "${RUN_ENV[@]}" "$BASH" "$script" "$@"
 }
 
 ks() { run_src vpn-kill-switch "$@"; }
@@ -317,6 +344,60 @@ test_cleanup_keeps_state_of_running_wireguard() {
         "$(ls "$RC_DIR"; fw_rules v4)"
 }
 
+# ---------------------------------------------------------------------------
+# Connect and disconnect (FR6, FR7)
+# ---------------------------------------------------------------------------
+# Jumps from OUTPUT, in order. Args: $1 = v4|v6
+output_jumps() { fw_rules "$1" OUTPUT | sed -n 's/^-A OUTPUT -j //p'; }
+
+# The connector's success path for real (IPv6 guard, Tailscale pause, DNS
+# guard, then the kill switch), on a tunnel the fake OpenVPN holds. A small
+# driver script sources the connector and runs that one function.
+DRIVER="$WORK_DIR/connect-driver"
+cat > "$DRIVER" << 'EOF'
+#!/bin/bash
+# shellcheck disable=SC1091
+source "$1/vpn-connector" > /dev/null 2>&1
+set +e
+handle_connection_success prof 1 1 ""
+EOF
+connect() {
+    reset_state
+    rc_add NetworkManager "$LAN_NS"
+    start_fake_openvpn
+    touch "$LINKS/tun0"
+    rc_add tun0.protonvpn "$VPN_NS" -x
+    RUN_ENV=(VPN_KILL_SWITCH=1)
+    run_src "$DRIVER" "$SRC_DIR"
+    RUN_ENV=()
+}
+
+test_connect_sequence() {
+    local out
+    out=$(connect 2>&1)
+    [[ $(output_jumps v4 | head -1) == VPN_DNS_GUARD && $(output_jumps v6 | head -1) == VPN_DNS_GUARD ]]
+    report $? "connect: the DNS guard is the first OUTPUT jump in both families after the kill switch" \
+        "v4: $(output_jumps v4 | tr '\n' ' ') v6: $(output_jumps v6 | tr '\n' ' '); $out"
+    [[ $(output_jumps v4 | grep -cx VPN_DNS_GUARD) -eq 1 && $(output_jumps v6 | grep -cx VPN_DNS_GUARD) -eq 1 ]]
+    report $? "connect: one jump to the DNS guard per family" "$(output_jumps v4; output_jumps v6)"
+    output_jumps v4 | grep -qx VPN_KILL_SWITCH && output_jumps v6 | grep -qx VPN_IPV6_GUARD
+    report $? "connect: the kill switch and the IPv6 guard are on too" "$(output_jumps v4; output_jumps v6); $out"
+}
+
+test_disconnect_removes_everything() {
+    connect > /dev/null 2>&1
+    local out rc=0
+    out=$(run_src vpn disconnect 2>&1) || rc=$?
+    [[ $rc -eq 0 && ! -d /proc/$FAKE_OPENVPN_PID ]]
+    report $? "disconnect stops the fake OpenVPN and exits 0" "exit $rc: $out"
+    ! fw_rules v4 | grep -q VPN_ && ! fw_rules v6 | grep -q VPN_
+    report $? "disconnect removes every chain and jump in both families" "$(fw_rules v4; fw_rules v6)"
+    [[ ! -e $RC_DIR/tun0.protonvpn && -e $RC_DIR/NetworkManager ]] && grep -qx "nameserver $LAN_NS" "$RESOLV"
+    report $? "disconnect puts DNS back on NetworkManager's entry" "$(ls "$RC_DIR"; cat "$RESOLV")"
+    ! grep -q '^sudo:' "$CALLS"
+    report $? "nothing outside the fakes was run through sudo" "$(cat "$CALLS")"
+}
+
 echo -e "${T_BLUE}========================================${T_NC}"
 echo -e "${T_BLUE}DNS Persistence Integration Tests${T_NC}"
 echo -e "${T_BLUE}========================================${T_NC}"
@@ -327,6 +408,8 @@ test_cleanup_after_kill_9 with-nm-entry kill-switch
 test_cleanup_after_kill_9 no-nm-entry no-kill-switch
 test_cleanup_foreign_resolv_conf
 test_cleanup_keeps_state_of_running_wireguard
+test_connect_sequence
+test_disconnect_removes_everything
 
 echo ""
 echo -e "${T_BLUE}Results: $TESTS_PASSED/$TESTS_RUN passed${T_NC}"
