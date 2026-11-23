@@ -235,6 +235,26 @@ release_vpn_network_state() {
     "$kill_switch" disable
 }
 
+# A kill switch with no VPN behind it (OpenVPN crashed or was killed, or an
+# earlier run was interrupted) blocks all traffic including the latency checks,
+# and only lets the previous server through, so a new connect cannot succeed.
+# Remove it, and the DNS entry and guards OpenVPN could not remove itself
+# (after kill -9 the entry keeps resolv.conf on the dead tunnel's DNS and the
+# DNS guard rejects every other server: #295 FR5). Run on connect and by
+# `vpn cleanup`. Leaves everything alone while a VPN runs; hooks that hold the
+# kill switch across a reconnect set VPN_KEEP_KILL_SWITCH=1.
+# Uses $VPN_DIR of the calling script.
+clear_stale_vpn_state() {
+    if pgrep -x openvpn > /dev/null 2>&1 || ip -o link show type wireguard 2> /dev/null | grep -q .; then
+        return 0
+    fi
+    local kill_switch="$VPN_DIR/vpn-kill-switch"
+    if [[ ${VPN_KEEP_KILL_SWITCH:-} != 1 && -x $kill_switch ]] && "$kill_switch" is-enabled 2> /dev/null; then
+        echo -e "\033[1;33mRemoving a kill switch left from an earlier connection (no VPN is running)\033[0m"
+    fi
+    release_vpn_network_state > /dev/null 2>&1 || true
+}
+
 # Read KEY=value from the user's ~/.config/vpn/config (quotes stripped),
 # the file vpn-connector reads its opt-outs from. Never run as root for
 # another user's file: only unprivileged status code uses it. Same contract
@@ -387,6 +407,7 @@ export -f detect_real_user
 export -f secure_user_dir
 export -f clear_vpn_dns
 export -f release_vpn_network_state
+export -f clear_stale_vpn_state
 export -f restore_system_dns
 export -f tailscale_dns_record
 export -f give_to_real_user

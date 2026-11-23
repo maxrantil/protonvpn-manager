@@ -237,6 +237,7 @@ run_unit_tests() {
         unit/test_temp_file_manager.sh
         unit/test_vpn_doctor.sh
         integration/test_best_fast_connection.sh
+        integration/test_dns_persistence.sh
         security/test_credentials_security.sh
         security/test_openvpn_path_hardcoding.sh
         test_log_security.sh

@@ -557,23 +557,6 @@ trap 'handle_connect_signal INT' INT
 trap 'handle_connect_signal TERM' TERM
 trap 'handle_connect_signal HUP' HUP
 
-# A kill switch with no VPN behind it (OpenVPN crashed or was killed, or an
-# earlier run was interrupted) blocks all traffic including the latency checks,
-# and only lets the previous server through, so a new connect cannot succeed.
-# Remove it, and the DNS entry OpenVPN could not remove itself. Leaves
-# everything alone while a VPN runs; hooks that hold the kill switch across
-# a reconnect set VPN_KEEP_KILL_SWITCH=1.
-clear_stale_vpn_state() {
-    if pgrep -x openvpn > /dev/null 2>&1 || ip -o link show type wireguard 2> /dev/null | grep -q .; then
-        return 0
-    fi
-    local kill_switch="$VPN_DIR/vpn-kill-switch"
-    if [[ ${VPN_KEEP_KILL_SWITCH:-} != 1 && -x $kill_switch ]] && "$kill_switch" is-enabled 2> /dev/null; then
-        echo -e "\033[1;33mRemoving a kill switch left from an earlier connection (no VPN is running)\033[0m"
-    fi
-    release_vpn_network_state > /dev/null 2>&1 || true
-}
-
 # While connected nothing may leave outside the tunnel: block IPv6 (the
 # tunnel carries none), send DNS to the VPN even when Tailscale manages DNS,
 # and reject DNS outside the tunnel whoever rewrites resolv.conf (#295).

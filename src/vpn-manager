@@ -853,6 +853,8 @@ full_cleanup() {
 
         cleanup_files
         cleanup_routes_light
+        # No OpenVPN is left: what it could not undo itself goes too
+        clear_stale_vpn_state
 
         echo -e "\033[1;32m✓ VPN cleanup completed\033[0m"
         echo -e "\033[1;36mℹ NetworkManager left intact (safe cleanup)\033[0m"
