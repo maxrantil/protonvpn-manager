@@ -424,7 +424,7 @@ EOF
 chmod 700 ~/dns-validation.sh && ~/dns-validation.sh
 ```
 
-- [ ] Every line is `PASS:` or `info:`, and it ends with `Result: all passed`
+- [ ] Every line is `PASS:`, `info:` or a step-2 `WARN:` (see below), and it ends with `Result: all passed`
       and `Restored: resolv.conf on the VPN's DNS`. A `WARN:` in step 2 means
       the rewrite wasn't seen; run the script again once.
 - [ ] No `WARNING:` lines from the restore. If there are, run the command
@@ -481,8 +481,8 @@ getent hosts example.com
 
 ### Step 7: a leftover guard removed by the hook (kill switch off)
 
-Start with no VPN running (after step 6). With no VPN running, no VPN DNS entry and the kill switch off, the
-`40-vpn-dns-repair` hook removes a leftover guard on the next DNS change:
+Start after step 6, with no VPN running. With no VPN DNS entry and the kill
+switch off, the `40-vpn-dns-repair` hook removes a leftover guard on the next DNS change:
 
 ```bash
 vpn-kill-switch status              # must be DISABLED for this step
