@@ -1055,7 +1055,7 @@ What it changes while connected:
 
 By hand: `vpn-kill-switch dns-guard status` (prints `on`, `off`, `on (...)`
 or `unknown`), `vpn-kill-switch dns-guard off`. `vpn kill-switch emergency`
-removes it too.
+removes it too; `vpn kill-switch off` leaves it on.
 
 ### Root-owned session files
 

@@ -138,8 +138,8 @@ vpn-kill-switch dns-guard status    # off
 getent hosts example.com
 ```
 
-`vpn cleanup` only releases these when no VPN is running (no OpenVPN process
-and no `tun0`). If a `tun0` is left over, it removes that too.
+`vpn cleanup` stops any OpenVPN and removes a leftover `tun0` first, then
+releases these. `vpn status` alone never removes them.
 
 With the kill switch **off**, the `40-vpn-dns-repair` NetworkManager hook also
 removes a leftover guard on the next DNS change (with the network
@@ -156,13 +156,14 @@ sudo iptables -X VPN_DNS_GUARD
 ```
 
 `sudo vpn-kill-switch emergency` removes it as well, together with the kill
-switch and the IPv6 guard.
+switch and the IPv6 guard. `vpn kill-switch off` does **not**: the guard
+belongs to the connection, not to the kill switch.
 
 ### Scenario 5: DNS changes away from the VPN while connected
 
 `vpn status` warns `DNS is not using the VPN (resolv.conf: ...)`.
-NetworkManager (or another tool) rewrote `/etc/resolv.conf`. The DNS guard
-rejects those lookups, so names fail rather than leak.
+NetworkManager (or another tool) rewrote `/etc/resolv.conf`. While the DNS
+guard is on it rejects those lookups, so names may fail rather than leak.
 
 ```bash
 sudo resolvconf -u                  # put the VPN's DNS back

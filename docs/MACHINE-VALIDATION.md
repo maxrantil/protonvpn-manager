@@ -300,17 +300,26 @@ pgrep -f '(^|/)openvpn .*--config /run/protonvpn-manager-session/' >/dev/null ||
 	{ echo "ABORT: this tool's VPN is not running"; exit 1; }
 on_vpn_dns || { echo "ABORT: resolv.conf is not on the VPN's DNS"; exit 1; }
 [[ $(guard) == on ]] || { echo "ABORT: DNS guard is not on"; exit 1; }
-[[ -f $dropin && -x $hook && ! -e $aside ]] || { echo "ABORT: drop-in or hook missing (install the branch)"; exit 1; }
+[[ -e $aside ]] && { echo "ABORT: leftover $aside; run: sudo mv -T $aside $dropin && sudo nmcli general reload conf"; exit 1; }
+[[ -f $dropin && -x $hook ]] || { echo "ABORT: drop-in or hook missing (install the branch)"; exit 1; }
+command -v dig >/dev/null || { echo "ABORT: dig not installed (pacman -S bind)"; exit 1; }
 sudo iptables -S OUTPUT | grep -q -- '-j VPN_KILL_SWITCH$' && ks0=on
 
 restore() {
-	trap - EXIT INT TERM
+	trap '' INT TERM HUP # a second Ctrl-C must not cut the restore short
+	trap - EXIT
 	[[ -n $wd ]] && kill "$wd" 2>/dev/null
+	sudo -v || echo "WARNING: no sudo; restore may be incomplete"
 	if [[ -e $aside ]]; then
-		sudo mv -T "$aside" "$dropin" && sudo nmcli general reload conf
+		sudo mv -T "$aside" "$dropin" && sudo nmcli general reload conf ||
+			echo "WARNING: drop-in not restored; run: sudo mv -T $aside $dropin && sudo nmcli general reload conf"
 	fi
-	if [[ $ks0 == on ]]; then vpn-kill-switch enable >/dev/null; else vpn-kill-switch disable >/dev/null; fi
-	vpn-kill-switch dns-guard on >/dev/null
+	if [[ $ks0 == on ]]; then
+		vpn-kill-switch enable >/dev/null || echo "WARNING: kill switch not re-enabled; run: vpn kill-switch on"
+	else
+		vpn-kill-switch disable >/dev/null || echo "WARNING: kill switch not disabled; run: vpn kill-switch off"
+	fi
+	vpn-kill-switch dns-guard on >/dev/null || echo "WARNING: DNS guard not back on; run: vpn-kill-switch dns-guard on"
 	for t in iptables ip6tables; do
 		sudo "$t" -t mangle -D POSTROUTING -o "$dev" -j DNSVAL 2>/dev/null
 		sudo "$t" -t mangle -F DNSVAL 2>/dev/null
@@ -321,7 +330,7 @@ restore() {
 	[[ $fail == 0 ]] && echo "Result: all passed" || echo "Result: FAILURES above"
 }
 trap restore EXIT
-trap 'exit 1' INT TERM
+trap 'exit 1' INT TERM HUP
 (sleep 240 && echo "Watchdog: 240 s passed, restoring" && kill -TERM $$) &
 wd=$!
 
@@ -347,28 +356,39 @@ echo "== 2. Drop-in removed: NetworkManager rewrites resolv.conf, the hook repai
 c0=$(counted)
 sudo mv -T "$dropin" "$aside" && sudo nmcli general reload conf || stop "could not move the drop-in aside"
 sudo nmcli general reload dns-full
-saw_wrong=0 back_ms=""
+saw_wrong=0 back_ms="" wrong_ns=""
 t0=$(now_ms)
 for _ in $(seq 30); do
 	if on_vpn_dns; then
 		[[ $saw_wrong == 1 && -z $back_ms ]] && back_ms=$(($(now_ms) - t0))
 	else
 		saw_wrong=1
+		[[ -n $wrong_ns ]] || wrong_ns=$(cur_ns | head -1)
 	fi
 	sleep 0.1
 done
-[[ $saw_wrong == 1 ]] && echo "info: NetworkManager rewrote resolv.conf" ||
-	echo "info: resolv.conf never looked wrong (repaired within 0.1 s, or not rewritten)"
+if [[ $saw_wrong == 1 ]]; then
+	echo "info: NetworkManager rewrote resolv.conf (nameserver ${wrong_ns:-none})"
+	if [[ -n $wrong_ns ]]; then # what lookups met while resolv.conf was wrong
+		t1=$(now_ms)
+		dig +time=3 +tries=1 "@$wrong_ns" example.com >/dev/null 2>&1 && bad "the rewritten nameserver $wrong_ns answered"
+		ms=$(($(now_ms) - t1))
+		((ms < 1500)) && ok "lookups to $wrong_ns fail fast (${ms} ms)" || bad "lookups to $wrong_ns took ${ms} ms"
+	fi
+else
+	echo "WARN: resolv.conf never looked wrong (repaired within 0.1 s, or not rewritten): step 2 tested little"
+fi
 on_vpn_dns && ok "resolv.conf on the VPN's DNS after 3 s${back_ms:+ (back after ${back_ms} ms)}" ||
 	bad "resolv.conf still off the VPN's DNS after 3 s: $(cur_ns | tr '\n' ' ')"
 [[ -n $back_ms ]] && ((back_ms > 2000)) && bad "repair took over 2 s"
 (($(counted) == c0)) && ok "0 port-53 packets left $dev" || bad "port-53 packets left $dev"
 sudo resolvconf -u
 lookup "step 2"
+sleep 10 # the hook allows 3 runs in 10 s; let that window pass
 
 echo "== 3. Drop-in on: resolv.conf never changes"
 sudo mv -T "$aside" "$dropin" && sudo nmcli general reload conf || stop "could not put the drop-in back"
-sleep 1
+sleep 3 # let NetworkManager hand its DNS to openresolv first
 snap=$(cat /etc/resolv.conf)
 changed=0
 sudo nmcli general reload dns-full
@@ -405,7 +425,10 @@ chmod 700 ~/dns-validation.sh && ~/dns-validation.sh
 ```
 
 - [ ] Every line is `PASS:` or `info:`, and it ends with `Result: all passed`
-      and `Restored: resolv.conf on the VPN's DNS`.
+      and `Restored: resolv.conf on the VPN's DNS`. A `WARN:` in step 2 means
+      the rewrite wasn't seen; run the script again once.
+- [ ] No `WARNING:` lines from the restore. If there are, run the command
+      each one names.
 - [ ] Afterwards: `vpn status` shows `DNS guard: on` and no DNS warning;
       `vpn kill-switch status` is as it was before;
       `ls -a /etc/NetworkManager/conf.d/` shows `protonvpn-manager-dns.conf`
@@ -414,7 +437,10 @@ chmod 700 ~/dns-validation.sh && ~/dns-validation.sh
 
 Step 4 sends one byte (no query) to the router's port 53 with the kill switch
 and the guard both off. That's the check that the counter can see a packet at
-all; the other three cases must count none.
+all; the other three cases must count none. The probe is IPv4 only; the
+counters also count IPv6, so any IPv6 DNS that leaves shows up too. The
+counters see all port-53 traffic on the interface, so another program's DNS
+could add to them; with the guard or kill switch on, that is blocked too.
 
 Wifi re-activation is left out until #294 is fixed: it kills the tunnel.
 
@@ -455,7 +481,7 @@ getent hosts example.com
 
 ### Step 7: a leftover guard removed by the hook (kill switch off)
 
-With no VPN running, no VPN DNS entry and the kill switch off, the
+Start with no VPN running (after step 6). With no VPN running, no VPN DNS entry and the kill switch off, the
 `40-vpn-dns-repair` hook removes a leftover guard on the next DNS change:
 
 ```bash
@@ -475,7 +501,7 @@ VPN the kill switch blocks all traffic, so there is no internet until the
 last line:
 
 ```bash
-vpn-kill-switch enable              # no VPN: everything is blocked
+vpn-kill-switch enable --force      # no VPN: everything is blocked
 vpn-kill-switch dns-guard on
 sudo nmcli general reload dns-full
 sleep 2
