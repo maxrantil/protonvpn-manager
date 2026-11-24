@@ -327,6 +327,26 @@ count_tunnels() {
     ip link show 2> /dev/null | awk -F': ' '$2 ~ /^tun[0-9]+/ { n++ } END { print n + 0 }'
 }
 
+# DNS lines of the status report: the DNS guard's state and any warning
+# (resolv.conf off the VPN's DNS, guard off or incomplete, leftover guard;
+# see vpn_dns_state). Read-only, no password prompt.
+# Args: $1 = yes | no (VPN running), $2 = plain | accessible
+show_dns_state() {
+    local warning
+    vpn_dns_state "$1"
+    if [[ $2 == accessible ]]; then
+        echo "  DNS Guard: $VPN_DNS_GUARD"
+        for warning in "${VPN_DNS_WARNINGS[@]}"; do
+            echo "  WARNING: $warning"
+        done
+        return 0
+    fi
+    echo -e "  DNS guard: $VPN_DNS_GUARD"
+    for warning in "${VPN_DNS_WARNINGS[@]}"; do
+        echo -e "${YELLOW}${BOLD}[WARN]${NC} ${YELLOW}⚠ $warning${NC}"
+    done
+}
+
 show_status() {
     # Check for accessibility mode first
     if [[ -n ${VPN_ACCESSIBLE_MODE:-} ]] || [[ -n ${SCREEN_READER:-} ]]; then
@@ -356,7 +376,9 @@ show_status() {
         echo
     fi
 
-    if is_vpn_running; then
+    local running=no
+    is_vpn_running && running=yes
+    if [[ $running == yes ]]; then
         local pid interface external_ip
         pid=$(get_vpn_pid)
         interface=$(get_vpn_interface)
@@ -412,6 +434,7 @@ show_status() {
     fi
 
     echo
+    show_dns_state "$running" plain
     local active_tunnels
     active_tunnels=$(count_tunnels)
     echo -e "  Active tunnels: $active_tunnels"
@@ -830,6 +853,8 @@ full_cleanup() {
 
         cleanup_files
         cleanup_routes_light
+        # No OpenVPN is left: what it could not undo itself goes too
+        clear_stale_vpn_state
 
         echo -e "\033[1;32m✓ VPN cleanup completed\033[0m"
         echo -e "\033[1;36mℹ NetworkManager left intact (safe cleanup)\033[0m"
@@ -874,7 +899,9 @@ show_status_accessible() {
     echo
     echo "Connection Information:"
 
-    if is_vpn_running; then
+    local running=no
+    is_vpn_running && running=yes
+    if [[ $running == yes ]]; then
         local pid interface external_ip vpn_ip uptime
         pid=$(get_vpn_pid)
         interface=$(get_vpn_interface)
@@ -922,6 +949,7 @@ show_status_accessible() {
     local active_tunnels
     active_tunnels=$(count_tunnels)
     echo "  Active Network Tunnels: $active_tunnels"
+    show_dns_state "$running" accessible
 }
 
 # Configuration management for auto-reconnect (Issue #227)

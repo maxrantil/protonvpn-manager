@@ -99,8 +99,10 @@ cat > "$PATH_STUBS/pgrep" << 'EOF'
 [[ $* == *openvpn* && -f $VPN_UP ]] && { echo 4242; exit 0; }
 exit 1
 EOF
+# No tunnel interface exists (the VPN is down or died with it)
 cat > "$PATH_STUBS/ip" << 'EOF'
 #!/bin/bash
+[[ $1 == link && $2 == show && $3 == tun* ]] && exit 1
 exit 0
 EOF
 # Only the (stubbed) resolvconf may run; anything else is recorded, never run

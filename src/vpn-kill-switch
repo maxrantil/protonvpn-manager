@@ -64,6 +64,7 @@ config_value() {
 CHAIN_NAME="VPN_KILL_SWITCH"
 CHAIN_NAME_V6="VPN_KILL_SWITCH_V6"
 IPV6_GUARD_CHAIN="VPN_IPV6_GUARD"
+DNS_GUARD_CHAIN="VPN_DNS_GUARD"
 
 # VPN interface (OpenVPN typically uses tun0)
 VPN_INTERFACE="${VPN_INTERFACE:-tun0}"
@@ -485,13 +486,20 @@ COMMIT"
     done <<< "$server_allow"
     [[ -n "$have_tailscale" ]] && echo "  Allowing Tailscale traffic: tailscale0"
     [[ -n "$default_gw" ]] && echo "  Allowing DNS to gateway (KILL_SWITCH_ALLOW_LAN_DNS): $default_gw"
+    # The kill switch's jump goes first; the DNS guard is put back ahead of
+    # it right after each family loads (also when the other family fails).
+    # A failed re-pin is warned about but never stops the kill switch.
     if ! run_iptables_restore <<< "$v4"; then
         echo -e "${RED}Error: Failed to apply IPv4 kill switch rules${NC}" >&2
         return 1
     fi
+    pin_output_order v4 || true
 
     echo "  Setting up IPv6 rules..."
-    if ! run_ip6tables_restore <<< "$v6"; then
+    local v6_loaded=0
+    run_ip6tables_restore <<< "$v6" && v6_loaded=1
+    pin_output_order v6 || true
+    if [[ $v6_loaded -ne 1 ]]; then
         echo -e "${RED}Error: Failed to apply IPv6 kill switch rules${NC}" >&2
         return 1
     fi
@@ -560,6 +568,101 @@ disable_kill_switch() {
     return 0
 }
 
+# Guard chains: chains that only exist while a VPN is connected and sit in
+# OUTPUT next to the kill switch, independent of it (the IPv6 guard, the DNS
+# guard). Shared so each is loaded and removed the same way.
+
+# The firewall tools for a family. Args: $1 = v4 | v6
+guard_runner() { [[ $1 == v6 ]] && echo run_ip6tables || echo run_iptables; }
+guard_restore() { [[ $1 == v6 ]] && echo run_ip6tables_restore || echo run_iptables_restore; }
+
+# Load a guard chain with ONE restore transaction: the chain is declared
+# (created, or flushed and refilled atomically) and its OUTPUT jump inserted
+# first unless one exists. REJECT targets fall back to DROP when the REJECT
+# module cannot load (e.g. kernel upgraded but not rebooted yet); then
+# GUARD_DROPPED=1. A failed transaction changes nothing.
+# Args: $1 = v4 | v6, $2 = chain, $3 = rules, one per line, without "-A <chain>"
+GUARD_DROPPED=0
+guard_chain_on() {
+    local family=$1 chain=$2 rules=$3 runner restore jump="" body attempt rule
+    runner=$(guard_runner "$family")
+    restore=$(guard_restore "$family")
+    GUARD_DROPPED=0
+    if ! "$runner" -C OUTPUT -j "$chain" 2> /dev/null; then
+        jump="
+-I OUTPUT 1 -j $chain"
+    fi
+    for attempt in reject drop; do
+        body="*filter
+:$chain - [0:0]"
+        while IFS= read -r rule; do
+            [[ -n $rule ]] || continue
+            if [[ $attempt == drop ]]; then
+                rule=$(sed -E 's/-j REJECT( --reject-with [^ ]+)?$/-j DROP/' <<< "$rule")
+            fi
+            body+="
+-A $chain $rule"
+        done <<< "$rules"
+        body+="$jump
+COMMIT"
+        if "$restore" 2> /dev/null <<< "$body"; then
+            [[ $attempt == drop ]] && GUARD_DROPPED=1
+            return 0
+        fi
+        # Nothing to fall back to without a REJECT rule
+        [[ $rules == *"-j REJECT"* ]] || return 1
+    done
+    return 1
+}
+
+# Keep the DNS guard's jump first in OUTPUT, ahead of the kill switch's and
+# the IPv6 guard's ACCEPTs (ESTABLISHED, gateway:53, link-local), which would
+# otherwise let port 53 out. The others keep their relative order. Reads
+# OUTPUT once and changes it only when the order is wrong or a jump is
+# duplicated: one transaction deletes every jump and inserts one first.
+# Returns: 1 (with a warning) when the guard is in OUTPUT but could not be put first
+# Args: $1 = v4 | v6
+pin_output_order() {
+    local runner restore out first count body i jump="-A OUTPUT -j $DNS_GUARD_CHAIN"
+    runner=$(guard_runner "$1")
+    restore=$(guard_restore "$1")
+    out=$("$runner" -S OUTPUT 2> /dev/null) || return 0
+    count=$(grep -cxF -- "$jump" <<< "$out") || true
+    [[ $count -gt 0 ]] || return 0
+    first=$(grep -m1 '^-A OUTPUT ' <<< "$out")
+    [[ $first == "$jump" && $count -eq 1 ]] && return 0
+    body="*filter"
+    for ((i = 0; i < count; i++)); do
+        body+="
+-D OUTPUT -j $DNS_GUARD_CHAIN"
+    done
+    body+="
+-I OUTPUT 1 -j $DNS_GUARD_CHAIN
+COMMIT"
+    if ! "$restore" 2> /dev/null <<< "$body"; then
+        echo -e "${YELLOW}Warning: could not put the DNS guard first in OUTPUT (${1/v/IPv}); DNS may leak${NC}" >&2
+        return 1
+    fi
+    return 0
+}
+
+# Remove a guard chain: every OUTPUT jump, then the chain; no-op when absent.
+# A chain whose jump could not be removed is left whole (flushing it would
+# leave a jump to an empty chain). Never aborts the caller under set -e.
+# Returns: 1 when a jump or the chain could not be removed
+# Args: $1 = v4 | v6, $2 = chain
+guard_chain_off() {
+    local runner
+    runner=$(guard_runner "$1")
+    remove_output_jumps "$runner" "$2" || return 1
+    if "$runner" -L "$2" -n &> /dev/null; then
+        if ! "$runner" -F "$2" || ! "$runner" -X "$2"; then
+            return 1
+        fi
+    fi
+    return 0
+}
+
 # IPv6 guard: while a VPN is connected, block outgoing IPv6 outside the
 # tunnel. ProtonVPN's OpenVPN tunnels carry only IPv4, so without this IPv6
 # leaves over the physical interface with the ISP's address. Independent of
@@ -574,28 +677,17 @@ ipv6_guard_on() {
         echo -e "${YELLOW}Warning: ip6tables not found; IPv6 is not blocked${NC}" >&2
         return 1
     fi
-    local jump="" final
-    if ! run_ip6tables -C OUTPUT -j "$IPV6_GUARD_CHAIN" 2> /dev/null; then
-        jump="
--I OUTPUT 1 -j $IPV6_GUARD_CHAIN"
+    if guard_chain_on v6 "$IPV6_GUARD_CHAIN" "-o lo -j ACCEPT
+-d fe80::/10 -j ACCEPT
+-d ff00::/8 -j ACCEPT
+-o tun+ -j ACCEPT
+-o tailscale0 -j ACCEPT
+-o virbr+ -j ACCEPT
+-j REJECT --reject-with icmp6-adm-prohibited"; then
+        pin_output_order v6
+        echo "IPv6 blocked outside the tunnel"
+        return 0
     fi
-    for final in "REJECT --reject-with icmp6-adm-prohibited" "DROP"; do
-        if run_ip6tables_restore 2> /dev/null << EOF; then
-*filter
-:$IPV6_GUARD_CHAIN - [0:0]
--A $IPV6_GUARD_CHAIN -o lo -j ACCEPT
--A $IPV6_GUARD_CHAIN -d fe80::/10 -j ACCEPT
--A $IPV6_GUARD_CHAIN -d ff00::/8 -j ACCEPT
--A $IPV6_GUARD_CHAIN -o tun+ -j ACCEPT
--A $IPV6_GUARD_CHAIN -o tailscale0 -j ACCEPT
--A $IPV6_GUARD_CHAIN -o virbr+ -j ACCEPT
--A $IPV6_GUARD_CHAIN -j $final$jump
-COMMIT
-EOF
-            echo "IPv6 blocked outside the tunnel"
-            return 0
-        fi
-    done
     echo -e "${RED}Error: Failed to block IPv6${NC}" >&2
     return 1
 }
@@ -604,11 +696,117 @@ EOF
 ipv6_guard_off() {
     command -v ip6tables &> /dev/null || return 0
     check_privileges || return 1
-    remove_output_jumps run_ip6tables "$IPV6_GUARD_CHAIN" || true
-    if run_ip6tables -L "$IPV6_GUARD_CHAIN" -n &> /dev/null; then
-        run_ip6tables -F "$IPV6_GUARD_CHAIN"
-        run_ip6tables -X "$IPV6_GUARD_CHAIN"
+    guard_chain_off v6 "$IPV6_GUARD_CHAIN"
+}
+
+# DNS guard: while a VPN is connected, reject DNS (port 53, udp and tcp) to
+# anything but loopback, the tunnel and Tailscale, in both families. Whoever
+# rewrites resolv.conf (NetworkManager, #295), lookups then fail instead of
+# leaking to the router or the ISP. It only denies: RETURN hands the rest to
+# the kill switch and the IPv6 guard unchanged. First in OUTPUT (see
+# pin_output_order). One rule per protocol, no multiport (#291). WireGuard
+# interfaces are deliberately not exempt: #223 has to decide that. REJECT so
+# resolvers fail over at once; DROP when REJECT cannot load, which stalls each
+# lookup by the resolver's timeout.
+dns_guard_on() {
+    check_iptables || return 1
+    check_privileges || return 1
+    local family unreach rc=0 dropped=0
+    for family in v4 v6; do
+        unreach=icmp-port-unreachable
+        if [[ $family == v6 ]]; then
+            # Without ip6tables there is no IPv6 firewall to guard (status
+            # agrees: only IPv4 is required then)
+            if ! command -v ip6tables &> /dev/null; then
+                echo -e "${YELLOW}Warning: ip6tables not found; DNS over IPv6 is not blocked${NC}" >&2
+                continue
+            fi
+            unreach=icmp6-port-unreachable
+        fi
+        if guard_chain_on "$family" "$DNS_GUARD_CHAIN" "-o lo -j RETURN
+-o tun+ -j RETURN
+-o tailscale0 -j RETURN
+-p udp -m udp --dport 53 -j REJECT --reject-with $unreach
+-p tcp -m tcp --dport 53 -j REJECT --reject-with tcp-reset"; then
+            [[ $GUARD_DROPPED == 1 ]] && dropped=1
+            pin_output_order "$family" || rc=1
+        else
+            echo -e "${RED}Error: Failed to block DNS outside the tunnel (${family/v/IPv})${NC}" >&2
+            rc=1
+        fi
+    done
+    if [[ $dropped == 1 ]]; then
+        echo "Note: REJECT is unavailable (reboot after a kernel upgrade?); DNS outside the tunnel is dropped (DROP), so such lookups time out"
     fi
+    [[ $rc -eq 0 ]] && echo "DNS blocked outside the tunnel"
+    return $rc
+}
+
+# Remove the DNS guard (every jump, then the chain, both families); no-op
+# when absent. The kill switch's disable leaves it: it belongs to the connection.
+dns_guard_off() {
+    check_privileges || return 1
+    local rc=0
+    if command -v iptables &> /dev/null; then
+        guard_chain_off v4 "$DNS_GUARD_CHAIN" || rc=1
+    fi
+    if command -v ip6tables &> /dev/null; then
+        guard_chain_off v6 "$DNS_GUARD_CHAIN" || rc=1
+    fi
+    [[ $rc -eq 0 ]] || echo -e "${YELLOW}Warning: could not remove the DNS guard completely; run: vpn-kill-switch dns-guard off${NC}" >&2
+    return $rc
+}
+
+# OUTPUT as iptables -S prints it, for status reports: sudo -n, so an
+# unattended caller (vpn status, vpn-doctor) never waits at a password
+# prompt; without credentials this fails. Args: $1 = v4 | v6
+read_output_chain() {
+    local tool=iptables
+    [[ $1 == v6 ]] && tool=ip6tables
+    if [[ $EUID -eq 0 ]]; then
+        "$tool" -S OUTPUT
+    else
+        sudo -n "$tool" -S OUTPUT
+    fi
+}
+
+# Print on, off, unknown, "on (not first in OUTPUT)" or "on (IPv4 only)"/
+# "on (IPv6 only)". Exit 0 only when the jump is first in OUTPUT in every
+# family that has a firewall tool; 1 only when it is known to be off;
+# 2 otherwise (unknown: the firewall could not be read, e.g. no sudo
+# credentials; never taken as off).
+dns_guard_status() {
+    local family out jump="-A OUTPUT -j $DNS_GUARD_CHAIN"
+    local -a present=() missing=()
+    local not_first=0
+    for family in v4 v6; do
+        if [[ $family == v6 ]]; then
+            command -v ip6tables &> /dev/null || continue
+        fi
+        if ! out=$(read_output_chain "$family" 2> /dev/null); then
+            echo "unknown"
+            return 2
+        fi
+        if grep -qxF -- "$jump" <<< "$out"; then
+            present+=("$family")
+            [[ $(grep -m1 '^-A OUTPUT ' <<< "$out") == "$jump" ]] || not_first=1
+        else
+            missing+=("$family")
+        fi
+    done
+    if [[ ${#present[@]} -eq 0 ]]; then
+        echo "off"
+        return 1
+    fi
+    if [[ ${#missing[@]} -gt 0 ]]; then
+        echo "on (${present[0]/v/IPv} only)"
+        return 2
+    fi
+    if [[ $not_first -eq 1 ]]; then
+        echo "on (not first in OUTPUT)"
+        return 2
+    fi
+    echo "on"
     return 0
 }
 
@@ -630,6 +828,7 @@ emergency_disable() {
     sudo ip6tables -X "$CHAIN_NAME_V6" 2> /dev/null || true
 
     ipv6_guard_off 2> /dev/null || true
+    dns_guard_off 2> /dev/null || true
 
     # Clear state
     rm -f "$STATE_FILE" 2> /dev/null || true
@@ -740,6 +939,7 @@ show_help() {
     echo "  status              - Show current kill switch status"
     echo "  is-enabled          - Check if enabled (exit code: 0=yes, 1=no)"
     echo "  ipv6-guard on|off|status - Block IPv6 outside the tunnel (used while connected)"
+    echo "  dns-guard on|off|status  - Block DNS outside the tunnel (used while connected)"
     echo "  help                - Show this help message"
     echo ""
     echo "The kill switch blocks all network traffic except:"
@@ -792,6 +992,18 @@ case "${1:-}" in
             status) ipv6_guard_is_on ;;
             *)
                 echo "Usage: vpn-kill-switch ipv6-guard {on|off|status}" >&2
+                exit 1
+                ;;
+        esac
+        exit $?
+        ;;
+    "dns-guard")
+        case "${2:-}" in
+            on) dns_guard_on ;;
+            off) dns_guard_off ;;
+            status) dns_guard_status ;;
+            *)
+                echo "Usage: vpn-kill-switch dns-guard {on|off|status}" >&2
                 exit 1
                 ;;
         esac

@@ -1,0 +1,213 @@
+#!/bin/bash
+# ABOUTME: Stateful stand-in for iptables, ip6tables and their -restore tools, for tests only
+# ABOUTME: Keeps the filter table in files under $FAKE_FW_DIR; never touches the real firewall
+
+# Installed as symlinks named iptables, ip6tables, iptables-restore and
+# ip6tables-restore; the name picks the family and the mode.
+#
+# State: $FAKE_FW_DIR/<v4|v6>/<CHAIN> holds one rule per line, as written
+# after "-A <CHAIN> ". INPUT, FORWARD and OUTPUT always exist.
+#
+# Supported: -C -D -I -A -S -L -N -F -X, and restore --noflush with chain
+# declarations (":CHAIN - [0:0]" creates or flushes it), -A/-I/-D/-N/-F/-X
+# lines and COMMIT. A restore is all or nothing, as with the real tool.
+#
+# Failure injection (files in $FAKE_FW_DIR):
+#   no_reject        any rule with "-j REJECT" fails (module cannot load)
+#   no_restore_<fam> every restore of that family fails
+#   restore_fails_on a restore whose input contains this file's text fails
+#   fail_S_<fam>     -S of that family fails (no privileges, xtables lock)
+#   fail_X_<fam>     -X of that family fails
+#   fail_D_<fam>     -D of that family fails
+# Rules are checked like the real tool where tests depend on it: a
+# --reject-with of the other family, or tcp-reset without -p tcp, fails.
+# Every call is appended to $FAKE_FW_DIR/calls as "<tool> <args>".
+
+set -u
+: "${FAKE_FW_DIR:?FAKE_FW_DIR must point at the fake firewall state}"
+
+tool=$(basename "$0")
+case "$tool" in
+    ip6tables*) fam=v6 ;;
+    iptables*) fam=v4 ;;
+    *)
+        echo "fake-firewall: unknown name $tool" >&2
+        exit 2
+        ;;
+esac
+STATE="$FAKE_FW_DIR/$fam"
+BUILTIN="INPUT FORWARD OUTPUT"
+mkdir -p "$STATE"
+for c in $BUILTIN; do
+    [[ -e $STATE/$c ]] || : > "$STATE/$c"
+done
+echo "$tool $*" >> "$FAKE_FW_DIR/calls"
+
+is_builtin() { [[ " $BUILTIN " == *" $1 "* ]]; }
+
+# Apply one rule command to the table in directory $1
+# Args: $1 = table dir, $2 = option, $3 = chain, rest = rule or position
+fw_apply() {
+    local dir=$1 op=$2 chain=${3:-}
+    shift 3 2> /dev/null || shift $#
+    local file="$dir/$chain" rule pos
+    case "$op" in
+        -N)
+            [[ -e $file ]] && { echo "iptables: Chain already exists." >&2; return 1; }
+            : > "$file"
+            ;;
+        -F)
+            [[ -e $file ]] || { echo "iptables: No chain/target/match by that name." >&2; return 1; }
+            : > "$file"
+            ;;
+        -X)
+            if [[ ! -e $file ]] || is_builtin "$chain"; then
+                echo "iptables: No chain/target/match by that name." >&2
+                return 1
+            fi
+            [[ ! -s $file ]] || { echo "iptables: Directory not empty." >&2; return 1; }
+            if grep -qE -- "-j $chain( |\$)" "$dir"/* 2> /dev/null; then
+                echo "iptables: Too many links." >&2
+                return 1
+            fi
+            rm -f -- "$file"
+            ;;
+        -A | -I | -C | -D)
+            [[ -e $file ]] || { echo "iptables: No chain/target/match by that name." >&2; return 1; }
+            pos=1
+            if [[ $op == -I && ${1:-} =~ ^[0-9]+$ ]]; then
+                pos=$1
+                shift
+            fi
+            rule="$*"
+            [[ -n $rule ]] || { echo "fake-firewall: empty rule" >&2; return 2; }
+            if [[ $op == -A || $op == -I ]]; then
+                if [[ -f $FAKE_FW_DIR/no_reject && $rule == *"-j REJECT"* ]]; then
+                    echo "iptables: No chain/target/match by that name." >&2
+                    return 1
+                fi
+                if [[ $rule == *"--reject-with icmp6-"* && $fam == v4 ]] ||
+                    [[ $rule == *"--reject-with icmp-"* && $fam == v6 ]] ||
+                    [[ $rule == *"--reject-with tcp-reset"* && $rule != *"-p tcp "* ]]; then
+                    echo "iptables: Bad reject-with for this rule." >&2
+                    return 1
+                fi
+                local target=""
+                [[ $rule =~ -j\ ([A-Za-z0-9_]+) ]] && target=${BASH_REMATCH[1]}
+                case "$target" in
+                    ACCEPT | DROP | REJECT | RETURN | LOG | "") ;;
+                    *) [[ -e $dir/$target ]] || { echo "iptables: Couldn't load target \`$target'." >&2; return 1; } ;;
+                esac
+            fi
+            case "$op" in
+                -A) printf '%s\n' "$rule" >> "$file" ;;
+                -I)
+                    local n
+                    n=$(wc -l < "$file")
+                    ((pos >= 1 && pos <= n + 1)) || { echo "iptables: Index of insertion too big." >&2; return 1; }
+                    { head -n $((pos - 1)) "$file"; printf '%s\n' "$rule"; tail -n +"$pos" "$file"; } > "$file.tmp"
+                    mv -f "$file.tmp" "$file"
+                    ;;
+                -C) grep -qxF -- "$rule" "$file" || return 1 ;;
+                -D)
+                    local line
+                    [[ -e $FAKE_FW_DIR/fail_D_$fam ]] && { echo "iptables: Resource temporarily unavailable." >&2; return 4; }
+                    line=$(grep -nxF -- "$rule" "$file" | head -1 | cut -d: -f1)
+                    [[ -n $line ]] || { echo "iptables: Bad rule (does a matching rule exist in that chain?)." >&2; return 1; }
+                    sed -i "${line}d" "$file"
+                    ;;
+            esac
+            ;;
+        *)
+            echo "fake-firewall: unsupported option $op" >&2
+            return 2
+            ;;
+    esac
+    return 0
+}
+
+# Print the table in iptables -S format (builtins first, as the real tool)
+# Args: $1 = chain (optional)
+fw_save() {
+    local c chains=() rule
+    if [[ -n ${1:-} ]]; then
+        [[ -e $STATE/$1 ]] || { echo "iptables: No chain/target/match by that name." >&2; return 1; }
+        chains=("$1")
+    else
+        read -ra chains <<< "$BUILTIN"
+        for c in "$STATE"/*; do
+            c=$(basename "$c")
+            is_builtin "$c" || chains+=("$c")
+        done
+    fi
+    for c in "${chains[@]}"; do
+        if is_builtin "$c"; then echo "-P $c ACCEPT"; else echo "-N $c"; fi
+    done
+    for c in "${chains[@]}"; do
+        while IFS= read -r rule; do
+            echo "-A $c $rule"
+        done < "$STATE/$c"
+    done
+}
+
+if [[ $tool == *-restore ]]; then
+    [[ " $* " == *" --noflush "* ]] || { echo "fake-firewall: restore without --noflush is not supported" >&2; exit 2; }
+    [[ -f $FAKE_FW_DIR/no_restore_$fam ]] && { echo "$tool: line 1 failed" >&2; exit 1; }
+    input=$(cat)
+    if [[ -s $FAKE_FW_DIR/restore_fails_on && $input == *"$(cat "$FAKE_FW_DIR/restore_fails_on")"* ]]; then
+        echo "$tool: line 1 failed" >&2
+        exit 1
+    fi
+    work=$(mktemp -d "$FAKE_FW_DIR/.txn.XXXXXX")
+    cp -a "$STATE/." "$work/"
+    lineno=0
+    committed=0
+    chain_decl='^:([A-Za-z0-9_]+) '
+    while IFS= read -r line || [[ -n $line ]]; do
+        lineno=$((lineno + 1))
+        [[ -z $line || $line == \#* || $line == "*filter" ]] && continue
+        if [[ $line == COMMIT ]]; then
+            committed=1
+            continue
+        fi
+        if [[ $line =~ $chain_decl ]]; then
+            : > "$work/${BASH_REMATCH[1]}"
+            continue
+        fi
+        # shellcheck disable=SC2086  # rule words, as iptables-restore splits them
+        if ! fw_apply "$work" $line; then
+            echo "$tool: line $lineno failed" >&2
+            rm -rf "$work"
+            exit 1
+        fi
+    done <<< "$input"
+    if [[ $committed -ne 1 ]]; then
+        echo "$tool: COMMIT expected at line $((lineno + 1))" >&2
+        rm -rf "$work"
+        exit 1
+    fi
+    rm -rf "$STATE"
+    mv "$work" "$STATE"
+    exit 0
+fi
+
+case "${1:-}" in
+    -S)
+        [[ -f $FAKE_FW_DIR/fail_S_$fam ]] && { echo "iptables: Permission denied (you must be root)" >&2; exit 4; }
+        fw_save "${2:-}"
+        ;;
+    -L)
+        [[ -n ${2:-} && ${2:-} != -* ]] || { fw_save; exit $?; }
+        fw_save "$2" > /dev/null || exit 1
+        fw_save "$2" | grep '^-A' || true
+        ;;
+    -X)
+        [[ -f $FAKE_FW_DIR/fail_X_$fam ]] && { echo "iptables: Resource temporarily unavailable." >&2; exit 4; }
+        fw_apply "$STATE" "$@"
+        ;;
+    -C | -D | -I | -A | -N | -F) fw_apply "$STATE" "$@" ;;
+    *)
+        echo "fake-firewall: unsupported call: $*" >&2
+        exit 2
+        ;;
+esac

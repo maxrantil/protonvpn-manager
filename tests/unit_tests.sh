@@ -224,6 +224,10 @@ run_unit_tests() {
         unit/test_kill_switch.sh
         unit/test_kill_switch_cleanup.sh
         unit/test_leak_protection.sh
+        unit/test_dns_guard.sh
+        unit/test_dns_mismatch.sh
+        unit/test_dns_repair_hook.sh
+        unit/test_install_nm_dns.sh
         unit/test_process_detection.sh
         unit/test_profile_resolution.sh
         unit/test_country_selection.sh
@@ -233,6 +237,7 @@ run_unit_tests() {
         unit/test_temp_file_manager.sh
         unit/test_vpn_doctor.sh
         integration/test_best_fast_connection.sh
+        integration/test_dns_persistence.sh
         security/test_credentials_security.sh
         security/test_openvpn_path_hardcoding.sh
         test_log_security.sh

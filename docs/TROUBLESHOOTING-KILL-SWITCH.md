@@ -62,6 +62,7 @@ cat ~/.local/state/vpn/vpn_manager.log
 | **No internet, need it NOW** | `sudo vpn-kill-switch disable` |
 | **Nuclear option (force remove rules)** | `sudo vpn-kill-switch emergency` |
 | **VPN stuck/zombie processes** | `vpn cleanup` |
+| **No DNS after a crash (leftover DNS guard)** | `vpn cleanup` |
 | **Full network reset** | `vpn emergency-reset` |
 
 ---
@@ -121,6 +122,69 @@ sudo vpn-kill-switch emergency
 sudo vpn-kill-switch enable
 ```
 
+### Scenario 4: DNS fails after a crash (leftover DNS guard)
+
+OpenVPN died without cleaning up (kill -9, a crash, resume from suspend).
+Websites by IP address may work, but no names resolve. While connected, the
+DNS guard (`VPN_DNS_GUARD`) rejects DNS outside the tunnel; with no VPN it
+blocks all DNS that doesn't go through Tailscale.
+
+```bash
+vpn status                          # "DNS is blocked by a leftover DNS guard. Fix: vpn cleanup"
+vpn-kill-switch dns-guard status    # on
+
+vpn cleanup                         # removes the DNS entry, both guards and the kill switch
+vpn-kill-switch dns-guard status    # off
+getent hosts example.com
+```
+
+`vpn cleanup` stops any OpenVPN and removes a leftover `tun0` first, then
+releases these. `vpn status` alone never removes them.
+
+With the kill switch **off**, the `40-vpn-dns-repair` NetworkManager hook also
+removes a leftover guard on the next DNS change (with the network
+reconnecting after resume, for example). With the kill switch **on**, the
+guard stays on purpose (fail closed) until `vpn cleanup` or `vpn connect`.
+
+If `vpn cleanup` isn't available, remove the guard by hand for each of
+`iptables` and `ip6tables`:
+
+```bash
+sudo iptables -D OUTPUT -j VPN_DNS_GUARD   # repeat until it fails
+sudo iptables -F VPN_DNS_GUARD
+sudo iptables -X VPN_DNS_GUARD
+```
+
+`sudo vpn-kill-switch emergency` removes it as well, together with the kill
+switch and the IPv6 guard. `vpn kill-switch off` does **not**: the guard
+belongs to the connection, not to the kill switch.
+
+### Scenario 5: DNS changes away from the VPN while connected
+
+`vpn status` warns `DNS is not using the VPN (resolv.conf: ...)`.
+NetworkManager (or another tool) rewrote `/etc/resolv.conf`. While the DNS
+guard is on it rejects those lookups, so names may fail rather than leak.
+
+```bash
+sudo resolvconf -u                  # put the VPN's DNS back
+ls /etc/NetworkManager/conf.d/protonvpn-manager-dns.conf
+ls /etc/NetworkManager/dispatcher.d/40-vpn-dns-repair
+```
+
+Without those two files, re-run `./install.sh` and read why it printed
+`Skipping NetworkManager DNS setup: ...`. The hook logs to syslog only
+(`journalctl -t vpn-dns-repair`); without a syslog daemon its messages are
+lost.
+
+To undo the NetworkManager DNS setup (the drop-in and the hook):
+
+```bash
+./install.sh --uninstall-nm-dns
+```
+
+It removes both files, reloads NetworkManager's config, drops
+NetworkManager's leftover resolvconf entry and rebuilds resolv.conf.
+
 ---
 
 ## Diagnostic Commands Reference
@@ -138,6 +202,12 @@ vpn-manager config auto-reconnect status
 # View iptables rules directly
 sudo iptables -L VPN_KILL_SWITCH -n 2>/dev/null || echo "No kill switch rules"
 sudo ip6tables -L VPN_KILL_SWITCH_V6 -n 2>/dev/null || echo "No IPv6 rules"
+
+# DNS guard and DNS
+vpn-kill-switch dns-guard status
+sudo iptables -S OUTPUT; sudo ip6tables -S OUTPUT   # VPN_DNS_GUARD first while connected
+cat /etc/resolv.conf
+resolvconf -l tun0.protonvpn
 
 # Check for OpenVPN processes
 pgrep -fa openvpn

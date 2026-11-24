@@ -16,6 +16,8 @@ VPN_DIR="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
 # Source required components
 source "$VPN_DIR/vpn-colors"
 source "$VPN_DIR/vpn-error-handler"
+# shellcheck source=src/vpn-utils
+source "$VPN_DIR/vpn-utils"
 
 # Component identifier
 export COMP_VPN_DOCTOR="VPN-DOCTOR"
@@ -36,6 +38,7 @@ CHECKS=(
     "configuration"
     "network"
     "process_health"
+    "dns"
 )
 
 # Check metadata
@@ -45,6 +48,7 @@ declare -A CHECK_NAMES=(
     ["configuration"]="Configuration"
     ["network"]="Network Connectivity"
     ["process_health"]="VPN Process Health"
+    ["dns"]="DNS Leak Protection"
 )
 
 # Exit codes
@@ -107,6 +111,7 @@ Categories:
   config    - Configuration validation (credentials, .ovpn files)
   network   - Network connectivity (DNS, VPN servers)
   process   - VPN process health (running state)
+  dns       - DNS leak protection (DNS guard, resolv.conf on the VPN's DNS)
 EOF
 }
 
@@ -344,6 +349,23 @@ check_process_health() {
     store_check_result "process_health" "$status" "$details"
 }
 
+# Check DNS leak protection (#295): the DNS guard's state and resolv.conf
+# (see vpn_dns_state). Read-only; an unreadable guard state (no sudo
+# credentials) is reported as unknown, not as a problem.
+check_dns() {
+    local status="PASS" details running=no process_count
+    process_count=$(pgrep -c -f '(^|/)openvpn .*--config' 2>/dev/null) || true
+    [[ $process_count =~ ^[0-9]+$ && $process_count -gt 0 ]] && running=yes
+
+    vpn_dns_state "$running"
+    details="DNS guard: $VPN_DNS_GUARD"
+    if [[ ${#VPN_DNS_WARNINGS[@]} -gt 0 ]]; then
+        status="WARN"
+        details+="\n$(printf '  ⚠ %s\n' "${VPN_DNS_WARNINGS[@]}")"
+    fi
+    store_check_result "dns" "$status" "$details"
+}
+
 # Display check result
 display_check_result() {
     local check_name="$1"
@@ -514,6 +536,9 @@ run_diagnostics() {
                 ;;
             "process_health")
                 check_process_health
+                ;;
+            "dns")
+                check_dns
                 ;;
         esac
 
