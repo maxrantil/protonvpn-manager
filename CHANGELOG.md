@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- DNS leak while connected (#295): NetworkManager could rewrite
+  `/etc/resolv.conf` to the router's DNS with the VPN up, so lookups bypassed
+  the tunnel. Now:
+  - A DNS guard (`VPN_DNS_GUARD`, IPv4 and IPv6, first in OUTPUT) rejects
+    port-53 traffic outside `tun+`, `lo` and `tailscale0` while connected,
+    with or without the kill switch (opt out with `BLOCK_DNS_LEAKS=false`).
+    LAN-only names don't resolve while connected.
+  - `install.sh` adds a NetworkManager drop-in
+    (`conf.d/protonvpn-manager-dns.conf`, `rc-manager=resolvconf`) and the
+    `40-vpn-dns-repair` dispatcher hook, which rebuilds resolv.conf from
+    openresolv on NetworkManager DNS changes. Skipped with a message where it
+    doesn't fit (no NetworkManager or openresolv, systemd-resolved, symlinks,
+    an `rc-manager` or `dns=none` already set); undo with
+    `./install.sh --uninstall-nm-dns`, or install without it with
+    `--no-nm-dns`.
+  - `KILL_SWITCH_ALLOW_LAN_DNS=true` now only applies while the tunnel is
+    down; `vpn connect` prints a note when it's set with the guard on.
 - DNS leak: OpenVPN now applies the VPN's pushed DNS servers via a
   root-owned `resolvconf` helper and restores the previous DNS on
   disconnect; the kill switch no longer lets DNS through to the router
@@ -68,6 +85,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `vpn status` and `vpn doctor` (new `dns` check) show the DNS guard's state
+  and warn when resolv.conf isn't on the VPN's DNS, when the guard is off or
+  incomplete while connected, and when a guard is left over with no VPN
+- `vpn-kill-switch dns-guard on|off|status`
 - Latency-based server selection: `vpn connect`, `vpn best` and `vpn fast`
   now pick the server with the lowest measured ping (parallel, cached; TCP
   handshake fallback when ICMP is filtered). `SERVER_SELECTION=random` in
@@ -75,6 +96,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `vpn cleanup` after OpenVPN was killed (kill -9, crash) left the VPN's DNS
+  entry, the DNS and IPv6 guards and the kill switch in place, so DNS stayed
+  broken; it now releases them when no VPN is running (#295). With the kill
+  switch off, the `40-vpn-dns-repair` hook also removes a leftover DNS guard on
+  the next NetworkManager DNS change
+- Tailscale DNS wasn't restored on disconnect when tailscaled kept a stale DNS
+  mode record; resolv.conf is now rebuilt from Tailscale's resolvconf entry
+  (#295)
 - `best-vpn-profile` was a placeholder: it slept 2s and returned the first
   profile file, ignoring the country; the connector also asked it for an
   unsupported `fresh` mode

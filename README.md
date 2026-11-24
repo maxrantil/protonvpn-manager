@@ -178,6 +178,15 @@ vpn connect
 vpn status
 ```
 
+With NetworkManager and openresolv, `install.sh` also sets NetworkManager up
+to keep the VPN's DNS while connected (see [DNS](#dns-no-leaks)). To leave
+NetworkManager alone:
+
+```bash
+./install.sh --no-nm-dns         # install everything else; undo the NetworkManager DNS setup
+./install.sh --uninstall-nm-dns  # only undo the NetworkManager DNS setup
+```
+
 ### Directory Structure After Installation
 
 ```text
@@ -253,6 +262,9 @@ You're ready to use ProtonVPN Manager. Try these commands:
 - **`src/vpn-validators`** - Input, path and profile validation
 - **`src/vpn-error-handler`**, **`src/vpn-utils`**, **`src/vpn-colors`**, **`src/temp-file-manager`** - Shared libraries
 - **`etc/`** - Optional elogind sleep hook and NetworkManager dispatcher hook
+  (`50-vpn-reconnect`), installed by hand; the NetworkManager DNS drop-in
+  (`conf.d/protonvpn-manager-dns.conf`) and the `40-vpn-dns-repair`
+  dispatcher hook, installed by `install.sh`
 
 **WireGuard is not supported yet.** WireGuard profiles (`.conf`) in
 `locations/` are not listed or ranked, and `vpn custom <file>.conf` is
@@ -944,14 +956,56 @@ The connector only passes the helper to OpenVPN if it is owned by root and
 not writable by anyone else. If it's missing, or `resolvconf` isn't
 installed, `vpn connect` warns that DNS may leak.
 
-With the kill switch on, DNS to your router is blocked, because those queries
-would bypass the tunnel. Settings in `~/.config/vpn/config`:
+While connected, a DNS guard rejects DNS (port 53) that would leave outside
+the tunnel, with or without the kill switch (see [DNS guard](#dns-guard)).
+With the kill switch on, DNS to your router is also blocked while the tunnel
+is down. Settings in `~/.config/vpn/config`:
 
 ```bash
 DNS_MODE=none                    # don't manage DNS (and silence the warning)
-KILL_SWITCH_ALLOW_LAN_DNS=true   # allow DNS to the router with the kill switch on (leaks)
+BLOCK_DNS_LEAKS=false            # no DNS guard while connected (DNS can leak)
+KILL_SWITCH_ALLOW_LAN_DNS=true   # allow DNS to the router with the kill switch on, while the tunnel is down (leaks)
 TAILSCALE_DNS=keep               # keep Tailscale's DNS while connected (leaks DNS)
 ```
+
+With the guard on, `KILL_SWITCH_ALLOW_LAN_DNS=true` only matters while the
+tunnel is down (during a reconnect); `vpn connect` prints a note when both are
+set. For DNS to the router while connected, set `BLOCK_DNS_LEAKS=false`.
+
+**NetworkManager.** NetworkManager rewrites `/etc/resolv.conf` on its own
+(wifi roaming, DHCP renewals, `nmcli general reload`), which used to replace
+the VPN's DNS while connected (#295). `install.sh` therefore adds a drop-in,
+`/etc/NetworkManager/conf.d/protonvpn-manager-dns.conf`
+(`rc-manager=resolvconf`). NetworkManager then hands its DNS to openresolv,
+where the VPN's entry wins while connected. It also installs the
+`40-vpn-dns-repair` dispatcher hook, which rebuilds resolv.conf from
+openresolv (`resolvconf -u`) when NetworkManager changes DNS while the VPN is
+up. The hook logs to syslog under the tag `vpn-dns-repair`
+(`journalctl -t vpn-dns-repair`; without a syslog daemon, such as on a plain
+runit install, its messages are lost). Both are skipped,
+with a message, unless NetworkManager runs with openresolv and no
+systemd-resolved, neither `/etc/resolv.conf` nor NetworkManager's `conf.d`
+or `dispatcher.d` is a symlink, and no NetworkManager config already sets
+`rc-manager=` or `dns=none`. Undo them with `./install.sh --uninstall-nm-dns`.
+
+**Checking it.** `vpn status` and `vpn doctor` (the `dns` check) show the
+guard's state (`DNS guard: on`, `off`, `on (...)` when it's incomplete or
+not first in OUTPUT, or `unknown` when the firewall can't be read without a
+password) and warn when:
+
+- resolv.conf isn't on the VPN's DNS:
+  `DNS is not using the VPN (resolv.conf: 192.168.1.1). Fix: sudo resolvconf -u`
+- the guard is off or incomplete while connected
+- a guard is left over with no VPN running:
+  `DNS is blocked by a leftover DNS guard. Fix: vpn cleanup`
+
+**After a crash.** If OpenVPN dies without cleaning up (kill -9, a crash,
+resume from suspend), its DNS entry, the guards and the kill switch can stay
+behind. `vpn cleanup` removes them and gives DNS back to the system. When the
+kill switch is off, the `40-vpn-dns-repair` hook also removes a leftover DNS
+guard by itself on the next DNS change from NetworkManager (with no VPN
+running and no VPN DNS entry left). With the kill switch on, it stays until
+`vpn cleanup` or `vpn connect`: DNS fails closed.
 
 If Tailscale manages your DNS (`tailscale set --accept-dns=true`, the
 default), its resolver would answer instead of the VPN's. So Tailscale DNS is
@@ -973,6 +1027,36 @@ Tailscale and libvirt traffic stays allowed. To turn the guard off, in
 BLOCK_IPV6=false                 # don't block IPv6 while connected (leaks IPv6)
 ```
 
+### DNS guard
+
+While connected, the `VPN_DNS_GUARD` chain (IPv4 and IPv6) rejects DNS on
+UDP and TCP port 53 unless it goes through the tunnel (`tun+`), loopback or
+`tailscale0`. It sits first in OUTPUT, before the kill switch and the IPv6
+guard, so even a resolv.conf that some other program rewrote can't send
+lookups to your router or ISP: they fail at once instead of leaking. It only
+rejects; everything else goes on to the kill switch unchanged. It is on with
+or without the kill switch, removed on disconnect and `vpn cleanup`, and
+turned off with `BLOCK_DNS_LEAKS=false`.
+
+What it changes while connected:
+
+- **LAN-only names** (your router's local domain, `printer.lan`, a NAS name
+  your router serves) stop resolving: the router's DNS is outside the tunnel.
+- **Tailscale short names** (`myhost` instead of `myhost.tailnet.ts.net`) and
+  MagicDNS don't resolve while Tailscale DNS is paused (see above). Tailscale
+  IP addresses keep working.
+- **Profiles with a hostname `remote`** can't look the server up again while
+  the guard is on. Stock ProtonVPN profiles use IP addresses.
+- DNS over TLS/HTTPS (port 853/443) and DNS from VMs or containers (forwarded
+  traffic) are not covered.
+- After a kernel upgrade without a reboot, REJECT may be unavailable; the
+  guard then drops instead and prints a note, so such lookups time out rather
+  than failing at once.
+
+By hand: `vpn-kill-switch dns-guard status` (prints `on`, `off`, `on (...)`
+or `unknown`), `vpn-kill-switch dns-guard off`. `vpn kill-switch emergency`
+removes it too.
+
 ### Root-owned session files
 
 OpenVPN runs as root, so it never reads your profile, credentials or log
@@ -984,11 +1068,21 @@ and its use. The copies are removed on disconnect and cleanup.
 
 ### Sleep / network hooks
 
-The optional elogind sleep hook and NetworkManager dispatcher hook run as
-root. They act for the user named in `/etc/protonvpn-manager.conf`
-(`VPN_USER=...`, written by `install.sh`), or for the only non-root user
-logged in; with several users logged in and no config they do nothing. All
-file access in that user's home is done as that user.
+The optional elogind sleep hook and NetworkManager dispatcher hook
+(`50-vpn-reconnect`) run as root and are installed by hand (see
+[docs/MACHINE-VALIDATION.md](docs/MACHINE-VALIDATION.md) §9). They act for the
+user named in `/etc/protonvpn-manager.conf` (`VPN_USER=...`, written by
+`install.sh`), or for the only non-root user logged in; with several users
+logged in and no config they do nothing. All file access in that user's home
+is done as that user.
+
+The `40-vpn-dns-repair` dispatcher hook is different: `install.sh` installs
+it (with the NetworkManager drop-in, see [DNS](#dns-no-leaks)), and it has no
+user context at all. It reads no user files or config, only sources
+`/usr/local/bin/vpn-utils`, and acts only on `dns-change` events: it rebuilds
+resolv.conf while this tool's VPN is up, and removes a leftover DNS guard
+when no VPN runs and the kill switch is off. It is rate-limited to 3 runs in
+10 seconds and logs to syslog only (tag `vpn-dns-repair`).
 
 ## Troubleshooting
 
@@ -1154,9 +1248,28 @@ dig google.com
 **Common causes**:
 
 - DNS settings not restored after disconnect
+- A DNS guard left behind after OpenVPN died (kill -9, crash, resume from
+  suspend): `vpn status` says `DNS is blocked by a leftover DNS guard`
 - NetworkManager not restarted
 
-**Solution**: Run `./src/vpn cleanup` which safely resets network configuration.
+**Solution**: Run `./src/vpn cleanup` which safely resets network
+configuration: it also removes a leftover DNS entry, DNS guard, IPv6 guard and
+kill switch when no VPN is running.
+
+#### DNS Leaves the VPN While Connected
+
+`vpn status` warns `DNS is not using the VPN (resolv.conf: ...)`. Something
+(usually NetworkManager) rewrote `/etc/resolv.conf`. The DNS guard still
+rejects those lookups, so names may fail rather than leak.
+
+```bash
+sudo resolvconf -u                           # rebuild resolv.conf with the VPN's DNS
+ls /etc/NetworkManager/conf.d/protonvpn-manager-dns.conf   # installed by install.sh?
+journalctl -t vpn-dns-repair -n 20           # what the repair hook did (needs a syslog)
+```
+
+If the drop-in is missing, re-run `./install.sh` and read why it skipped the
+NetworkManager DNS setup.
 
 #### IP Not Changing (DNS Leak)
 
